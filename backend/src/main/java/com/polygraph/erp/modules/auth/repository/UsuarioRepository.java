@@ -1,0 +1,13 @@
+package com.polygraph.erp.modules.auth.repository;
+
+import com.polygraph.erp.modules.auth.entity.Usuario;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.util.Optional;
+
+public interface UsuarioRepository extends JpaRepository<Usuario, Long> {
+    Optional<Usuario> findByEmail(String email);
+    boolean existsByEmail(String email);
+    Optional<Usuario> findByTokenActivacion(String token);
+    Optional<Usuario> findByTokenResetPassword(String token);
+}
