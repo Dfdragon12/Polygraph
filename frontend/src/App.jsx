@@ -1,8 +1,13 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
+import ClientLayout from './components/layout/ClientLayout'
 import Login from './pages/Login'
 import Register from './pages/Register'
+import Dashboard from './pages/client/Dashboard'
+import ServiceCatalog from './pages/client/ServiceCatalog'
+
+const ROLES_CLIENTE = ['ADMIN_CLIENTE', 'ANALISTA_CLIENTE']
 
 function App() {
   return (
@@ -33,15 +38,24 @@ function App() {
           </div>
         } />
 
-        {/* Rutas protegidas */}
+        {/* Rutas portal cliente */}
+        <Route
+          path="/cliente"
+          element={
+            <ProtectedRoute roles={ROLES_CLIENTE}>
+              <ClientLayout />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard" element={<Dashboard />} />
+          <Route path="catalogo" element={<ServiceCatalog />} />
+        </Route>
+
+        {/* Raíz redirige al dashboard */}
         <Route path="/" element={
           <ProtectedRoute>
-            <div className="min-h-screen flex items-center justify-center bg-slate-50">
-              <div className="text-center">
-                <h2 className="text-2xl font-bold text-gray-900 mb-2">Dashboard</h2>
-                <p className="text-gray-500 text-sm">En construcción — módulos en desarrollo.</p>
-              </div>
-            </div>
+            <Navigate to="/cliente/dashboard" replace />
           </ProtectedRoute>
         } />
 
