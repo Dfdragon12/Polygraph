@@ -6,6 +6,9 @@ import Login from './pages/Login'
 import Register from './pages/Register'
 import Dashboard from './pages/client/Dashboard'
 import ServiceCatalog from './pages/client/ServiceCatalog'
+import NewRequest from './pages/client/NewRequest'
+import BulkUpload from './pages/client/BulkUpload'
+import EvalueeForm from './pages/evaluee/EvalueeForm'
 
 const ROLES_CLIENTE = ['ADMIN_CLIENTE', 'ANALISTA_CLIENTE']
 
@@ -17,7 +20,11 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/registro" element={<Register />} />
 
-        {/* Ruta de activación */}
+        {/* Formulario del evaluado (público, sin auth) */}
+        <Route path="/evaluado/link/:token" element={<EvalueeForm />} />
+        <Route path="/evaluado/completar/:token" element={<EvalueeForm />} />
+
+        {/* Activación de cuenta */}
         <Route path="/activate" element={
           <div className="min-h-screen flex items-center justify-center bg-slate-50">
             <div className="text-center">
@@ -27,7 +34,7 @@ function App() {
           </div>
         } />
 
-        {/* Ruta de no autorizado */}
+        {/* No autorizado */}
         <Route path="/no-autorizado" element={
           <div className="min-h-screen flex items-center justify-center bg-slate-50">
             <div className="text-center">
@@ -38,7 +45,7 @@ function App() {
           </div>
         } />
 
-        {/* Rutas portal cliente */}
+        {/* Portal cliente */}
         <Route
           path="/cliente"
           element={
@@ -50,16 +57,17 @@ function App() {
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="catalogo" element={<ServiceCatalog />} />
+          <Route path="nueva-solicitud" element={<NewRequest />} />
+          <Route path="carga-masiva" element={<BulkUpload />} />
         </Route>
 
-        {/* Raíz redirige al dashboard */}
+        {/* Raíz */}
         <Route path="/" element={
           <ProtectedRoute>
             <Navigate to="/cliente/dashboard" replace />
           </ProtectedRoute>
         } />
 
-        {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AuthProvider>

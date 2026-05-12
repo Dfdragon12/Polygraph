@@ -37,4 +37,7 @@ public class CatalogoServicio {
 
     @Column(name = "orden")
     private Integer orden;
+
+    @Column(name = "dias_habiles_entrega")
+    private Integer diasHabilesEntrega;
 }

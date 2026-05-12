@@ -52,7 +52,7 @@ public class DataInitializer {
                         CategoriaServicio.ESTUDIOS_SEGURIDAD, 2),
                 item("Estudio Quick",
                         "Validación express de antecedentes con entrega en 24 horas hábiles.",
-                        CategoriaServicio.ESTUDIOS_SEGURIDAD, 3),
+                        CategoriaServicio.ESTUDIOS_SEGURIDAD, 3, 1),
                 item("Estudio OEA",
                         "Estudio de seguridad especial para Operadores Económicos Autorizados (DIAN).",
                         CategoriaServicio.ESTUDIOS_SEGURIDAD, 4),
@@ -91,12 +91,17 @@ public class DataInitializer {
     }
 
     private CatalogoServicio item(String nombre, String descripcion, CategoriaServicio categoria, int orden) {
+        return item(nombre, descripcion, categoria, orden, 5);
+    }
+
+    private CatalogoServicio item(String nombre, String descripcion, CategoriaServicio categoria, int orden, int diasHabiles) {
         return CatalogoServicio.builder()
                 .nombre(nombre)
                 .descripcion(descripcion)
                 .categoria(categoria)
                 .orden(orden)
                 .activo(true)
+                .diasHabilesEntrega(diasHabiles)
                 .build();
     }
 }
