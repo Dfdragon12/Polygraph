@@ -20,8 +20,11 @@ public class LinkCandidato {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "id_servicio", nullable = false)
+    @JoinColumn(name = "id_servicio")
     private Servicio servicio;
+
+    @Column(name = "id_solicitud")
+    private Long idSolicitud;
 
     @Column(name = "token", unique = true, nullable = false, length = 200)
     private String token;

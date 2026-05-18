@@ -1,8 +1,16 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
+import ClientLayout from './components/layout/ClientLayout'
 import Login from './pages/Login'
 import Register from './pages/Register'
+import Dashboard from './pages/client/Dashboard'
+import ServiceCatalog from './pages/client/ServiceCatalog'
+import NewRequest from './pages/client/NewRequest'
+import BulkUpload from './pages/client/BulkUpload'
+import EvalueeForm from './pages/evaluee/EvalueeForm'
+
+const ROLES_CLIENTE = ['ADMIN_CLIENTE', 'ANALISTA_CLIENTE']
 
 function App() {
   return (
@@ -12,7 +20,11 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/registro" element={<Register />} />
 
-        {/* Ruta de activación */}
+        {/* Formulario del evaluado (público, sin auth) */}
+        <Route path="/evaluado/link/:token" element={<EvalueeForm />} />
+        <Route path="/evaluado/completar/:token" element={<EvalueeForm />} />
+
+        {/* Activación de cuenta */}
         <Route path="/activate" element={
           <div className="min-h-screen flex items-center justify-center bg-slate-50">
             <div className="text-center">
@@ -22,7 +34,7 @@ function App() {
           </div>
         } />
 
-        {/* Ruta de no autorizado */}
+        {/* No autorizado */}
         <Route path="/no-autorizado" element={
           <div className="min-h-screen flex items-center justify-center bg-slate-50">
             <div className="text-center">
@@ -33,19 +45,29 @@ function App() {
           </div>
         } />
 
-        {/* Rutas protegidas */}
+        {/* Portal cliente */}
+        <Route
+          path="/cliente"
+          element={
+            <ProtectedRoute roles={ROLES_CLIENTE}>
+              <ClientLayout />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard" element={<Dashboard />} />
+          <Route path="catalogo" element={<ServiceCatalog />} />
+          <Route path="nueva-solicitud" element={<NewRequest />} />
+          <Route path="carga-masiva" element={<BulkUpload />} />
+        </Route>
+
+        {/* Raíz */}
         <Route path="/" element={
           <ProtectedRoute>
-            <div className="min-h-screen flex items-center justify-center bg-slate-50">
-              <div className="text-center">
-                <h2 className="text-2xl font-bold text-gray-900 mb-2">Dashboard</h2>
-                <p className="text-gray-500 text-sm">En construcción — módulos en desarrollo.</p>
-              </div>
-            </div>
+            <Navigate to="/cliente/dashboard" replace />
           </ProtectedRoute>
         } />
 
-        {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AuthProvider>

@@ -42,7 +42,6 @@ public class AuthService {
     @Value("${app.jwt.refresh-expiration-ms}")
     private long refreshExpiracionMs;
 
-    @Transactional(readOnly = true)
     public LoginResponse login(LoginRequest request) {
         authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(request.email(), request.password())
