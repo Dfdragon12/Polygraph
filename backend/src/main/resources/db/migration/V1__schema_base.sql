@@ -11,7 +11,7 @@ CREATE TABLE "clientes" (
   "tipo_cliente" varchar(10) NOT NULL,
   "tipo_persona" varchar(10) NOT NULL,
   "nit" varchar(20) UNIQUE,
-  "dv" char(1),
+  "dv" VARCHAR(1),
   "razon_social" varchar(200),
   "nombre_comercial" varchar(200),
   "representante_legal" varchar(150),
@@ -68,7 +68,7 @@ CREATE TABLE "candidatos" (
   "celular" varchar(20),
   "email_principal" varchar(150),
   "sector" varchar(50),
-  "estrato" char(1),
+  "estrato" varchar(1),
   "libreta_militar" varchar(20),
   "rut" varchar(20)
 );
@@ -311,7 +311,7 @@ CREATE TABLE "visitas_domiciliarias" (
   "concepto_final_visita" varchar(30),
   "recomendacion" varchar(20),
   "tipo_vivienda" varchar(50),
-  "estrato" char(1),
+  "estrato" varchar(1),
   "ubicacion_barrio" varchar(150),
   "estado_calles" text,
   "zonas_verdes" varchar(100),
