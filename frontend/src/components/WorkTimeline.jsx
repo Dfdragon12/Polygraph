@@ -1,42 +1,52 @@
-import { differenceInDays, parseISO, format } from 'date-fns'
+import { differenceInDays, parseISO, format, isValid } from 'date-fns'
 import { es } from 'date-fns/locale'
 
 function WorkTimeline({ experiencias = [], inactividades = [] }) {
-  if (experiencias.length === 0) {
+  const validas = experiencias.filter(e => e.fechaInicio && isValid(parseISO(e.fechaInicio)))
+
+  if (validas.length === 0) {
     return (
       <div className="text-center py-6 text-gray-400 text-sm">
-        Agrega experiencias laborales para ver la línea de tiempo
+        Aún no hay experiencias laborales registradas
       </div>
     )
   }
 
-  // Ordenar por fecha de inicio
-  const sorted = [...experiencias].sort(
-    (a, b) => new Date(a.fechaInicio) - new Date(b.fechaInicio)
+  const fmt = (fecha) => {
+    if (!fecha) return 'Actual'
+    const parsed = parseISO(fecha)
+    if (!isValid(parsed)) return 'Fecha inválida'
+    return format(parsed, 'MMM yyyy', { locale: es })
+  }
+
+  const sorted = [...validas].sort(
+    (a, b) => parseISO(a.fechaInicio) - parseISO(b.fechaInicio)
   )
 
-  const fechaMin = new Date(sorted[0].fechaInicio)
+  const fechaMin = parseISO(sorted[0].fechaInicio)
   const fechaMax = new Date()
   const totalDias = differenceInDays(fechaMax, fechaMin) || 1
 
   const toPercent = (fecha) => {
-    const dias = differenceInDays(new Date(fecha), fechaMin)
+    if (!fecha) return 0
+    const d = parseISO(fecha)
+    if (!isValid(d)) return 0
+    const dias = differenceInDays(d, fechaMin)
     return Math.min(100, Math.max(0, (dias / totalDias) * 100))
   }
 
   const widthPercent = (inicio, fin) => {
-    const finDate = fin ? new Date(fin) : new Date()
-    const dias = differenceInDays(finDate, new Date(inicio))
+    const inicioDate = parseISO(inicio)
+    if (!isValid(inicioDate)) return 1
+    const finDate = fin && isValid(parseISO(fin)) ? parseISO(fin) : new Date()
+    const dias = differenceInDays(finDate, inicioDate)
     return Math.max(1, (dias / totalDias) * 100)
   }
-
-  const fmt = (d) => format(new Date(d), 'MMM yyyy', { locale: es })
 
   return (
     <div className="mt-4">
       <h4 className="text-sm font-semibold text-gray-700 mb-3">Línea de tiempo laboral</h4>
 
-      {/* Barra de tiempo */}
       <div className="relative h-8 bg-gray-100 rounded-lg overflow-hidden">
         {sorted.map((exp, i) => (
           <div
@@ -65,7 +75,6 @@ function WorkTimeline({ experiencias = [], inactividades = [] }) {
         ))}
       </div>
 
-      {/* Leyenda */}
       <div className="flex gap-4 mt-2 text-xs text-gray-500">
         <span className="flex items-center gap-1">
           <span className="w-3 h-3 bg-green-400 rounded inline-block" /> Empleado
@@ -78,7 +87,6 @@ function WorkTimeline({ experiencias = [], inactividades = [] }) {
         </span>
       </div>
 
-      {/* Alertas de inactividades */}
       {inactividades.filter((g) => g.diasInactivo > 30).map((gap, i) => (
         <div
           key={`alert-${i}`}
