@@ -2,8 +2,68 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Variables para safe-area (notch/Dynamic Island en iPhone) ── */
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+}
+
+/* ── Animación de entrada para modales / banners ── */
+@keyframes slideUp {
+  from { transform: translateY(8px); opacity: 0; }
+  to   { transform: translateY(0);   opacity: 1; }
+}
+
 @layer base {
+  html {
+    /* Evita ajuste de fuente automático al rotar en iOS */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
   body {
     @apply bg-gray-50 text-gray-900 antialiased;
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Previene zoom al enfocar inputs en iOS (font-size < 16px dispara zoom) */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  select {
+    font-size: max(16px, 1em);
+  }
+}
+
+@layer utilities {
+  /* Scrollbar delgada (WebKit + Firefox) */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #e5e7eb transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: #e5e7eb;
+    border-radius: 2px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: #d1d5db;
+  }
+
+  /* Área segura inferior para dispositivos con notch */
+  .pb-safe { padding-bottom: var(--sab); }
+  .pt-safe { padding-top: var(--sat); }
+
+  /* Entrada suave para modales / banners PWA */
+  .slide-up {
+    animation: slideUp 0.2s ease-out;
   }
 }

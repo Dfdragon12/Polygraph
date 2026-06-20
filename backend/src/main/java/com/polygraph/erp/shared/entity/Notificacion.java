@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@ToString(exclude = "usuario")
+@ToString(exclude = {"usuario", "realizadoPor"})
 public class Notificacion {
 
     @Id
@@ -23,6 +23,10 @@ public class Notificacion {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "id_usuario", nullable = false)
     private Usuario usuario;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "realizado_por_id")
+    private Usuario realizadoPor;
 
     @Column(name = "tipo", nullable = false, length = 50)
     private String tipo;

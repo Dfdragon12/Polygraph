@@ -1,4 +1,4 @@
-package com.polygraph.erp.modules.empleados.entity;
+package com.polygraph.erp.modules.usuarios.entity;  
 
 import jakarta.persistence.*;
 import lombok.*;
@@ -11,15 +11,15 @@ import com.fasterxml.jackson.annotation.JsonFormat;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class Empleados {
+public class UsuariosInternos {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY) 
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id_empleado")
     private Integer idEmpleado;
 
     @Column(name = "tipo_empleado", nullable = false, length = 20)
-    private String tipoEmpleado;      
+    private String tipoEmpleado;
 
     @Column(name = "nombre", nullable = false, length = 100)
     private String nombre;
@@ -36,8 +36,20 @@ public class Empleados {
     @Column(name = "sala_encargada", length = 100)
     private String salaEncargada;
 
+    @Column(name = "novedades_sala", columnDefinition = "TEXT")
+    private String novedadesSala;
+
     @Column(name = "zonas_visita", length = 200)
     private String zonasVisita;
+
+    @Column(name = "tipo_documento", length = 20)
+    private String tipoDocumento;
+
+    @Column(name = "documento", length = 20)
+    private String documento;
+
+    @Column(name = "ciudad_residencia", length = 100)
+    private String ciudadResidencia;
 
     @Column(name = "activo", nullable = false)
     private Boolean activo = true;

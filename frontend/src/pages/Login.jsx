@@ -28,8 +28,12 @@ export default function Login() {
     setError(null)
     setCargando(true)
     try {
-      await login(datos.email, datos.password)
-      navigate(destino, { replace: true })
+      const resp = await login(datos.email, datos.password)
+      if (resp?.usuario?.requiereCambioPassword) {
+        navigate('/cambiar-password', { replace: true })
+      } else {
+        navigate(destino, { replace: true })
+      }
     } catch (err) {
       setError(err.response?.data?.mensaje || 'Credenciales incorrectas')
     } finally {

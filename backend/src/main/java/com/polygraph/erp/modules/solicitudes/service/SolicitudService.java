@@ -283,7 +283,8 @@ public class SolicitudService {
         boolean permitido = switch (rol) {
             case ADMIN_POLYGRAPH -> true;
             case GESTOR -> nuevo == EstadoServicio.PROGRAMANDO ||
-                           nuevo == EstadoServicio.CANCELADO ||
+                           nuevo == EstadoServicio.PUBLICADO   ||
+                           nuevo == EstadoServicio.CANCELADO   ||
                            nuevo == EstadoServicio.REPROGRAMADO;
             case ADMIN_CLIENTE, ANALISTA_CLIENTE -> nuevo == EstadoServicio.CANCELADO;
             case ANALISTA_INTERNO -> nuevo == EstadoServicio.EN_EJECUCION ||

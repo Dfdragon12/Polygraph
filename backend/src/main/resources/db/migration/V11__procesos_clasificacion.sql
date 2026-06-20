@@ -1,0 +1,2 @@
+ALTER TABLE procesos
+    ADD COLUMN IF NOT EXISTS clasificacion VARCHAR(1) DEFAULT 'D' NOT NULL;

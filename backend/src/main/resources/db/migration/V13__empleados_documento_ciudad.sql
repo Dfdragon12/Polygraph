@@ -1,0 +1,3 @@
+ALTER TABLE empleados ADD COLUMN IF NOT EXISTS tipo_documento VARCHAR(20);
+ALTER TABLE empleados ADD COLUMN IF NOT EXISTS documento    VARCHAR(20);
+ALTER TABLE empleados ADD COLUMN IF NOT EXISTS ciudad_residencia VARCHAR(100);
