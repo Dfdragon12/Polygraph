@@ -2,17 +2,19 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 
 const MENU_ADMIN = [
-  { ruta: '/cliente/dashboard',       etiqueta: 'Dashboard',            icono: '📊' },
-  { ruta: '/cliente/catalogo',        etiqueta: 'Catálogo de Servicios', icono: '📋' },
-  { ruta: '/cliente/nueva-solicitud', etiqueta: 'Nueva Solicitud',       icono: '➕' },
-  { ruta: '/cliente/carga-masiva',    etiqueta: 'Carga Masiva',          icono: '📤' },
-  { ruta: '/cliente/solicitudes',     etiqueta: 'Mis Solicitudes',       icono: '📁' },
+  { ruta: '/cliente/dashboard',         etiqueta: 'Dashboard',               icono: '📊' },
+  { ruta: '/cliente/solicitudes',       etiqueta: 'Mis Solicitudes',         icono: '📁' },
+  { ruta: '/cliente/nueva-solicitud',   etiqueta: 'Nueva Solicitud',         icono: '➕' },
+  { ruta: '/cliente/carga-masiva',      etiqueta: 'Carga Masiva',            icono: '📤' },
+  { ruta: '/cliente/comprar-servicios', etiqueta: 'Comprar Servicios',       icono: '🛒' },
+  { ruta: '/cliente/documentos',        etiqueta: 'Documentos empresa',      icono: '🗂️' },
+  { ruta: '/cliente/estadisticas',      etiqueta: 'Estadísticas',            icono: '📈' },
 ]
 
 const MENU_ANALISTA = [
   { ruta: '/cliente/dashboard',       etiqueta: 'Dashboard',       icono: '📊' },
-  { ruta: '/cliente/nueva-solicitud', etiqueta: 'Nueva Solicitud', icono: '➕' },
   { ruta: '/cliente/solicitudes',     etiqueta: 'Mis Solicitudes', icono: '📁' },
+  { ruta: '/cliente/nueva-solicitud', etiqueta: 'Nueva Solicitud', icono: '➕' },
 ]
 
 export default function ClientLayout() {

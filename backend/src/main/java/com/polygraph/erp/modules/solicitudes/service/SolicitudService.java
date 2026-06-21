@@ -297,14 +297,14 @@ public class SolicitudService {
     }
 
     private SolicitudResponse construirResumen(Solicitud s) {
-        List<String> nombres = s.getServicios().stream()
+        List<String> servicios = s.getServicios().stream()
                 .map(ss -> ss.getCatalogoServicio().getNombre())
                 .toList();
         return new SolicitudResponse(
                 s.getIdSolicitud(), s.getCedulaEvaluado(), s.getNombresEvaluado(),
-                s.getApellidosEvaluado(), s.getCargo(),
+                s.getApellidosEvaluado(), s.getCargo(), s.getCiudadEvaluado(),
                 s.getEstado() != null ? s.getEstado().name() : null,
-                s.getFechaSolicitud(), s.getFechaEntregaEstimada(), nombres);
+                s.getFechaSolicitud(), s.getFechaEntregaEstimada(), servicios);
     }
 
     private SolicitudDetalleResponse construirDetalle(Solicitud s, String tokenLink) {

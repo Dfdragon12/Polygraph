@@ -1,7 +1,11 @@
 package com.polygraph.erp.modules.solicitudes.controller;
 
+import com.polygraph.erp.modules.auth.entity.Usuario;
+import com.polygraph.erp.modules.auth.repository.UsuarioRepository;
 import com.polygraph.erp.modules.solicitudes.dto.*;
 import com.polygraph.erp.modules.solicitudes.service.SolicitudService;
+import com.polygraph.erp.shared.enums.Rol;
+import com.polygraph.erp.shared.exceptions.ApiException;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -25,6 +29,7 @@ import java.io.IOException;
 public class SolicitudController {
 
     private final SolicitudService solicitudService;
+    private final UsuarioRepository usuarioRepository;
 
     @PostMapping
     @PreAuthorize("hasAnyRole('ADMIN_CLIENTE', 'ANALISTA_CLIENTE', 'GESTOR', 'ADMIN_POLYGRAPH')")
@@ -83,8 +88,11 @@ public class SolicitudController {
     }
 
     private Integer resolverIdCliente(Integer idClienteParam, UserDetails userDetails) {
-        // Si el usuario es cliente, el idCliente viene del JWT (pendiente mejora)
-        // Por ahora se acepta el parámetro de query
+        Usuario usuario = usuarioRepository.findByEmail(userDetails.getUsername())
+                .orElseThrow(() -> new ApiException("Usuario no encontrado", HttpStatus.NOT_FOUND));
+        if (usuario.getRol() == Rol.ADMIN_CLIENTE || usuario.getRol() == Rol.ANALISTA_CLIENTE) {
+            return usuario.getIdCliente();
+        }
         return idClienteParam;
     }
 

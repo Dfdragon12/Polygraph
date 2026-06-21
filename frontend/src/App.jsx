@@ -8,9 +8,21 @@ import Dashboard from './pages/client/Dashboard'
 import ServiceCatalog from './pages/client/ServiceCatalog'
 import NewRequest from './pages/client/NewRequest'
 import BulkUpload from './pages/client/BulkUpload'
+import Solicitudes from './pages/client/Solicitudes'
+import SolicitudDetalle from './pages/client/SolicitudDetalle'
 import EvalueeForm from './pages/evaluee/EvalueeForm'
 
 const ROLES_CLIENTE = ['ADMIN_CLIENTE', 'ANALISTA_CLIENTE']
+
+function Proximamente({ titulo }) {
+  return (
+    <div className="flex flex-col items-center justify-center h-64 gap-3">
+      <span className="text-4xl">🚧</span>
+      <h2 className="text-lg font-semibold text-gray-700">{titulo}</h2>
+      <p className="text-gray-400 text-sm">Esta sección estará disponible próximamente.</p>
+    </div>
+  )
+}
 
 function App() {
   return (
@@ -59,6 +71,11 @@ function App() {
           <Route path="catalogo" element={<ServiceCatalog />} />
           <Route path="nueva-solicitud" element={<NewRequest />} />
           <Route path="carga-masiva" element={<BulkUpload />} />
+          <Route path="solicitudes" element={<Solicitudes />} />
+          <Route path="solicitudes/:id" element={<SolicitudDetalle />} />
+          <Route path="comprar-servicios" element={<Proximamente titulo="Comprar Servicios" />} />
+          <Route path="documentos" element={<Proximamente titulo="Documentos de la empresa" />} />
+          <Route path="estadisticas" element={<Proximamente titulo="Estadísticas" />} />
         </Route>
 
         {/* Raíz */}

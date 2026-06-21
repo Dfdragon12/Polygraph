@@ -10,6 +10,7 @@ public record SolicitudResponse(
         String nombresEvaluado,
         String apellidosEvaluado,
         String cargo,
+        String ciudadEvaluado,
         String estado,
         LocalDateTime fechaSolicitud,
         LocalDate fechaEntregaEstimada,

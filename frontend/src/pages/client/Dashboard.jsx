@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import dashboardService from '../../services/dashboardService'
 import ServiceStatusBadge from '../../components/ServiceStatusBadge'
 
@@ -18,12 +19,19 @@ function KpiCard({ titulo, valor, color, icono }) {
 
 export default function Dashboard() {
   const [datos, setDatos] = useState(null)
+  const [bolsa, setBolsa] = useState(null)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
 
   useEffect(() => {
-    dashboardService.obtenerDashboard()
-      .then(setDatos)
+    Promise.all([
+      dashboardService.obtenerDashboard(),
+      dashboardService.obtenerBolsaServicios().catch(() => []),
+    ])
+      .then(([dashData, bolsaData]) => {
+        setDatos(dashData)
+        setBolsa(Array.isArray(bolsaData) ? bolsaData : [])
+      })
       .catch(() => setError('No se pudo cargar el dashboard. Intenta nuevamente.'))
       .finally(() => setCargando(false))
   }, [])
@@ -44,9 +52,18 @@ export default function Dashboard() {
     )
   }
 
+  const totalBolsa = bolsa?.reduce((acc, b) => acc + (b.cantidad || 0), 0) ?? 0
+  const disponiblesBolsa = datos?.serviciosDisponibles ?? 0
+
   return (
     <div className="space-y-6">
-      <h2 className="text-xl font-bold text-gray-800">Dashboard</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-bold text-gray-800">Dashboard</h2>
+        <Link to="/cliente/nueva-solicitud"
+          className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700">
+          + Nueva Solicitud
+        </Link>
+      </div>
 
       {/* KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -70,16 +87,32 @@ export default function Dashboard() {
         />
         <KpiCard
           titulo="Disponibles en bolsa"
-          valor={datos?.serviciosDisponibles ?? 0}
+          valor={disponiblesBolsa}
           color="bg-purple-50"
           icono="📦"
         />
       </div>
 
-      {/* Tabla de últimas solicitudes */}
+      {/* Indicador bolsa */}
+      <div className="bg-indigo-50 border border-indigo-100 rounded-xl px-5 py-3 flex items-center gap-3">
+        <span className="text-xl">🛒</span>
+        <p className="text-sm text-indigo-800">
+          Tienes <strong>{disponiblesBolsa}</strong> servicios disponibles
+          {totalBolsa > 0 ? ` de ${totalBolsa} comprados` : ' en tu bolsa prepago'}
+        </p>
+        <Link to="/cliente/comprar-servicios"
+          className="ml-auto text-xs text-indigo-600 hover:underline font-medium">
+          Comprar más →
+        </Link>
+      </div>
+
+      {/* Últimas 5 solicitudes */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-100">
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
           <h3 className="text-base font-semibold text-gray-800">Últimas solicitudes</h3>
+          <Link to="/cliente/solicitudes" className="text-xs text-indigo-600 hover:underline">
+            Ver todas →
+          </Link>
         </div>
 
         {!datos?.ultimasSolicitudes?.length ? (
@@ -89,24 +122,33 @@ export default function Dashboard() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
                 <tr>
-                  <th className="px-6 py-3 text-left">#</th>
-                  <th className="px-6 py-3 text-left">Servicio</th>
-                  <th className="px-6 py-3 text-left">Candidato</th>
-                  <th className="px-6 py-3 text-left">Fecha solicitud</th>
-                  <th className="px-6 py-3 text-left">Entrega estimada</th>
-                  <th className="px-6 py-3 text-left">Estado</th>
+                  <th className="px-5 py-3 text-left">Candidato</th>
+                  <th className="px-5 py-3 text-left">Servicios</th>
+                  <th className="px-5 py-3 text-left">Fecha solicitud</th>
+                  <th className="px-5 py-3 text-left">Entrega estimada</th>
+                  <th className="px-5 py-3 text-left">Estado</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {datos.ultimasSolicitudes.map((s) => (
-                  <tr key={s.idServicio} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 text-gray-400 font-mono text-xs">{s.idServicio}</td>
-                    <td className="px-6 py-4 font-medium text-gray-800">{s.tipoProceso}</td>
-                    <td className="px-6 py-4 text-gray-600">{s.nombreCandidato ?? '—'}</td>
-                    <td className="px-6 py-4 text-gray-500">{s.fechaSolicitud ?? '—'}</td>
-                    <td className="px-6 py-4 text-gray-500">{s.fechaEntregaEstudio ?? '—'}</td>
-                    <td className="px-6 py-4">
-                      <ServiceStatusBadge estado={s.estado} />
+                  <tr key={s.idSolicitud} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-5 py-3 font-medium text-gray-800">
+                      {s.nombresEvaluado} {s.apellidosEvaluado}
+                      {s.cedulaEvaluado && (
+                        <span className="ml-1 text-xs text-gray-400 font-normal">{s.cedulaEvaluado}</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3 text-gray-600 max-w-[180px] truncate">
+                      {s.servicios?.join(', ') || '—'}
+                    </td>
+                    <td className="px-5 py-3 text-gray-500">
+                      {s.fechaSolicitud
+                        ? new Date(s.fechaSolicitud).toLocaleDateString('es-CO')
+                        : '—'}
+                    </td>
+                    <td className="px-5 py-3 text-gray-500">{s.fechaEntregaEstimada ?? '—'}</td>
+                    <td className="px-5 py-3">
+                      <ServiceStatusBadge status={s.estado} />
                     </td>
                   </tr>
                 ))}
