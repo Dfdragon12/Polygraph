@@ -78,6 +78,12 @@ public class Usuario implements UserDetails {
     @Column(name = "token_reset_expira")
     private LocalDateTime tokenResetExpira;
 
+    @Column(name = "requiere_cambio_password")
+    private Boolean requiereCambioPassword;
+
+    @Column(name = "fecha_ultimo_cambio_password")
+    private LocalDateTime fechaUltimoCambioPassword;
+
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         return List.of(new SimpleGrantedAuthority("ROLE_" + rol.name()));

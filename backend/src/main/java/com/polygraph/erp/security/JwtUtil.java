@@ -44,10 +44,11 @@ public class JwtUtil {
     }
 
     public boolean validarToken(String token, UserDetails userDetails) {
+        if (token == null || token.isBlank()) return false;
         try {
             String email = extraerEmail(token);
             return email.equals(userDetails.getUsername()) && !estaExpirado(token);
-        } catch (JwtException e) {
+        } catch (JwtException | IllegalArgumentException e) {
             log.warn("Token JWT inválido: {}", e.getMessage());
             return false;
         }

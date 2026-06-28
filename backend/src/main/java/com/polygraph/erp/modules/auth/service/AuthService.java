@@ -7,6 +7,7 @@ import com.polygraph.erp.modules.auth.repository.TokenRefreshRepository;
 import com.polygraph.erp.modules.auth.repository.UsuarioRepository;
 import com.polygraph.erp.modules.clientes.entity.Cliente;
 import com.polygraph.erp.modules.clientes.repository.ClienteRepository;
+import com.polygraph.erp.modules.notificaciones.service.NotificacionService;
 import com.polygraph.erp.security.JwtUtil;
 import com.polygraph.erp.shared.enums.Rol;
 import com.polygraph.erp.shared.enums.TipoCliente;
@@ -38,6 +39,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final EmailService emailService;
+    private final NotificacionService notificacionService;
 
     @Value("${app.jwt.refresh-expiration-ms}")
     private long refreshExpiracionMs;
@@ -50,16 +52,33 @@ public class AuthService {
         Usuario usuario = usuarioRepository.findByEmail(request.email())
                 .orElseThrow(() -> new ApiException("Usuario no encontrado", HttpStatus.NOT_FOUND));
 
+        // Requiere cambio si el admin lo marcó, o si ya pasaron 30 días desde el último cambio
+        boolean cambioRequerido = Boolean.TRUE.equals(usuario.getRequiereCambioPassword());
+        if (!cambioRequerido && usuario.getFechaUltimoCambioPassword() != null) {
+            cambioRequerido = usuario.getFechaUltimoCambioPassword()
+                    .isBefore(LocalDateTime.now().minusDays(30));
+        }
+
         String token = jwtUtil.generarToken(usuario);
         String refreshToken = crearRefreshToken(usuario);
 
         usuario.setUltimoAcceso(LocalDateTime.now());
-        log.info("Login exitoso: {}", usuario.getEmail());
+        log.info("Login exitoso: {} — cambio de contraseña requerido: {}", usuario.getEmail(), cambioRequerido);
 
         return new LoginResponse(token, refreshToken,
                 new LoginResponse.UsuarioInfo(
                         usuario.getIdUsuario(), usuario.getEmail(),
-                        usuario.getRol().name(), usuario.getNombre()));
+                        usuario.getRol().name(), usuario.getNombre(), cambioRequerido));
+    }
+
+    public void cambiarPassword(String email, CambiarPasswordRequest request) {
+        Usuario usuario = usuarioRepository.findByEmail(email)
+                .orElseThrow(() -> new ApiException("Usuario no encontrado", HttpStatus.NOT_FOUND));
+        usuario.setPassword(passwordEncoder.encode(request.nuevaPassword()));
+        usuario.setRequiereCambioPassword(false);
+        usuario.setFechaUltimoCambioPassword(LocalDateTime.now());
+        tokenRefreshRepository.revocarTodosDeUsuario(usuario);
+        log.info("Contraseña actualizada para: {}", email);
     }
 
     public void registrarNatural(RegistroNaturalRequest request) {
@@ -95,6 +114,9 @@ public class AuthService {
         usuarioRepository.save(usuario);
 
         emailService.enviarActivacion(request.email(), request.nombre(), tokenActivacion);
+        notificacionService.crearParaAdmins("CLIENTE", "Nuevo cliente registrado",
+                "El cliente " + request.nombre() + " " + (request.apellido() != null ? request.apellido() : "")
+                + " se registró como persona natural (PREPAGO)", usuario.getIdUsuario());
         log.info("Registro natural completado: {}", request.email());
     }
 
@@ -140,6 +162,9 @@ public class AuthService {
         usuarioRepository.save(usuario);
 
         emailService.enviarActivacion(request.email(), request.razonSocial(), tokenActivacion);
+        notificacionService.crearParaAdmins("CLIENTE", "Nuevo cliente registrado",
+                "La empresa " + request.razonSocial() + " (NIT: " + request.nit() + ") se registró como cliente "
+                + tipoCliente.name().toLowerCase(), usuario.getIdUsuario());
         log.info("Registro jurídico completado: {}", request.email());
     }
 
@@ -175,7 +200,7 @@ public class AuthService {
         return new LoginResponse(nuevoToken, nuevoRefresh,
                 new LoginResponse.UsuarioInfo(
                         usuario.getIdUsuario(), usuario.getEmail(),
-                        usuario.getRol().name(), usuario.getNombre()));
+                        usuario.getRol().name(), usuario.getNombre(), false));
     }
 
     public void forgotPassword(ForgotPasswordRequest request) {

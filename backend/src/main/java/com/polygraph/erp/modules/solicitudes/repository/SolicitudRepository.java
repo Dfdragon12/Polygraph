@@ -23,4 +23,13 @@ public interface SolicitudRepository extends JpaRepository<Solicitud, Long> {
     long countByCliente_IdClienteAndEstadoInAndFechaSolicitudBetween(
             Integer idCliente, List<EstadoServicio> estados,
             LocalDateTime inicio, LocalDateTime fin);
+
+    // Para el módulo Gestor: visibilidad global
+    Page<Solicitud> findAllByOrderByFechaSolicitudDesc(Pageable pageable);
+
+    Page<Solicitud> findByEstadoOrderByFechaSolicitudDesc(EstadoServicio estado, Pageable pageable);
+
+    long countByEstado(EstadoServicio estado);
+
+    List<Solicitud> findTop8ByOrderByFechaSolicitudDesc();
 }

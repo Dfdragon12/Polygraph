@@ -75,15 +75,15 @@ export default function ClientLayout() {
       </aside>
 
       {/* Área principal */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Header */}
         <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between flex-shrink-0">
           <h1 className="text-base font-semibold text-gray-800">Portal Cliente</h1>
-          <span className="text-sm text-gray-500">{usuario?.email}</span>
+          <span className="text-sm text-gray-500 truncate max-w-[200px]">{usuario?.email}</span>
         </header>
 
         {/* Contenido */}
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 scrollbar-thin">
           <Outlet />
         </main>
       </div>

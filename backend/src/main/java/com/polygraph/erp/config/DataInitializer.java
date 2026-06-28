@@ -1,13 +1,20 @@
 package com.polygraph.erp.config;
 
+import com.polygraph.erp.modules.auth.entity.Usuario;
+import com.polygraph.erp.modules.auth.repository.UsuarioRepository;
+import com.polygraph.erp.modules.clientes.repository.ClienteRepository;
 import com.polygraph.erp.modules.servicios.entity.CatalogoServicio;
 import com.polygraph.erp.modules.servicios.repository.CatalogoServicioRepository;
 import com.polygraph.erp.shared.enums.CategoriaServicio;
+import com.polygraph.erp.shared.enums.Rol;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Component
@@ -16,9 +23,23 @@ import java.util.List;
 public class DataInitializer {
 
     private final CatalogoServicioRepository catalogoRepository;
+    private final UsuarioRepository usuarioRepository;
+    private final ClienteRepository clienteRepository;
+    private final PasswordEncoder passwordEncoder;
+
+    @Value("${app.admin.email:admin@polygraph.com}")
+    private String adminEmail;
+
+    @Value("${app.admin.password:Admin1234!}")
+    private String adminPassword;
+
+    @Value("${app.admin.nombre:Administrador}")
+    private String adminNombre;
 
     @PostConstruct
     public void inicializar() {
+        crearAdminSiNoExiste();
+        crearUsuariosDePruebaSiNoExisten();
         if (catalogoRepository.count() > 0) {
             return;
         }
@@ -92,6 +113,70 @@ public class DataInitializer {
 
     private CatalogoServicio item(String nombre, String descripcion, CategoriaServicio categoria, int orden) {
         return item(nombre, descripcion, categoria, orden, 5);
+    }
+
+    private void crearAdminSiNoExiste() {
+        if (usuarioRepository.existsByEmail(adminEmail)) {
+            log.info("Admin ya existe en BD: {}", adminEmail);
+            return;
+        }
+        Usuario admin = Usuario.builder()
+                .nombre(adminNombre)
+                .apellido("Polygraph")
+                .email(adminEmail)
+                .password(passwordEncoder.encode(adminPassword))
+                .rol(Rol.ADMIN_POLYGRAPH)
+                .activo(true)
+                .requiere2fa(false)
+                .emailVerificado(true)
+                .fechaCreacion(LocalDateTime.now())
+                .build();
+        usuarioRepository.save(admin);
+        log.info(">>> ADMIN creado en BD: {} / pass: {}", adminEmail, adminPassword);
+    }
+
+    private void crearUsuariosDePruebaSiNoExisten() {
+        crearOActualizarUsuario("gestor@polygraph.com", "Gestor1234!", "Gestor", "Prueba",
+                Rol.GESTOR, null);
+
+        Integer idClienteAbc = clienteRepository.findByEmailPrincipal("contacto@empresa-abc.com")
+                .map(c -> c.getIdCliente())
+                .orElse(null);
+
+        crearOActualizarUsuario("cliente1@empresa-abc.com", "Cliente1234!", "Cliente", "ABC",
+                Rol.ADMIN_CLIENTE, idClienteAbc);
+        crearOActualizarUsuario("analista@empresa-abc.com", "Analista1234!", "Analista", "ABC",
+                Rol.ANALISTA_CLIENTE, idClienteAbc);
+    }
+
+    private void crearOActualizarUsuario(String email, String password, String nombre,
+                                         String apellido, Rol rol, Integer idCliente) {
+        String hashPassword = passwordEncoder.encode(password);
+        usuarioRepository.findByEmail(email).ifPresentOrElse(
+                usuario -> {
+                    usuario.setPassword(hashPassword);
+                    usuario.setActivo(true);
+                    usuario.setEmailVerificado(true);
+                    usuarioRepository.save(usuario);
+                    log.info(">>> Usuario actualizado: {} / rol: {}", email, rol);
+                },
+                () -> {
+                    Usuario nuevo = Usuario.builder()
+                            .nombre(nombre)
+                            .apellido(apellido)
+                            .email(email)
+                            .password(hashPassword)
+                            .rol(rol)
+                            .activo(true)
+                            .requiere2fa(false)
+                            .emailVerificado(true)
+                            .idCliente(idCliente)
+                            .fechaCreacion(LocalDateTime.now())
+                            .build();
+                    usuarioRepository.save(nuevo);
+                    log.info(">>> Usuario creado: {} / rol: {}", email, rol);
+                }
+        );
     }
 
     private CatalogoServicio item(String nombre, String descripcion, CategoriaServicio categoria, int orden, int diasHabiles) {

@@ -1,7 +1,10 @@
 package com.polygraph.erp.modules.servicios.entity;
 
+import com.polygraph.erp.modules.catalogo.entity.ClasificacionProceso;
 import jakarta.persistence.*;
 import lombok.*;
+
+import java.math.BigDecimal;
 
 @Entity
 @Table(name = "procesos")
@@ -24,4 +27,11 @@ public class Proceso {
 
     @Column(name = "activo")
     private Boolean activo;
+
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "id_clasificacion", nullable = false)
+    private ClasificacionProceso clasificacion;
+
+    @Column(name = "valor", precision = 15, scale = 2)
+    private BigDecimal valor;
 }

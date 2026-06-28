@@ -11,6 +11,7 @@ import java.util.List;
 
 public interface ServicioRepository extends JpaRepository<Servicio, Integer> {
 
+    long countByEstado(EstadoServicio estado);
     long countByCliente_IdClienteAndEstado(Integer idCliente, EstadoServicio estado);
 
     long countByCliente_IdClienteAndEstadoIn(Integer idCliente, List<EstadoServicio> estados);
