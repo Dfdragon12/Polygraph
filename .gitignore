@@ -11,6 +11,7 @@ backend/.env
 backend/*.log
 backend/.mvn/wrapper/maven-wrapper.jar
 !backend/.mvn/wrapper/maven-wrapper.properties
+backend/uploads/
 
 # Frontend
 frontend/node_modules/
