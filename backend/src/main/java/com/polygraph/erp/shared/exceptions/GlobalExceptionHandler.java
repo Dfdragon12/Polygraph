@@ -10,6 +10,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -58,6 +59,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> manejarCuentaBloqueada(LockedException ex) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(construirRespuesta("Cuenta bloqueada. Contacta al administrador.", HttpStatus.FORBIDDEN));
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<Map<String, Object>> manejarArchivoDemasiadoGrande(MaxUploadSizeExceededException ex) {
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .body(construirRespuesta("El archivo supera el tamaño máximo permitido (10MB)", HttpStatus.PAYLOAD_TOO_LARGE));
     }
 
     @ExceptionHandler(Exception.class)

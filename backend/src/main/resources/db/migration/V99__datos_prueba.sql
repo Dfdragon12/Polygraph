@@ -91,260 +91,197 @@ VALUES
     ('10000005', 'CC', 'Diego Alejandro', 'Torres Silva',  '3005000005', 'da.torres@email.com')
 ON CONFLICT (cedula) DO NOTHING;
 
--- ── 5. SOLICITUDES con los 7 estados del semáforo ────────────
+-- ── 5. SERVICIOS con varios estados del semáforo ─────────────
+-- (cada fila de "servicios" es un proceso independiente con su propio semáforo;
+--  varios servicios pedidos juntos para el mismo evaluado comparten fecha_solicitud)
 
--- Solicitud 1: PENDIENTE
-INSERT INTO solicitudes (
-    id_cliente, id_candidato, cedula_evaluado, nombres_evaluado, apellidos_evaluado,
-    celular_evaluado, email_evaluado, ciudad_evaluado, cargo, notas,
-    estado, fecha_solicitud, fecha_entrega_estimada, id_usuario_solicita
+-- Candidato 10000001: Estudio Básico + Polígrafo Pre-empleo — PENDIENTE
+INSERT INTO servicios (
+    id_cliente, id_candidato, id_proceso, fecha_solicitud, hora_solicitud,
+    estado, cargo, notas, fecha_entrega_estimada, id_usuario_solicita
 )
-SELECT
-    c.id_cliente,
-    ca.id_candidato,
-    '10000001', 'Juan Carlos', 'Pérez Rodríguez',
-    '3001000001', 'jc.perez@email.com', 'Bogotá', 'Auxiliar de Bodega',
-    'Solicitud de prueba — estado PENDIENTE',
-    'PENDIENTE',
-    NOW() - INTERVAL '1 day',
-    CURRENT_DATE + 4,
-    u.id_usuario
+SELECT c.id_cliente, ca.id_candidato, p.id_proceso, CURRENT_DATE - 1, '09:00:00',
+       'PENDIENTE', 'Auxiliar de Bodega', 'Solicitud de prueba — estado PENDIENTE',
+       CURRENT_DATE + 4, u.id_usuario
 FROM clientes c
 JOIN candidatos ca ON ca.cedula = '10000001'
 JOIN usuarios u ON u.email = 'cliente1@empresa-abc.com'
+JOIN procesos p ON p.nombre_proceso IN ('Estudio Básico', 'Polígrafo Pre-empleo')
 WHERE c.nit = '900100200';
 
--- Solicitud 2: PROGRAMANDO
-INSERT INTO solicitudes (
-    id_cliente, id_candidato, cedula_evaluado, nombres_evaluado, apellidos_evaluado,
-    celular_evaluado, email_evaluado, ciudad_evaluado, cargo, notas,
-    estado, fecha_solicitud, fecha_entrega_estimada, id_usuario_solicita
+-- Candidato 10000002: Visita Domiciliaria — PROGRAMANDO
+INSERT INTO servicios (
+    id_cliente, id_candidato, id_proceso, fecha_solicitud, hora_solicitud,
+    estado, cargo, notas, fecha_entrega_estimada, id_usuario_solicita
 )
-SELECT
-    c.id_cliente,
-    ca.id_candidato,
-    '10000002', 'María Luisa', 'González Vargas',
-    '3002000002', 'ml.gonzalez@email.com', 'Bogotá', 'Contador',
-    'Solicitud de prueba — estado PROGRAMANDO',
-    'PROGRAMANDO',
-    NOW() - INTERVAL '2 days',
-    CURRENT_DATE + 3,
-    u.id_usuario
+SELECT c.id_cliente, ca.id_candidato, p.id_proceso, CURRENT_DATE - 2, '10:30:00',
+       'PROGRAMANDO', 'Contador', 'Solicitud de prueba — estado PROGRAMANDO',
+       CURRENT_DATE + 3, u.id_usuario
 FROM clientes c
 JOIN candidatos ca ON ca.cedula = '10000002'
 JOIN usuarios u ON u.email = 'cliente1@empresa-abc.com'
+JOIN procesos p ON p.nombre_proceso = 'Visita Domiciliaria'
 WHERE c.nit = '900100200';
 
--- Solicitud 3: EN_EJECUCION (cliente XYZ)
-INSERT INTO solicitudes (
-    id_cliente, id_candidato, cedula_evaluado, nombres_evaluado, apellidos_evaluado,
-    celular_evaluado, email_evaluado, ciudad_evaluado, cargo, notas,
-    estado, fecha_solicitud, fecha_entrega_estimada, id_usuario_solicita
+-- Candidato 10000003 (cliente XYZ): Estudio Avanzado — EN_EJECUCION
+INSERT INTO servicios (
+    id_cliente, id_candidato, id_proceso, fecha_solicitud, hora_solicitud,
+    estado, cargo, notas, fecha_entrega_estimada, id_usuario_solicita
 )
-SELECT
-    c.id_cliente,
-    ca.id_candidato,
-    '10000003', 'Andrés Felipe', 'Mora Sánchez',
-    '3003000003', 'af.mora@email.com', 'Medellín', 'Jefe de Logística',
-    'Solicitud de prueba — estado EN_EJECUCION',
-    'EN_EJECUCION',
-    NOW() - INTERVAL '4 days',
-    CURRENT_DATE + 1,
-    u.id_usuario
+SELECT c.id_cliente, ca.id_candidato, p.id_proceso, CURRENT_DATE - 4, '08:15:00',
+       'EN_EJECUCION', 'Jefe de Logística', 'Solicitud de prueba — estado EN_EJECUCION',
+       CURRENT_DATE + 1, u.id_usuario
 FROM clientes c
 JOIN candidatos ca ON ca.cedula = '10000003'
 JOIN usuarios u ON u.email = 'gestor@polygraph.com'
+JOIN procesos p ON p.nombre_proceso = 'Estudio Avanzado'
 WHERE c.nit = '800200300';
 
--- Solicitud 4: FINALIZADO
-INSERT INTO solicitudes (
-    id_cliente, id_candidato, cedula_evaluado, nombres_evaluado, apellidos_evaluado,
-    celular_evaluado, email_evaluado, ciudad_evaluado, cargo, notas,
-    estado, fecha_solicitud, fecha_entrega_estimada, id_usuario_solicita
+-- Candidato 10000004: Estudio Quick — FINALIZADO
+INSERT INTO servicios (
+    id_cliente, id_candidato, id_proceso, fecha_solicitud, hora_solicitud,
+    estado, cargo, notas, fecha_entrega_estimada, id_usuario_solicita
 )
-SELECT
-    c.id_cliente,
-    ca.id_candidato,
-    '10000004', 'Claudia Patricia', 'Ruiz Castro',
-    '3004000004', 'cp.ruiz@email.com', 'Bogotá', 'Gerente Comercial',
-    'Solicitud de prueba — estado FINALIZADO',
-    'FINALIZADO',
-    NOW() - INTERVAL '7 days',
-    CURRENT_DATE - 1,
-    u.id_usuario
+SELECT c.id_cliente, ca.id_candidato, p.id_proceso, CURRENT_DATE - 7, '14:00:00',
+       'FINALIZADO', 'Gerente Comercial', 'Solicitud de prueba — estado FINALIZADO',
+       CURRENT_DATE - 1, u.id_usuario
 FROM clientes c
 JOIN candidatos ca ON ca.cedula = '10000004'
 JOIN usuarios u ON u.email = 'cliente1@empresa-abc.com'
+JOIN procesos p ON p.nombre_proceso = 'Estudio Quick'
 WHERE c.nit = '900100200';
 
--- Solicitud 5: PUBLICADO
-INSERT INTO solicitudes (
-    id_cliente, id_candidato, cedula_evaluado, nombres_evaluado, apellidos_evaluado,
-    celular_evaluado, email_evaluado, ciudad_evaluado, cargo, notas,
-    estado, fecha_solicitud, fecha_entrega_estimada, id_usuario_solicita
+-- Candidato 10000005: Validación Laboral + Validación Académica — PUBLICADO
+INSERT INTO servicios (
+    id_cliente, id_candidato, id_proceso, fecha_solicitud, hora_solicitud,
+    estado, cargo, notas, fecha_entrega_estimada, id_usuario_solicita
 )
-SELECT
-    c.id_cliente,
-    ca.id_candidato,
-    '10000005', 'Diego Alejandro', 'Torres Silva',
-    '3005000005', 'da.torres@email.com', 'Cali', 'Analista de Seguridad',
-    'Solicitud de prueba — estado PUBLICADO',
-    'PUBLICADO',
-    NOW() - INTERVAL '10 days',
-    CURRENT_DATE - 3,
-    u.id_usuario
+SELECT c.id_cliente, ca.id_candidato, p.id_proceso, CURRENT_DATE - 10, '16:45:00',
+       'PUBLICADO', 'Analista de Seguridad', 'Solicitud de prueba — estado PUBLICADO',
+       CURRENT_DATE - 3, u.id_usuario
 FROM clientes c
 JOIN candidatos ca ON ca.cedula = '10000005'
 JOIN usuarios u ON u.email = 'cliente1@empresa-abc.com'
+JOIN procesos p ON p.nombre_proceso IN ('Validación Laboral', 'Validación Académica')
 WHERE c.nit = '900100200';
 
--- ── 6. SERVICIOS DEL CATÁLOGO por solicitud ──────────────────
+-- ── 6. HISTORIAL DE ESTADOS DEL SEMÁFORO ──────────────────────
 
--- Solicitud 1 (PENDIENTE): Estudio Básico + Polígrafo Pre-empleo
-INSERT INTO solicitud_servicios (id_solicitud, id_catalogo, estado)
-SELECT s.id_solicitud, cs.id_catalogo, 'PENDIENTE'
-FROM solicitudes s
-JOIN catalogo_servicios cs ON cs.nombre IN ('Estudio Básico', 'Polígrafo Pre-empleo')
-WHERE s.cedula_evaluado = '10000001'
-  AND s.estado = 'PENDIENTE';
-
--- Solicitud 2 (PROGRAMANDO): Visita Domiciliaria
-INSERT INTO solicitud_servicios (id_solicitud, id_catalogo, estado)
-SELECT s.id_solicitud, cs.id_catalogo, 'PENDIENTE'
-FROM solicitudes s
-JOIN catalogo_servicios cs ON cs.nombre = 'Visita Domiciliaria'
-WHERE s.cedula_evaluado = '10000002'
-  AND s.estado = 'PROGRAMANDO';
-
--- Solicitud 3 (EN_EJECUCION): Estudio Avanzado
-INSERT INTO solicitud_servicios (id_solicitud, id_catalogo, estado)
-SELECT s.id_solicitud, cs.id_catalogo, 'EN_EJECUCION'
-FROM solicitudes s
-JOIN catalogo_servicios cs ON cs.nombre = 'Estudio Avanzado'
-WHERE s.cedula_evaluado = '10000003'
-  AND s.estado = 'EN_EJECUCION';
-
--- Solicitud 4 (FINALIZADO): Estudio Quick
-INSERT INTO solicitud_servicios (id_solicitud, id_catalogo, estado)
-SELECT s.id_solicitud, cs.id_catalogo, 'FINALIZADO'
-FROM solicitudes s
-JOIN catalogo_servicios cs ON cs.nombre = 'Estudio Quick'
-WHERE s.cedula_evaluado = '10000004'
-  AND s.estado = 'FINALIZADO';
-
--- Solicitud 5 (PUBLICADO): Validación Laboral + Validación Académica
-INSERT INTO solicitud_servicios (id_solicitud, id_catalogo, estado)
-SELECT s.id_solicitud, cs.id_catalogo, 'PUBLICADO'
-FROM solicitudes s
-JOIN catalogo_servicios cs ON cs.nombre IN ('Validación Laboral', 'Validación Académica')
-WHERE s.cedula_evaluado = '10000005'
-  AND s.estado = 'PUBLICADO';
-
--- ── 7. HISTORIAL DE ESTADOS ───────────────────────────────────
-
--- Historial solicitud 1: creación como PENDIENTE
-INSERT INTO historial_solicitudes (id_solicitud, estado_anterior, estado_nuevo, id_usuario, observacion)
-SELECT s.id_solicitud, NULL, 'PENDIENTE', u.id_usuario, 'Solicitud creada'
-FROM solicitudes s
+-- Servicio(s) de 10000001: creación como PENDIENTE
+INSERT INTO historial_estados_servicio (id_servicio, estado_anterior, estado_nuevo, id_usuario, observacion)
+SELECT s.id_servicio, NULL, 'PENDIENTE', u.id_usuario, 'Servicio creado'
+FROM servicios s
+JOIN candidatos ca ON ca.id_candidato = s.id_candidato
 JOIN usuarios u ON u.email = 'cliente1@empresa-abc.com'
-WHERE s.cedula_evaluado = '10000001' AND s.estado = 'PENDIENTE';
+WHERE ca.cedula = '10000001' AND s.estado = 'PENDIENTE';
 
--- Historial solicitud 2: PENDIENTE → PROGRAMANDO
-INSERT INTO historial_solicitudes (id_solicitud, estado_anterior, estado_nuevo, id_usuario, observacion)
-SELECT s.id_solicitud, 'PENDIENTE', 'PROGRAMANDO', u.id_usuario, 'Asignado a gestor Laura Bermúdez'
-FROM solicitudes s
+-- Servicio de 10000002: PENDIENTE → PROGRAMANDO
+INSERT INTO historial_estados_servicio (id_servicio, estado_anterior, estado_nuevo, id_usuario, observacion)
+SELECT s.id_servicio, 'PENDIENTE', 'PROGRAMANDO', u.id_usuario, 'Asignado a gestor Laura Bermúdez'
+FROM servicios s
+JOIN candidatos ca ON ca.id_candidato = s.id_candidato
 JOIN usuarios u ON u.email = 'gestor@polygraph.com'
-WHERE s.cedula_evaluado = '10000002' AND s.estado = 'PROGRAMANDO';
+WHERE ca.cedula = '10000002' AND s.estado = 'PROGRAMANDO';
 
--- Historial solicitud 3: PENDIENTE → PROGRAMANDO → EN_EJECUCION
-INSERT INTO historial_solicitudes (id_solicitud, estado_anterior, estado_nuevo, id_usuario, observacion)
-SELECT s.id_solicitud, 'PENDIENTE', 'PROGRAMANDO', u.id_usuario, 'Programado'
-FROM solicitudes s
+-- Servicio de 10000003: PENDIENTE → PROGRAMANDO → EN_EJECUCION
+INSERT INTO historial_estados_servicio (id_servicio, estado_anterior, estado_nuevo, id_usuario, observacion)
+SELECT s.id_servicio, 'PENDIENTE', 'PROGRAMANDO', u.id_usuario, 'Programado'
+FROM servicios s
+JOIN candidatos ca ON ca.id_candidato = s.id_candidato
 JOIN usuarios u ON u.email = 'gestor@polygraph.com'
-WHERE s.cedula_evaluado = '10000003' AND s.estado = 'EN_EJECUCION';
+WHERE ca.cedula = '10000003' AND s.estado = 'EN_EJECUCION';
 
-INSERT INTO historial_solicitudes (id_solicitud, estado_anterior, estado_nuevo, id_usuario, observacion)
-SELECT s.id_solicitud, 'PROGRAMANDO', 'EN_EJECUCION', u.id_usuario, 'Visita domiciliaria en progreso'
-FROM solicitudes s
+INSERT INTO historial_estados_servicio (id_servicio, estado_anterior, estado_nuevo, id_usuario, observacion)
+SELECT s.id_servicio, 'PROGRAMANDO', 'EN_EJECUCION', u.id_usuario, 'Visita domiciliaria en progreso'
+FROM servicios s
+JOIN candidatos ca ON ca.id_candidato = s.id_candidato
 JOIN usuarios u ON u.email = 'gestor@polygraph.com'
-WHERE s.cedula_evaluado = '10000003' AND s.estado = 'EN_EJECUCION';
+WHERE ca.cedula = '10000003' AND s.estado = 'EN_EJECUCION';
 
--- Historial solicitud 4: PENDIENTE → PROGRAMANDO → EN_EJECUCION → FINALIZADO
-INSERT INTO historial_solicitudes (id_solicitud, estado_anterior, estado_nuevo, id_usuario, observacion)
-SELECT s.id_solicitud, 'PENDIENTE', 'PROGRAMANDO', u.id_usuario, 'Asignado'
-FROM solicitudes s
+-- Servicio de 10000004: PENDIENTE → PROGRAMANDO → EN_EJECUCION → FINALIZADO
+INSERT INTO historial_estados_servicio (id_servicio, estado_anterior, estado_nuevo, id_usuario, observacion)
+SELECT s.id_servicio, 'PENDIENTE', 'PROGRAMANDO', u.id_usuario, 'Asignado'
+FROM servicios s
+JOIN candidatos ca ON ca.id_candidato = s.id_candidato
 JOIN usuarios u ON u.email = 'gestor@polygraph.com'
-WHERE s.cedula_evaluado = '10000004' AND s.estado = 'FINALIZADO';
+WHERE ca.cedula = '10000004' AND s.estado = 'FINALIZADO';
 
-INSERT INTO historial_solicitudes (id_solicitud, estado_anterior, estado_nuevo, id_usuario, observacion)
-SELECT s.id_solicitud, 'PROGRAMANDO', 'EN_EJECUCION', u.id_usuario, 'En proceso de verificación'
-FROM solicitudes s
+INSERT INTO historial_estados_servicio (id_servicio, estado_anterior, estado_nuevo, id_usuario, observacion)
+SELECT s.id_servicio, 'PROGRAMANDO', 'EN_EJECUCION', u.id_usuario, 'En proceso de verificación'
+FROM servicios s
+JOIN candidatos ca ON ca.id_candidato = s.id_candidato
 JOIN usuarios u ON u.email = 'gestor@polygraph.com'
-WHERE s.cedula_evaluado = '10000004' AND s.estado = 'FINALIZADO';
+WHERE ca.cedula = '10000004' AND s.estado = 'FINALIZADO';
 
-INSERT INTO historial_solicitudes (id_solicitud, estado_anterior, estado_nuevo, id_usuario, observacion)
-SELECT s.id_solicitud, 'EN_EJECUCION', 'FINALIZADO', u.id_usuario, 'Informe generado y revisado'
-FROM solicitudes s
+INSERT INTO historial_estados_servicio (id_servicio, estado_anterior, estado_nuevo, id_usuario, observacion)
+SELECT s.id_servicio, 'EN_EJECUCION', 'FINALIZADO', u.id_usuario, 'Informe generado y revisado'
+FROM servicios s
+JOIN candidatos ca ON ca.id_candidato = s.id_candidato
 JOIN usuarios u ON u.email = 'gestor@polygraph.com'
-WHERE s.cedula_evaluado = '10000004' AND s.estado = 'FINALIZADO';
+WHERE ca.cedula = '10000004' AND s.estado = 'FINALIZADO';
 
--- Historial solicitud 5: ciclo completo hasta PUBLICADO
-INSERT INTO historial_solicitudes (id_solicitud, estado_anterior, estado_nuevo, id_usuario, observacion)
-SELECT s.id_solicitud, 'PENDIENTE', 'PROGRAMANDO', u.id_usuario, 'Programado'
-FROM solicitudes s
+-- Servicio(s) de 10000005: ciclo completo hasta PUBLICADO
+INSERT INTO historial_estados_servicio (id_servicio, estado_anterior, estado_nuevo, id_usuario, observacion)
+SELECT s.id_servicio, 'PENDIENTE', 'PROGRAMANDO', u.id_usuario, 'Programado'
+FROM servicios s
+JOIN candidatos ca ON ca.id_candidato = s.id_candidato
 JOIN usuarios u ON u.email = 'gestor@polygraph.com'
-WHERE s.cedula_evaluado = '10000005' AND s.estado = 'PUBLICADO';
+WHERE ca.cedula = '10000005' AND s.estado = 'PUBLICADO';
 
-INSERT INTO historial_solicitudes (id_solicitud, estado_anterior, estado_nuevo, id_usuario, observacion)
-SELECT s.id_solicitud, 'PROGRAMANDO', 'EN_EJECUCION', u.id_usuario, 'Inicio de verificaciones'
-FROM solicitudes s
+INSERT INTO historial_estados_servicio (id_servicio, estado_anterior, estado_nuevo, id_usuario, observacion)
+SELECT s.id_servicio, 'PROGRAMANDO', 'EN_EJECUCION', u.id_usuario, 'Inicio de verificaciones'
+FROM servicios s
+JOIN candidatos ca ON ca.id_candidato = s.id_candidato
 JOIN usuarios u ON u.email = 'gestor@polygraph.com'
-WHERE s.cedula_evaluado = '10000005' AND s.estado = 'PUBLICADO';
+WHERE ca.cedula = '10000005' AND s.estado = 'PUBLICADO';
 
-INSERT INTO historial_solicitudes (id_solicitud, estado_anterior, estado_nuevo, id_usuario, observacion)
-SELECT s.id_solicitud, 'EN_EJECUCION', 'FINALIZADO', u.id_usuario, 'Verificaciones completadas'
-FROM solicitudes s
+INSERT INTO historial_estados_servicio (id_servicio, estado_anterior, estado_nuevo, id_usuario, observacion)
+SELECT s.id_servicio, 'EN_EJECUCION', 'FINALIZADO', u.id_usuario, 'Verificaciones completadas'
+FROM servicios s
+JOIN candidatos ca ON ca.id_candidato = s.id_candidato
 JOIN usuarios u ON u.email = 'gestor@polygraph.com'
-WHERE s.cedula_evaluado = '10000005' AND s.estado = 'PUBLICADO';
+WHERE ca.cedula = '10000005' AND s.estado = 'PUBLICADO';
 
-INSERT INTO historial_solicitudes (id_solicitud, estado_anterior, estado_nuevo, id_usuario, observacion)
-SELECT s.id_solicitud, 'FINALIZADO', 'PUBLICADO', u.id_usuario, 'Informe enviado al cliente'
-FROM solicitudes s
+INSERT INTO historial_estados_servicio (id_servicio, estado_anterior, estado_nuevo, id_usuario, observacion)
+SELECT s.id_servicio, 'FINALIZADO', 'PUBLICADO', u.id_usuario, 'Informe enviado al cliente'
+FROM servicios s
+JOIN candidatos ca ON ca.id_candidato = s.id_candidato
 JOIN usuarios u ON u.email = 'gestor@polygraph.com'
-WHERE s.cedula_evaluado = '10000005' AND s.estado = 'PUBLICADO';
+WHERE ca.cedula = '10000005' AND s.estado = 'PUBLICADO';
 
--- ── 8. NOTIFICACIÓN DE PRUEBA ─────────────────────────────────
+-- ── 7. NOTIFICACIÓN DE PRUEBA ─────────────────────────────────
 
 INSERT INTO notificaciones (id_usuario, tipo, titulo, mensaje, leida)
 SELECT
     u.id_usuario,
     'NUEVA_SOLICITUD',
     'Nueva solicitud recibida',
-    'El cliente Empresa ABC S.A.S. creó una solicitud para Juan Carlos Pérez Rodríguez.',
+    'El cliente Empresa ABC S.A.S. solicitó un servicio para Juan Carlos Pérez Rodríguez.',
     false
 FROM usuarios u
 WHERE u.email = 'gestor@polygraph.com';
 
--- ── 9. LINK DE EVALUADO para solicitud PENDIENTE ──────────────
+-- ── 8. LINK DE EVALUADO para servicio PENDIENTE ───────────────
 -- Token de prueba con 36 horas de vida desde ahora
 
-INSERT INTO links_candidato (id_solicitud, token, fecha_creacion, fecha_expiracion, usado)
+INSERT INTO links_candidato (id_servicio, token, fecha_creacion, fecha_expiracion, usado)
 SELECT
-    s.id_solicitud,
+    s.id_servicio,
     'tok-prueba-evaluado-abc-001',
     NOW(),
     NOW() + INTERVAL '36 hours',
     false
-FROM solicitudes s
-WHERE s.cedula_evaluado = '10000001'
-  AND s.estado = 'PENDIENTE';
+FROM servicios s
+JOIN candidatos ca ON ca.id_candidato = s.id_candidato
+WHERE ca.cedula = '10000001'
+  AND s.estado = 'PENDIENTE'
+LIMIT 1;
 
 -- ── FIN ───────────────────────────────────────────────────────
--- Verificación rápida (comentada — descomentarr para debug):
+-- Verificación rápida (comentada — descomentar para debug):
 -- SELECT 'clientes' AS tabla, COUNT(*) FROM clientes
 -- UNION ALL SELECT 'usuarios', COUNT(*) FROM usuarios
--- UNION ALL SELECT 'solicitudes', COUNT(*) FROM solicitudes
--- UNION ALL SELECT 'solicitud_servicios', COUNT(*) FROM solicitud_servicios
--- UNION ALL SELECT 'historial_solicitudes', COUNT(*) FROM historial_solicitudes
+-- UNION ALL SELECT 'servicios', COUNT(*) FROM servicios
+-- UNION ALL SELECT 'historial_estados_servicio', COUNT(*) FROM historial_estados_servicio
 -- UNION ALL SELECT 'notificaciones', COUNT(*) FROM notificaciones
 -- UNION ALL SELECT 'links_candidato', COUNT(*) FROM links_candidato;

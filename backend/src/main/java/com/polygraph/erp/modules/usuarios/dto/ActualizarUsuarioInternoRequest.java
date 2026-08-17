@@ -6,6 +6,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
+import java.util.List;
+
 public record ActualizarUsuarioInternoRequest(
         @NotBlank @Size(max = 100) String nombre,
         @Size(max = 100) String apellido,
@@ -16,8 +18,10 @@ public record ActualizarUsuarioInternoRequest(
         @Size(max = 20) String telefono,
         @Size(max = 20) String tipoDocumento,
         @Size(max = 20) String documento,
-        @Size(max = 100) String ciudadResidencia,
+        Integer idCiudadResidencia,
         @Size(max = 100) String salaEncargada,
         String novedadesSala,
-        @Size(max = 200) String zonasVisita
+        @Size(max = 200) String zonasVisita,
+        // Subprocesos del catálogo asignados (uso principal: ANALISTA_INTERNO)
+        List<Integer> idsSubprocesos
 ) {}

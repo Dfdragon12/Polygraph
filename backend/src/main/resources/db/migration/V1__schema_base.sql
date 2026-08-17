@@ -121,7 +121,11 @@ CREATE TABLE "servicios" (
   "resultado" varchar(100),
   "observacion" text,
   "fecha_entrega_estudio" date,
-  "fecha_de_envio" date
+  "fecha_de_envio" date,
+  "cargo" varchar(150),
+  "notas" text,
+  "fecha_entrega_estimada" date,
+  "id_usuario_solicita" bigint NOT NULL
 );
 
 CREATE TABLE "verificaciones_referencias" (
@@ -714,6 +718,8 @@ CREATE INDEX ON "candidatos" ("email_principal");
 CREATE INDEX ON "servicios" ("id_cliente");
 CREATE INDEX ON "servicios" ("id_candidato");
 CREATE INDEX ON "servicios" ("estado");
+CREATE INDEX ON "servicios" ("fecha_solicitud");
+CREATE INDEX ON "servicios" ("id_usuario_solicita");
 CREATE UNIQUE INDEX ON "procesos_tipos_progreso" ("id_proceso", "id_tipo_progreso");
 CREATE INDEX ON "patrimonio_familiar_visita" ("id_visita");
 CREATE INDEX ON "economia_candidato_visita" ("id_visita");

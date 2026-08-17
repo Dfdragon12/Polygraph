@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/requests")
@@ -33,7 +34,7 @@ public class SolicitudController {
 
     @PostMapping
     @PreAuthorize("hasAnyRole('ADMIN_CLIENTE', 'ANALISTA_CLIENTE', 'GESTOR', 'ADMIN_POLYGRAPH')")
-    public ResponseEntity<SolicitudDetalleResponse> crear(
+    public ResponseEntity<List<SolicitudDetalleResponse>> crear(
             @Valid @RequestBody SolicitudRequest request,
             @AuthenticationPrincipal UserDetails userDetails) {
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -56,14 +57,14 @@ public class SolicitudController {
 
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN_CLIENTE', 'ANALISTA_CLIENTE', 'GESTOR', 'ADMIN_POLYGRAPH', 'ANALISTA_INTERNO')")
-    public ResponseEntity<SolicitudDetalleResponse> detalle(@PathVariable Long id) {
+    public ResponseEntity<SolicitudDetalleResponse> detalle(@PathVariable Integer id) {
         return ResponseEntity.ok(solicitudService.obtenerDetalle(id));
     }
 
     @PatchMapping("/{id}/status")
     @PreAuthorize("hasAnyRole('ADMIN_CLIENTE', 'ANALISTA_CLIENTE', 'GESTOR', 'ADMIN_POLYGRAPH', 'ANALISTA_INTERNO')")
     public ResponseEntity<Void> cambiarEstado(
-            @PathVariable Long id,
+            @PathVariable Integer id,
             @Valid @RequestBody CambioEstadoRequest request,
             @AuthenticationPrincipal UserDetails userDetails) {
         solicitudService.cambiarEstado(id, request, userDetails);

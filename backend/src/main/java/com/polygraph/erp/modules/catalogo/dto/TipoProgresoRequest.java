@@ -1,6 +1,8 @@
 package com.polygraph.erp.modules.catalogo.dto;
 
+import com.polygraph.erp.shared.enums.Rol;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
@@ -9,5 +11,7 @@ public record TipoProgresoRequest(
         @NotBlank @Size(max = 100) String nombreProgreso,
         String descripcion,
         Integer orden,
-        BigDecimal valor
+        BigDecimal valor,
+        Integer minutosEstimados,
+        @NotNull Rol rolResponsable
 ) {}

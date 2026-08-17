@@ -7,6 +7,7 @@ import com.polygraph.erp.modules.catalogo.entity.TipoProgreso;
 import com.polygraph.erp.modules.catalogo.repository.ProcesoTipoProgresoRepository;
 import com.polygraph.erp.modules.catalogo.repository.TipoProgresoRepository;
 import com.polygraph.erp.modules.notificaciones.service.NotificacionService;
+import com.polygraph.erp.shared.enums.Rol;
 import com.polygraph.erp.shared.exceptions.ApiException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -15,12 +16,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Set;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
 public class TipoProgresoService {
+
+    private static final Set<Rol> ROLES_EJECUTORES = Set.of(Rol.ANALISTA_INTERNO, Rol.POLIGRAFISTA, Rol.VISITADOR);
 
     private final TipoProgresoRepository repository;
     private final ProcesoTipoProgresoRepository pasoRepository;
@@ -49,11 +53,14 @@ public class TipoProgresoService {
         if (repository.existsByNombreProgreso(req.nombreProgreso())) {
             throw new ApiException("Ya existe un tipo de progreso con ese nombre", HttpStatus.CONFLICT);
         }
+        validarRolResponsable(req.rolResponsable());
         TipoProgreso tipo = TipoProgreso.builder()
                 .nombreProgreso(req.nombreProgreso())
                 .descripcion(req.descripcion())
                 .orden(req.orden() != null ? req.orden() : 0)
                 .valor(req.valor())
+                .minutosEstimados(req.minutosEstimados())
+                .rolResponsable(req.rolResponsable())
                 .activo(true)
                 .build();
         repository.save(tipo);
@@ -68,10 +75,13 @@ public class TipoProgresoService {
         if (repository.existsByNombreProgresoAndIdTipoProgresoNot(req.nombreProgreso(), id)) {
             throw new ApiException("Ya existe un tipo de progreso con ese nombre", HttpStatus.CONFLICT);
         }
+        validarRolResponsable(req.rolResponsable());
         tipo.setNombreProgreso(req.nombreProgreso());
         tipo.setDescripcion(req.descripcion());
         if (req.orden() != null) tipo.setOrden(req.orden());
         tipo.setValor(req.valor());
+        tipo.setMinutosEstimados(req.minutosEstimados());
+        tipo.setRolResponsable(req.rolResponsable());
         log.info("Progreso actualizado: {}", tipo.getNombreProgreso());
         notificacionService.crearParaAdmins("CATALOGO", "Progreso actualizado",
                 "Se actualizó el progreso \"" + tipo.getNombreProgreso() + "\"");
@@ -97,10 +107,20 @@ public class TipoProgresoService {
                 .orElseThrow(() -> new ApiException("Progreso no encontrado", HttpStatus.NOT_FOUND));
     }
 
+    private void validarRolResponsable(Rol rol) {
+        if (!ROLES_EJECUTORES.contains(rol)) {
+            throw new ApiException(
+                    "El rol responsable de un subproceso debe ser ANALISTA_INTERNO, POLIGRAFISTA o VISITADOR",
+                    HttpStatus.BAD_REQUEST);
+        }
+    }
+
     private TipoProgresoResponse toResponse(TipoProgreso t) {
         return new TipoProgresoResponse(
                 t.getIdTipoProgreso(), t.getNombreProgreso(),
-                t.getDescripcion(), t.getOrden(), t.getActivo(), t.getValor()
+                t.getDescripcion(), t.getOrden(), t.getActivo(), t.getValor(),
+                t.getMinutosEstimados(),
+                t.getRolResponsable() != null ? t.getRolResponsable().name() : null
         );
     }
 }

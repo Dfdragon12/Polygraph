@@ -8,5 +8,7 @@ public record TipoProgresoResponse(
         String     descripcion,
         Integer    orden,
         Boolean    activo,
-        BigDecimal valor
+        BigDecimal valor,
+        Integer    minutosEstimados,
+        String     rolResponsable
 ) {}

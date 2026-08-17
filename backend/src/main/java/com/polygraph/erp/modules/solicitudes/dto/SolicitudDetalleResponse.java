@@ -2,32 +2,32 @@ package com.polygraph.erp.modules.solicitudes.dto;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 
 public record SolicitudDetalleResponse(
-        Long idSolicitud,
+        Integer idServicio,
         String cedulaEvaluado,
         String nombresEvaluado,
         String apellidosEvaluado,
         String celularEvaluado,
         String emailEvaluado,
-        String ciudadEvaluado,
         String cargo,
         String notas,
+        Integer idProceso,
+        String proceso,
+        String clasificacion,
         String estado,
-        LocalDateTime fechaSolicitud,
+        LocalDate fechaSolicitud,
+        LocalTime horaSolicitud,
         LocalDate fechaEntregaEstimada,
         String linkEvaluado,
-        List<ServicioItemResponse> servicios,
-        List<HistorialResponse> historial
+        List<HistorialResponse> historial,
+        String nombreCliente,
+        String nitCliente,
+        String telefonoCliente,
+        String emailCliente
 ) {
-    public record ServicioItemResponse(
-            Integer idCatalogo,
-            String nombre,
-            String categoria,
-            String estado
-    ) {}
-
     public record HistorialResponse(
             String estadoAnterior,
             String estadoNuevo,

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useAuth } from '../../hooks/useAuth'
 import { useNavigate } from 'react-router-dom'
 import api from '../../services/api'
+import { ConfirmModal } from '../../components/ui/Modal'
 import {
   PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
@@ -20,16 +21,21 @@ const ETIQUETA_ROL = {
 }
 
 const TIPO_NOTIF = {
-  CATALOGO: { color: 'bg-indigo-100 text-indigo-700',   label: 'Catálogo' },
-  USUARIO:  { color: 'bg-emerald-100 text-emerald-700', label: 'Usuario'  },
-  CLIENTE:  { color: 'bg-amber-100 text-amber-700',     label: 'Cliente'  },
-  SISTEMA:  { color: 'bg-slate-100 text-slate-600',     label: 'Sistema'  },
+  CATALOGO:        { color: 'bg-primary-100 text-primary-700',   label: 'Catálogo'    },
+  USUARIO:         { color: 'bg-emerald-100 text-emerald-700', label: 'Usuario'     },
+  CLIENTE:         { color: 'bg-amber-100 text-amber-700',     label: 'Cliente'     },
+  SISTEMA:         { color: 'bg-slate-100 text-slate-600',     label: 'Sistema'     },
+  SESION:          { color: 'bg-sky-100 text-sky-700',         label: 'Sesión'      },
+  ENLACES:         { color: 'bg-teal-100 text-teal-700',       label: 'Referencias' },
+  NUEVA_SOLICITUD:    { color: 'bg-orange-100 text-orange-700', label: 'Solicitud'  },
+  SOLICITUD_CREADA:   { color: 'bg-blue-100 text-blue-700',     label: 'Solicitud'  },
+  SOLICITUD_REVERSION:{ color: 'bg-purple-100 text-purple-700', label: 'Reversión'  },
 }
 
 const CONFIG_ESTADO = {
   PENDIENTE:    { label: 'Pendiente',    color: '#f59e0b', bg: 'bg-amber-50',   border: 'border-amber-200',   num: 'text-amber-600',   dot: 'bg-amber-400'   },
   PROGRAMANDO:  { label: 'Programando',  color: '#3b82f6', bg: 'bg-blue-50',    border: 'border-blue-200',    num: 'text-blue-600',    dot: 'bg-blue-400'    },
-  EN_EJECUCION: { label: 'En Ejecución', color: '#6366f1', bg: 'bg-indigo-50',  border: 'border-indigo-200',  num: 'text-indigo-600',  dot: 'bg-indigo-400'  },
+  EN_EJECUCION: { label: 'En Ejecución', color: '#6366f1', bg: 'bg-primary-50',  border: 'border-primary-200',  num: 'text-primary-600',  dot: 'bg-primary-400'  },
   FINALIZADO:   { label: 'Finalizado',   color: '#10b981', bg: 'bg-green-50',   border: 'border-green-200',   num: 'text-green-600',   dot: 'bg-green-400'   },
   PUBLICADO:    { label: 'Publicado',    color: '#06b6d4', bg: 'bg-cyan-50',    border: 'border-cyan-200',    num: 'text-cyan-600',    dot: 'bg-cyan-400'    },
   CANCELADO:    { label: 'Cancelado',    color: '#ef4444', bg: 'bg-red-50',     border: 'border-red-200',     num: 'text-red-600',     dot: 'bg-red-400'     },
@@ -37,6 +43,12 @@ const CONFIG_ESTADO = {
 }
 
 /* ════════ HELPERS ════════ */
+
+function iniciales(nombre, apellido) {
+  const a = nombre?.trim()?.[0] ?? ''
+  const b = apellido?.trim()?.[0] ?? ''
+  return (a + b).toUpperCase() || '?'
+}
 
 function formatRelativo(fechaIso) {
   if (!fechaIso) return '—'
@@ -54,11 +66,11 @@ function formatRelativo(fechaIso) {
 /* ════════ KPI CARD ════════ */
 function KpiCard({ titulo, valor, sub, color, icono }) {
   const styles = {
-    indigo:  { wrap: 'border-indigo-100',  icon: 'bg-indigo-100 text-indigo-600',  val: 'text-indigo-700' },
+    primary:  { wrap: 'border-primary-100',  icon: 'bg-primary-100 text-primary-600',  val: 'text-primary-700' },
     emerald: { wrap: 'border-emerald-100', icon: 'bg-emerald-100 text-emerald-600',val: 'text-emerald-700'},
     amber:   { wrap: 'border-amber-100',   icon: 'bg-amber-100 text-amber-600',    val: 'text-amber-700'  },
   }
-  const s = styles[color] ?? styles.indigo
+  const s = styles[color] ?? styles.primary
   return (
     <div className={`bg-white rounded-xl border ${s.wrap} shadow-sm p-5 flex items-center gap-4`}>
       <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0 ${s.icon}`}>
@@ -102,53 +114,70 @@ function LabelCentro({ cx, cy, total, subtitulo }) {
   )
 }
 
+/* ════════ MODAL CONFIRMACIÓN ════════ */
+function ModalConfirmar({ mensaje, onConfirmar, onCancelar }) {
+  return (
+    <ConfirmModal titulo="Eliminar notificación" danger confirmLabel="Eliminar"
+      onConfirmar={onConfirmar} onCancelar={onCancelar}>
+      <p className="text-sm text-gray-500 mt-1">{mensaje}</p>
+    </ConfirmModal>
+  )
+}
+
 /* ════════ PANEL NOTIFICACIONES ════════ */
-function PanelNotificaciones({ notifs, cargando, onMarcarLeida, onEliminar, onMarcarTodas }) {
+function PanelNotificaciones({ notifs, cargando, onMarcarLeida, onEliminar }) {
   if (cargando) return (
     <div className="flex justify-center py-10">
-      <div className="animate-spin rounded-full h-6 w-6 border-4 border-indigo-600 border-t-transparent" />
+      <div className="animate-spin rounded-full h-6 w-6 border-4 border-primary-600 border-t-transparent" />
     </div>
   )
   if (!notifs?.length) return (
-    <div className="flex items-center justify-center h-28 text-gray-400 text-sm">Sin notificaciones recientes</div>
+    <div className="flex flex-col items-center justify-center h-28 gap-2 text-gray-400">
+      <svg className="h-8 w-8 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+      </svg>
+      <span className="text-sm">Sin notificaciones</span>
+    </div>
   )
   return (
-    <div className="space-y-2 max-h-72 overflow-y-auto scrollbar-thin pr-1">
+    <div className="divide-y divide-gray-100 max-h-72 overflow-y-auto scrollbar-thin">
       {notifs.map(n => {
         const cfg = TIPO_NOTIF[n.tipo] ?? TIPO_NOTIF.SISTEMA
         return (
-          <div key={n.id} className={`group flex gap-2.5 p-2.5 rounded-lg ${n.leida ? 'bg-gray-50' : 'bg-indigo-50'}`}>
-            <span className={`text-xs px-1.5 py-0.5 rounded font-medium flex-shrink-0 h-fit mt-0.5 ${cfg.color}`}>
-              {cfg.label}
-            </span>
+          <div key={n.id} className={`group flex gap-3 px-1 py-2.5 transition-colors ${n.leida ? '' : 'bg-primary-50/60'}`}>
+            <div className="flex flex-col items-center gap-1.5 pt-0.5 flex-shrink-0">
+              <span className={`text-xs px-1.5 py-0.5 rounded font-medium whitespace-nowrap ${cfg.color}`}>
+                {cfg.label}
+              </span>
+              {!n.leida && <span className="w-1.5 h-1.5 bg-primary-500 rounded-full" />}
+            </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-gray-900 leading-tight">{n.titulo}</p>
-              <p className="text-xs text-gray-500 mt-0.5 truncate">{n.mensaje}</p>
-              <div className="flex items-center justify-between mt-0.5 gap-2">
-                <p className="text-xs text-gray-400">{formatRelativo(n.fechaCreacion)}</p>
+              <p className="text-xs font-semibold text-gray-900 leading-snug">{n.titulo}</p>
+              <p className="text-xs text-gray-600 mt-0.5 leading-snug line-clamp-2">{n.mensaje}</p>
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                <span className="text-xs text-gray-400">{formatRelativo(n.fechaCreacion)}</span>
                 {n.realizadoPorNombre && (
-                  <p className="text-xs text-gray-400 truncate">Por: <span className="font-medium text-gray-600">{n.realizadoPorNombre}</span></p>
+                  <span className="text-xs text-gray-400">
+                    · <span className="font-medium text-gray-600">{n.realizadoPorNombre}</span>
+                  </span>
                 )}
               </div>
             </div>
-            <div className="flex flex-col items-end gap-1 flex-shrink-0">
-              {!n.leida && <span className="w-2 h-2 bg-indigo-500 rounded-full" />}
-              <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                {!n.leida && (
-                  <button onClick={() => onMarcarLeida(n.id)} title="Marcar leída"
-                    className="p-1 text-gray-400 hover:text-indigo-600 rounded">
-                    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                  </button>
-                )}
-                <button onClick={() => onEliminar(n.id)} title="Eliminar"
-                  className="p-1 text-gray-400 hover:text-red-500 rounded">
-                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            <div className="flex gap-0.5 flex-shrink-0 pt-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+              {!n.leida && (
+                <button onClick={() => onMarcarLeida(n.id)} title="Marcar leída"
+                  className="p-1 text-gray-400 hover:text-primary-600 rounded transition-colors">
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                   </svg>
                 </button>
-              </div>
+              )}
+              <button onClick={() => onEliminar(n.id)} title="Eliminar"
+                className="p-1 text-gray-400 hover:text-red-500 rounded transition-colors">
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
           </div>
         )
@@ -179,7 +208,7 @@ function UltimosAccesos({ datos, ordenAccesos, setOrdenAccesos }) {
         {OPCIONES.map(o => (
           <button key={o.key} onClick={() => setOrdenAccesos(o.key)}
             className={`text-xs px-2.5 py-1 rounded-full transition-colors ${
-              ordenAccesos === o.key ? 'bg-indigo-100 text-indigo-700 font-medium' : 'text-gray-500 hover:bg-gray-100'
+              ordenAccesos === o.key ? 'bg-primary-100 text-primary-700 font-medium' : 'text-gray-500 hover:bg-gray-100'
             }`}>
             {o.label}
           </button>
@@ -191,7 +220,7 @@ function UltimosAccesos({ datos, ordenAccesos, setOrdenAccesos }) {
         <div className="divide-y divide-gray-100 max-h-72 overflow-y-auto scrollbar-thin">
           {ordenado.map(u => (
             <div key={u.idUsuario} className="flex items-center gap-3 py-2.5">
-              <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-bold flex-shrink-0">
+              <div className="w-8 h-8 rounded-full bg-primary-100 text-primary-600 flex items-center justify-center text-xs font-bold flex-shrink-0">
                 {(u.nombre?.[0] ?? '?').toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
@@ -234,7 +263,7 @@ function Semaforo({ estados, total, ordenEstados, setOrdenEstados }) {
         ].map(o => (
           <button key={o.key} onClick={() => setOrdenEstados(o.key)}
             className={`text-xs px-2.5 py-1 rounded-full transition-colors ${
-              ordenEstados === o.key ? 'bg-indigo-100 text-indigo-700 font-medium' : 'text-gray-500 hover:bg-gray-100'
+              ordenEstados === o.key ? 'bg-primary-100 text-primary-700 font-medium' : 'text-gray-500 hover:bg-gray-100'
             }`}>
             {o.label}
           </button>
@@ -266,7 +295,9 @@ export default function AdminDashboard() {
   const [error,             setError]             = useState(null)
   const [notifs,            setNotifs]            = useState([])
   const [cargandoNotifs,    setCargandoNotifs]    = useState(true)
+  const [filtroNotif,       setFiltroNotif]       = useState('todas')
   const [ordenAccesos,      setOrdenAccesos]      = useState('reciente')
+  const [confirmarId,       setConfirmarId]       = useState(null)
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -282,9 +313,14 @@ export default function AdminDashboard() {
       .finally(() => setCargandoNotifs(false))
   }, [])
 
-  const marcarTodas    = async () => { try { await api.patch('/notificaciones/leer-todas'); setNotifs(p => p.map(n => ({ ...n, leida: true }))) } catch {} }
-  const marcarLeida    = async (id) => { try { await api.patch(`/notificaciones/${id}/leer`); setNotifs(p => p.map(n => n.id === id ? { ...n, leida: true } : n)) } catch {} }
-  const eliminarNotif  = async (id) => { try { await api.delete(`/notificaciones/${id}`); setNotifs(p => p.filter(n => n.id !== id)) } catch {} }
+  const marcarTodas   = async () => { try { await api.patch('/notificaciones/leer-todas'); setNotifs(p => p.map(n => ({ ...n, leida: true }))) } catch {} }
+  const marcarLeida   = async (id) => { try { await api.patch(`/notificaciones/${id}/leer`); setNotifs(p => p.map(n => n.id === id ? { ...n, leida: true } : n)) } catch {} }
+  const pedirEliminar = (id) => setConfirmarId(id)
+  const confirmarEliminar = async () => {
+    if (!confirmarId) return
+    try { await api.delete(`/notificaciones/${confirmarId}`); setNotifs(p => p.filter(n => n.id !== confirmarId)) } catch {}
+    setConfirmarId(null)
+  }
 
   const dataUsuariosDonut = useMemo(() => {
     if (!datos) return []
@@ -296,10 +332,11 @@ export default function AdminDashboard() {
 
   const totalUsuariosDonut = dataUsuariosDonut.reduce((s, e) => s + e.value, 0)
   const noLeidas = notifs.filter(n => !n.leida).length
+  const notifsFiltradas = filtroNotif === 'sin_leer' ? notifs.filter(n => !n.leida) : notifs
 
   if (cargando) return (
     <div className="flex items-center justify-center h-64">
-      <div className="animate-spin rounded-full h-10 w-10 border-4 border-indigo-600 border-t-transparent" />
+      <div className="animate-spin rounded-full h-10 w-10 border-4 border-primary-600 border-t-transparent" />
     </div>
   )
 
@@ -307,11 +344,16 @@ export default function AdminDashboard() {
     <div className="space-y-6">
 
       {/* ── Encabezado ── */}
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900">Hola, {usuario?.nombre}</h2>
-        <p className="text-sm text-gray-500 capitalize">
-          {new Date().toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-        </p>
+      <div className="flex items-center gap-4 bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-5">
+        <div className="w-12 h-12 rounded-full bg-primary-600 text-white flex items-center justify-center text-lg font-semibold flex-shrink-0">
+          {iniciales(usuario?.nombre, usuario?.apellido)}
+        </div>
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Hola, {usuario?.nombre}</h2>
+          <p className="text-sm text-gray-500 capitalize mt-0.5">
+            {new Date().toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+          </p>
+        </div>
       </div>
 
       {error && (
@@ -323,7 +365,7 @@ export default function AdminDashboard() {
 
       {/* ── KPIs ── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <KpiCard titulo="Usuarios activos"      valor={datos?.totalActivos ?? 0}    sub="En toda la plataforma"  color="indigo"  icono="👤" />
+        <KpiCard titulo="Usuarios activos"      valor={datos?.totalActivos ?? 0}    sub="En toda la plataforma"  color="primary"  icono="👤" />
         <KpiCard titulo="Equipo interno activo" valor={datos?.internosActivos ?? 0} sub="Polygraph Service"       color="emerald" icono="🛡️" />
         <KpiCard titulo="Clientes activos"      valor={datos?.clientesActivos ?? 0} sub="Empresas y personas"    color="amber"   icono="🏢" />
       </div>
@@ -409,32 +451,65 @@ export default function AdminDashboard() {
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-gray-800">
-              Notificaciones recientes
-              {noLeidas > 0 && (
-                <span className="ml-2 text-xs bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full font-medium">
-                  {noLeidas} sin leer
-                </span>
-              )}
-            </h3>
+          {/* Cabecera */}
+          <div className="flex items-start justify-between mb-3 gap-2">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                Notificaciones recientes
+                {noLeidas > 0 && (
+                  <span className="text-xs bg-primary-100 text-primary-700 px-1.5 py-0.5 rounded-full font-medium">
+                    {noLeidas} sin leer
+                  </span>
+                )}
+              </h3>
+              <p className="text-xs text-gray-400 mt-0.5">{notifs.length} en total</p>
+            </div>
             {noLeidas > 0 && (
-              <button onClick={marcarTodas} className="text-xs text-indigo-600 hover:text-indigo-800 transition-colors">
+              <button onClick={marcarTodas}
+                className="text-xs text-primary-600 hover:text-primary-800 transition-colors flex-shrink-0">
                 Marcar leídas
               </button>
             )}
           </div>
+
+          {/* Filtros */}
+          <div className="flex items-center gap-1 mb-3">
+            {[
+              { key: 'todas',    label: 'Todas'    },
+              { key: 'sin_leer', label: 'Sin leer' },
+            ].map(f => (
+              <button key={f.key} onClick={() => setFiltroNotif(f.key)}
+                className={`text-xs px-2.5 py-1 rounded-full transition-colors ${
+                  filtroNotif === f.key
+                    ? 'bg-primary-100 text-primary-700 font-medium'
+                    : 'text-gray-500 hover:bg-gray-100'
+                }`}>
+                {f.label}
+                {f.key === 'sin_leer' && noLeidas > 0 && (
+                  <span className="ml-1 bg-primary-500 text-white text-xs w-4 h-4 rounded-full inline-flex items-center justify-center leading-none">
+                    {noLeidas}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
           <PanelNotificaciones
-            notifs={notifs}
+            notifs={notifsFiltradas}
             cargando={cargandoNotifs}
             onMarcarLeida={marcarLeida}
-            onEliminar={eliminarNotif}
-            onMarcarTodas={marcarTodas}
+            onEliminar={pedirEliminar}
           />
         </div>
       </div>
 
-
+      {confirmarId !== null && (
+        <ModalConfirmar
+          mensaje="¿Estás seguro de que deseas eliminar esta notificación? Esta acción no se puede deshacer."
+          onConfirmar={confirmarEliminar}
+          onCancelar={() => setConfirmarId(null)}
+        />
+      )}
     </div>
   )
 }

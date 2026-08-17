@@ -1,6 +1,7 @@
 package com.polygraph.erp.modules.catalogo.dto;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 public record ProcesoResponse(
         Integer                       idProceso,
@@ -10,5 +11,7 @@ public record ProcesoResponse(
         long                          totalPasos,
         ClasificacionProcesoResponse  clasificacion,
         BigDecimal                    valor,
-        BigDecimal                    valorCalculado
+        BigDecimal                    valorCalculado,
+        Integer                       diasHabilesEntrega,
+        List<TramoPrecioResponse>     tramosPrecio
 ) {}

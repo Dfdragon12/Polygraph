@@ -49,9 +49,9 @@ function BulkUpload() {
   return (
     <div className="max-w-3xl mx-auto py-8 px-4">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Carga Masiva desde Excel</h1>
+        <h1 className="text-xl font-bold text-gray-800">Carga Masiva desde Excel</h1>
         <button onClick={descargarPlantilla}
-          className="flex items-center gap-2 text-sm text-indigo-600 border border-indigo-300 rounded-lg px-3 py-2 hover:bg-indigo-50">
+          className="flex items-center gap-2 text-sm text-primary-600 border border-primary-300 rounded-lg px-3 py-2 hover:bg-primary-50">
           Descargar plantilla
         </button>
       </div>
@@ -67,7 +67,7 @@ function BulkUpload() {
         onDrop={onDrop}
         onClick={() => inputRef.current?.click()}
         className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-colors
-          ${arrastrando ? 'border-indigo-400 bg-indigo-50' : archivo ? 'border-green-400 bg-green-50' : 'border-gray-300 hover:border-gray-400'}`}>
+          ${arrastrando ? 'border-primary-400 bg-primary-50' : archivo ? 'border-green-400 bg-green-50' : 'border-gray-300 hover:border-gray-400'}`}>
         <input ref={inputRef} type="file" accept=".xlsx" className="hidden"
           onChange={(e) => manejarArchivo(e.target.files[0])} />
         {archivo ? (
@@ -85,7 +85,7 @@ function BulkUpload() {
 
       {archivo && !resultado && (
         <button onClick={enviar} disabled={procesando}
-          className="mt-4 w-full py-2.5 text-sm font-medium text-white bg-indigo-600 rounded-lg disabled:opacity-50 hover:bg-indigo-700">
+          className="mt-4 w-full py-2.5 text-sm font-medium text-white bg-primary-600 rounded-lg disabled:opacity-50 hover:bg-primary-700">
           {procesando ? 'Procesando...' : 'Cargar solicitudes'}
         </button>
       )}

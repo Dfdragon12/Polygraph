@@ -7,6 +7,9 @@ public record ReferenciaPersonalRequest(
         String nombre,
 
         String parentesco,
+
+        @NotBlank(message = "El teléfono de la referencia es obligatorio")
         String telefono,
+
         String tiempoConocimiento
 ) {}

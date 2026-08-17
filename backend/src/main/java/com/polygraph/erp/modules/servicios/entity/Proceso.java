@@ -34,4 +34,7 @@ public class Proceso {
 
     @Column(name = "valor", precision = 15, scale = 2)
     private BigDecimal valor;
+
+    @Column(name = "dias_habiles_entrega")
+    private Integer diasHabilesEntrega;
 }

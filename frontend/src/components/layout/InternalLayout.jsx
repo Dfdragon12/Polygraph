@@ -1,7 +1,9 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { useState, useEffect, useRef } from 'react'
+import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
+import { useState, useEffect, useRef, Fragment } from 'react'
 import { useAuth } from '../../hooks/useAuth'
 import Campana from '../Campana'
+import HeaderMensajesGestor from '../HeaderMensajesGestor'
+import PanelEnlaces from '../PanelEnlaces'
 
 const ETIQUETAS_ROL = {
   ADMIN_POLYGRAPH:  'Administrador',
@@ -10,6 +12,55 @@ const ETIQUETAS_ROL = {
   PROGRAMADOR:      'Programador',
   POLIGRAFISTA:     'Poligrafista',
   VISITADOR:        'Visitador',
+}
+
+/* ─── Ruta de navegación (breadcrumb) ─── */
+const ETIQUETAS_RUTA = {
+  dashboard:    'Dashboard',
+  solicitudes:  'Solicitudes',
+  reversiones:  'Reversiones',
+  validaciones: 'Validaciones',
+  informes:     'Informes',
+  agenda:       'Agenda',
+  servicios:    'Servicios',
+  resultados:   'Resultados',
+  visitas:      'Mis Visitas',
+}
+
+function Breadcrumb({ titulo }) {
+  const { pathname } = useLocation()
+  const segmentos = pathname.split('/').filter(Boolean)
+  const raiz = segmentos[0] ?? ''
+  const resto = segmentos.slice(1)
+
+  const migas = [
+    { label: titulo, ruta: `/${raiz}/dashboard` },
+    ...resto.map((seg, i) => ({
+      label: ETIQUETAS_RUTA[seg] ?? (/^\d+$/.test(seg) ? 'Detalle' : seg),
+      ruta: '/' + [raiz, ...resto.slice(0, i + 1)].join('/'),
+    })),
+  ]
+
+  return (
+    <nav aria-label="Ruta de navegación" className="bg-white border-b border-gray-100 px-4 md:px-6 py-2 flex items-center gap-1 text-xs text-gray-400">
+      {migas.map((miga, i) => (
+        <Fragment key={miga.ruta + i}>
+          {i > 0 && (
+            <svg className="h-3 w-3 text-gray-300 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          )}
+          {i < migas.length - 1 ? (
+            <NavLink to={miga.ruta} className="hover:text-gray-700 transition-colors">
+              {miga.label}
+            </NavLink>
+          ) : (
+            <span className="text-gray-700 font-medium">{miga.label}</span>
+          )}
+        </Fragment>
+      ))}
+    </nav>
+  )
 }
 
 /* ─── Buscador de secciones ─── */
@@ -65,9 +116,9 @@ function BuscadorGlobal({ secciones }) {
                 <p className="text-sm text-gray-400 text-center py-6">Sin resultados</p>
               ) : resultados.map(item => (
                 <button key={item.ruta} onClick={() => ir(item.ruta)}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-indigo-50 transition-colors group">
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-primary-50 transition-colors group">
                   <span className="text-lg w-6 text-center flex-shrink-0">{item.icono}</span>
-                  <span className="text-sm text-gray-700 group-hover:text-indigo-700 font-medium">{item.etiqueta}</span>
+                  <span className="text-sm text-gray-700 group-hover:text-primary-700 font-medium">{item.etiqueta}</span>
                 </button>
               ))}
             </div>
@@ -134,7 +185,7 @@ function AvatarUsuario({ usuario, cerrarSesion }) {
     <div className="relative" ref={ref}>
       <button onClick={() => setAbierto(v => !v)}
         className="flex items-center gap-2 p-1 rounded-lg hover:bg-gray-100 transition-colors">
-        <div className="w-8 h-8 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
+        <div className="w-8 h-8 rounded-full bg-primary-600 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
           {iniciales}
         </div>
         <div className="hidden md:block text-left">
@@ -153,7 +204,7 @@ function AvatarUsuario({ usuario, cerrarSesion }) {
           <div className="px-4 py-3 border-b border-gray-100">
             <p className="text-sm font-semibold text-gray-900 truncate">{usuario?.nombre} {usuario?.apellido ?? ''}</p>
             <p className="text-xs text-gray-400 truncate mt-0.5">{usuario?.email}</p>
-            <span className="inline-block mt-1.5 text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-medium">
+            <span className="inline-block mt-1.5 text-xs bg-primary-100 text-primary-700 px-2 py-0.5 rounded-full font-medium">
               {ETIQUETAS_ROL[usuario?.rol] ?? usuario?.rol}
             </span>
           </div>
@@ -178,7 +229,7 @@ function SidebarContent({ usuario, secciones, onNavClick, collapsed }) {
     <>
       <div className={`border-b border-slate-700 ${collapsed ? 'px-2 py-4 flex justify-center' : 'px-6 py-5'}`}>
         {collapsed ? (
-          <div className="w-8 h-8 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center">
+          <div className="w-8 h-8 rounded-full bg-primary-600 text-white text-xs font-bold flex items-center justify-center">
             {(usuario?.nombre?.[0] ?? '?').toUpperCase()}
           </div>
         ) : (
@@ -205,7 +256,7 @@ function SidebarContent({ usuario, secciones, onNavClick, collapsed }) {
                   className={({ isActive }) =>
                     `flex items-center rounded-lg text-sm transition-colors ${
                       collapsed ? 'justify-center p-2.5' : 'gap-3 px-3 py-2.5'
-                    } ${isActive ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`
+                    } ${isActive ? 'bg-primary-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`
                   }>
                   <span className="text-base flex-shrink-0">{icono}</span>
                   {!collapsed && etiqueta}
@@ -220,10 +271,11 @@ function SidebarContent({ usuario, secciones, onNavClick, collapsed }) {
 }
 
 /* ─── Layout principal ─── */
-export default function InternalLayout({ secciones }) {
+export default function InternalLayout({ secciones, titulo = 'Panel Interno' }) {
   const { usuario, logout } = useAuth()
   const navigate = useNavigate()
   const [menuMovil, setMenuMovil] = useState(false)
+  const [panelEnlaces, setPanelEnlaces] = useState(false)
   const [collapsed, setCollapsed] = useState(() =>
     localStorage.getItem('internal-sidebar-collapsed') === 'true'
   )
@@ -286,16 +338,27 @@ export default function InternalLayout({ secciones }) {
           <div className="flex items-center gap-1">
             <BuscadorGlobal secciones={secciones} />
             <ConfiguracionMenu />
+            <button onClick={() => setPanelEnlaces(true)} title="Referencias externas"
+              className="relative p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+              </svg>
+            </button>
+            {usuario?.rol === 'GESTOR' && <HeaderMensajesGestor />}
             <Campana />
             <div className="w-px h-6 bg-gray-200 mx-1" />
             <AvatarUsuario usuario={usuario} cerrarSesion={cerrarSesion} />
           </div>
         </header>
 
+        <Breadcrumb titulo={titulo} />
+
         <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 scrollbar-thin">
           <Outlet />
         </main>
       </div>
+
+      <PanelEnlaces abierto={panelEnlaces} onCerrar={() => setPanelEnlaces(false)} />
     </div>
   )
 }

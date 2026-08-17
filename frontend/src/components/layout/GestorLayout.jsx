@@ -10,12 +10,12 @@ const SECCIONES = [
   {
     titulo: 'Gestión',
     items: [
-      { ruta: '/gestor/solicitudes',  etiqueta: 'Solicitudes',  icono: '📋' },
-      { ruta: '/gestor/asignaciones', etiqueta: 'Asignaciones', icono: '👤' },
+      { ruta: '/gestor/solicitudes',   etiqueta: 'Solicitudes',  icono: '📋' },
+      { ruta: '/gestor/reversiones',   etiqueta: 'Reversiones',  icono: '↩️' },
     ],
   },
 ]
 
 export default function GestorLayout() {
-  return <InternalLayout secciones={SECCIONES} />
+  return <InternalLayout secciones={SECCIONES} titulo="Portal Gestor" />
 }

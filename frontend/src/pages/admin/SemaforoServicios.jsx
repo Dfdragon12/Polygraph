@@ -12,7 +12,7 @@ import autoTable from 'jspdf-autotable'
 const CONFIG_ESTADO = {
   PENDIENTE:    { label: 'Pendiente',    color: '#f59e0b', bg: 'bg-amber-50',   border: 'border-amber-200',   num: 'text-amber-600',   dot: 'bg-amber-400',   badge: 'bg-amber-100 text-amber-800'   },
   PROGRAMANDO:  { label: 'Programando',  color: '#3b82f6', bg: 'bg-blue-50',    border: 'border-blue-200',    num: 'text-blue-600',    dot: 'bg-blue-400',    badge: 'bg-blue-100 text-blue-800'     },
-  EN_EJECUCION: { label: 'En Ejecución', color: '#6366f1', bg: 'bg-indigo-50',  border: 'border-indigo-200',  num: 'text-indigo-600',  dot: 'bg-indigo-400',  badge: 'bg-indigo-100 text-indigo-800' },
+  EN_EJECUCION: { label: 'En Ejecución', color: '#6366f1', bg: 'bg-primary-50',  border: 'border-primary-200',  num: 'text-primary-600',  dot: 'bg-primary-400',  badge: 'bg-primary-100 text-primary-800' },
   FINALIZADO:   { label: 'Finalizado',   color: '#10b981', bg: 'bg-green-50',   border: 'border-green-200',   num: 'text-green-600',   dot: 'bg-green-400',   badge: 'bg-green-100 text-green-800'   },
   PUBLICADO:    { label: 'Publicado',    color: '#06b6d4', bg: 'bg-cyan-50',    border: 'border-cyan-200',    num: 'text-cyan-600',    dot: 'bg-cyan-400',    badge: 'bg-cyan-100 text-cyan-800'     },
   CANCELADO:    { label: 'Cancelado',    color: '#ef4444', bg: 'bg-red-50',     border: 'border-red-200',     num: 'text-red-600',     dot: 'bg-red-400',     badge: 'bg-red-100 text-red-800'       },
@@ -207,7 +207,7 @@ export default function SemaforoServicios() {
         <button
           onClick={handleExportPDF}
           disabled={exportando || cargando}
-          className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-sm font-medium px-4 py-2.5 rounded-xl transition-colors flex-shrink-0 shadow-sm"
+          className="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white text-sm font-medium px-4 py-2.5 rounded-xl transition-colors flex-shrink-0 shadow-sm"
         >
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -233,7 +233,7 @@ export default function SemaforoServicios() {
               <select
                 value={clienteSel}
                 onChange={e => setClienteSel(e.target.value)}
-                className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
               >
                 <option value="">Todos los clientes</option>
                 {servicios?.clientes?.map(c => (
@@ -253,7 +253,7 @@ export default function SemaforoServicios() {
           <div className="flex-1 min-w-[280px]">
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs font-medium text-gray-600">Estados</label>
-              <button onClick={selTodos} className="text-xs text-indigo-600 hover:text-indigo-800">
+              <button onClick={selTodos} className="text-xs text-primary-600 hover:text-primary-800">
                 Seleccionar todos
               </button>
             </div>
@@ -289,8 +289,8 @@ export default function SemaforoServicios() {
                 <button key={o.key} onClick={() => setOrdenSemaforo(o.key)}
                   className={`text-xs px-3 py-2 rounded-lg border transition-colors ${
                     ordenSemaforo === o.key
-                      ? 'bg-indigo-600 text-white border-indigo-600'
-                      : 'bg-white text-gray-500 border-gray-200 hover:border-indigo-300'
+                      ? 'bg-primary-600 text-white border-primary-600'
+                      : 'bg-white text-gray-500 border-gray-200 hover:border-primary-300'
                   }`}>
                   {o.label}
                 </button>
@@ -306,7 +306,7 @@ export default function SemaforoServicios() {
             <strong> {totalFiltrado}</strong> de {totalGlobal} servicios
           </span>
           {clienteNombre && (
-            <span className="text-xs bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded-full">
+            <span className="text-xs bg-primary-50 text-primary-700 border border-primary-100 px-2 py-0.5 rounded-full">
               {clienteNombre}
             </span>
           )}
@@ -315,20 +315,20 @@ export default function SemaforoServicios() {
 
       {cargando ? (
         <div className="flex items-center justify-center h-48">
-          <div className="animate-spin rounded-full h-8 w-8 border-4 border-indigo-600 border-t-transparent" />
+          <div className="animate-spin rounded-full h-8 w-8 border-4 border-primary-600 border-t-transparent" />
         </div>
       ) : (
         <>
           {/* ── KPIs ── */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {[
-              { label: 'Total servicios',  valor: kpis.total,       color: 'indigo', icono: '📋' },
+              { label: 'Total servicios',  valor: kpis.total,       color: 'primary', icono: '📋' },
               { label: 'En curso',         valor: kpis.enCurso,     color: 'blue',   icono: '⚡' },
               { label: 'Completados',      valor: kpis.completados, color: 'green',  icono: '✅' },
               { label: 'Cerrados',         valor: kpis.cerrados,    color: 'red',    icono: '🔒' },
             ].map(k => (
               <div key={k.label} className={`bg-white rounded-xl border p-4 shadow-sm ${
-                k.color === 'indigo' ? 'border-indigo-100' :
+                k.color === 'primary' ? 'border-primary-100' :
                 k.color === 'blue'   ? 'border-blue-100'   :
                 k.color === 'green'  ? 'border-green-100'  : 'border-red-100'
               }`}>
@@ -337,7 +337,7 @@ export default function SemaforoServicios() {
                   <div>
                     <p className="text-xs text-gray-500 font-medium">{k.label}</p>
                     <p className={`text-2xl font-bold ${
-                      k.color === 'indigo' ? 'text-indigo-700' :
+                      k.color === 'primary' ? 'text-primary-700' :
                       k.color === 'blue'   ? 'text-blue-700'   :
                       k.color === 'green'  ? 'text-green-700'  : 'text-red-700'
                     }`}>{k.valor}</p>

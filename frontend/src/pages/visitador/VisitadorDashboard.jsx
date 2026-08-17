@@ -9,7 +9,7 @@ export default function VisitadorDashboard() {
         {new Date().toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
       </p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-        <TarjetaModulo titulo="Mis Visitas" descripcion="Visitas domiciliarias asignadas" icono="🏠" color="indigo" />
+        <TarjetaModulo titulo="Mis Visitas" descripcion="Visitas domiciliarias asignadas" icono="🏠" color="primary" />
         <TarjetaModulo titulo="Informes" descripcion="Genera informes de visita completados" icono="📄" color="emerald" />
       </div>
     </div>
@@ -18,7 +18,7 @@ export default function VisitadorDashboard() {
 
 function TarjetaModulo({ titulo, descripcion, icono, color }) {
   const colores = {
-    indigo:  'bg-indigo-50  border-indigo-100  text-indigo-600',
+    primary:  'bg-primary-50  border-primary-100  text-primary-600',
     emerald: 'bg-emerald-50 border-emerald-100 text-emerald-600',
   }
   return (

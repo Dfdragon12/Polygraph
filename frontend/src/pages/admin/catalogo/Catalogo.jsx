@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import api from '../../../services/api'
 import Toast from '../../../components/Toast'
+import { alCambiarTexto } from '../../../utils/texto'
+import { Modal, ConfirmModal } from '../../../components/ui/Modal'
 
 /* ─── Paleta dinámica de colores para clasificaciones ─── */
 const PALETA = [
@@ -15,6 +17,17 @@ const PALETA = [
   { color: 'bg-amber-100 text-amber-700 border-amber-200',    grad: 'from-amber-500 to-amber-600'     },
 ]
 
+/** El backend siempre manda mensaje="Errores de validación" para cualquier fallo de @Valid — el
+ * detalle real (qué campo y por qué) viaja aparte en `errores: {campo: mensaje}`. Sin esto, el
+ * usuario ve el mismo texto genérico sin importar cuál sea el problema real. */
+function mensajeErrorValidacion(err, fallback = 'Error al guardar.') {
+  const data = err.response?.data
+  if (data?.errores && typeof data.errores === 'object' && Object.keys(data.errores).length) {
+    return Object.entries(data.errores).map(([campo, msg]) => `${campo}: ${msg}`).join(' · ')
+  }
+  return data?.mensaje ?? data?.message ?? fallback
+}
+
 function cfgColor(clasificaciones, codigo) {
   const idx = clasificaciones.findIndex(c => c.codigo === codigo)
   return PALETA[(idx >= 0 ? idx : 3) % PALETA.length]
@@ -25,10 +38,19 @@ function fmtValor(valor) {
   return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(valor)
 }
 
+function fmtTiempo(minutos) {
+  if (minutos == null) return null
+  const horas = Math.floor(minutos / 60)
+  const mins = minutos % 60
+  if (horas === 0) return `${mins} min`
+  if (mins === 0) return `${horas} h`
+  return `${horas} h ${mins} min`
+}
+
 /* ─── Componentes base ─── */
 function IconoOrden({ activo, dir }) {
   if (!activo) return <span className="ml-1 text-gray-300 text-xs">↕</span>
-  return <span className="ml-1 text-indigo-500 text-xs">{dir === 'asc' ? '↑' : '↓'}</span>
+  return <span className="ml-1 text-primary-500 text-xs">{dir === 'asc' ? '↑' : '↓'}</span>
 }
 
 function BarraFiltros({ busqueda, onBusqueda, filtro, onFiltro, total, activos, inactivos, visibles }) {
@@ -36,7 +58,7 @@ function BarraFiltros({ busqueda, onBusqueda, filtro, onFiltro, total, activos, 
     <div className="flex flex-wrap items-center gap-3 mb-3">
       <input type="search" value={busqueda} onChange={e => onBusqueda(e.target.value)}
         placeholder="Buscar por nombre o descripción…"
-        className="flex-1 min-w-[200px] max-w-xs border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        className="flex-1 min-w-[200px] max-w-xs border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
       <div className="flex gap-1">
         {[
           { key: 'todos',     label: 'Todos',     count: total    },
@@ -46,7 +68,7 @@ function BarraFiltros({ busqueda, onBusqueda, filtro, onFiltro, total, activos, 
           <button key={f.key} onClick={() => onFiltro(f.key)}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
               filtro === f.key
-                ? f.key === 'inactivos' ? 'bg-red-100 text-red-700' : f.key === 'activos' ? 'bg-green-100 text-green-700' : 'bg-indigo-100 text-indigo-700'
+                ? f.key === 'inactivos' ? 'bg-red-100 text-red-700' : f.key === 'activos' ? 'bg-green-100 text-green-700' : 'bg-primary-100 text-primary-700'
                 : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
             }`}>
             {f.label}<span className="ml-1.5 font-normal opacity-70">{f.count}</span>
@@ -68,72 +90,159 @@ function Badge({ activo }) {
   )
 }
 
-function Modal({ titulo, onClose, ancho = 'max-w-md', children }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className={`bg-white rounded-2xl shadow-xl w-full ${ancho} mx-4 max-h-[90vh] flex flex-col`}>
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
-          <h3 className="text-base font-semibold text-gray-900">{titulo}</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
-        </div>
-        <div className="overflow-y-auto flex-1">{children}</div>
-      </div>
-    </div>
-  )
-}
-
 /* ─── Modal confirmación desactivar progreso ─── */
 function ModalConfirmacion({ progreso, impacto, cargando, onConfirmar, onCancelar }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4">
-        <div className="px-6 py-5">
-          <div className="flex items-start gap-4">
-            <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-              <span className="text-amber-600 text-lg">⚠</span>
+    <ConfirmModal titulo="Desactivar subproceso" danger cargando={cargando}
+      onConfirmar={onConfirmar} onCancelar={onCancelar} confirmLabel="Sí, desactivar">
+      <p className="text-sm text-gray-600 mb-3">
+        Vas a desactivar <span className="font-medium">"{progreso.nombreProgreso}"</span>.
+      </p>
+      {cargando ? (
+        <div className="flex items-center gap-2 text-sm text-gray-400 py-2">
+          <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary-500 border-t-transparent" />
+          Verificando impacto...
+        </div>
+      ) : impacto?.total > 0 ? (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-1">
+          <p className="text-xs font-semibold text-amber-700 mb-2 uppercase tracking-wider">
+            Procesos afectados ({impacto.total})
+          </p>
+          <ul className="space-y-1">
+            {impacto.procesosAfectados.map(nombre => (
+              <li key={nombre} className="text-sm text-amber-800 flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" />
+                {nombre}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-sm text-green-700">
+          Este subproceso no está asignado a ningún proceso activo.
+        </div>
+      )}
+    </ConfirmModal>
+  )
+}
+
+/* ─── Precios por volumen de un proceso — solo disponible al editar (el proceso ya debe existir) ─── */
+function SeccionTramos({ proceso, onCambio }) {
+  const [tramos, setTramos] = useState(proceso.tramosPrecio ?? [])
+  const [agregando, setAgregando] = useState(false)
+  const [nuevoTramo, setNuevoTramo] = useState({ cantidadMinima: '', valorUnitario: '' })
+  const [editandoId, setEditandoId] = useState(null)
+  const [edicion, setEdicion] = useState({ cantidadMinima: '', valorUnitario: '' })
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState(null)
+
+  const ordenar = (lista) => [...lista].sort((a, b) => a.cantidadMinima - b.cantidadMinima)
+
+  const crear = async () => {
+    setGuardando(true); setError(null)
+    try {
+      const { data } = await api.post(`/catalogo/procesos/${proceso.idProceso}/tramos`, {
+        cantidadMinima: Number(nuevoTramo.cantidadMinima),
+        valorUnitario: Number(nuevoTramo.valorUnitario),
+      })
+      setTramos(prev => ordenar([...prev, data]))
+      setNuevoTramo({ cantidadMinima: '', valorUnitario: '' })
+      setAgregando(false)
+      onCambio?.()
+    } catch (err) {
+      setError(mensajeErrorValidacion(err))
+    } finally { setGuardando(false) }
+  }
+
+  const actualizar = async (idTramo) => {
+    setGuardando(true); setError(null)
+    try {
+      const { data } = await api.put(`/catalogo/procesos/${proceso.idProceso}/tramos/${idTramo}`, {
+        cantidadMinima: Number(edicion.cantidadMinima),
+        valorUnitario: Number(edicion.valorUnitario),
+      })
+      setTramos(prev => ordenar(prev.map(t => t.idTramo === idTramo ? data : t)))
+      setEditandoId(null)
+      onCambio?.()
+    } catch (err) {
+      setError(mensajeErrorValidacion(err))
+    } finally { setGuardando(false) }
+  }
+
+  const eliminar = async (idTramo) => {
+    setError(null)
+    try {
+      await api.delete(`/catalogo/procesos/${proceso.idProceso}/tramos/${idTramo}`)
+      setTramos(prev => prev.filter(t => t.idTramo !== idTramo))
+      onCambio?.()
+    } catch (err) {
+      setError(mensajeErrorValidacion(err))
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-gray-200 overflow-hidden">
+      <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Precios por volumen</p>
+          <p className="text-xs text-gray-400 mt-0.5">Descuento automático al comprar cantidades grandes</p>
+        </div>
+        {!agregando && (
+          <button type="button" onClick={() => setAgregando(true)}
+            className="text-xs font-medium text-primary-600 hover:text-primary-800">+ Agregar tramo</button>
+        )}
+      </div>
+      <div className="p-4 space-y-2">
+        {error && <div className="bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2 rounded-lg">{error}</div>}
+
+        {tramos.length === 0 && !agregando && (
+          <p className="text-xs text-gray-400">Sin tramos configurados — siempre se cobra el valor base.</p>
+        )}
+
+        {tramos.map(t => (
+          editandoId === t.idTramo ? (
+            <div key={t.idTramo} className="flex items-center gap-2">
+              <input type="number" min={2} value={edicion.cantidadMinima}
+                onChange={e => setEdicion(p => ({ ...p, cantidadMinima: e.target.value }))}
+                placeholder="Cant. mín" className="w-24 border border-gray-200 rounded-lg px-2 py-1.5 text-xs" />
+              <span className="text-xs text-gray-400 whitespace-nowrap">und →</span>
+              <input type="number" min={0} step="0.01" value={edicion.valorUnitario}
+                onChange={e => setEdicion(p => ({ ...p, valorUnitario: e.target.value }))}
+                placeholder="Valor unitario" className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs" />
+              <button type="button" disabled={guardando} onClick={() => actualizar(t.idTramo)}
+                className="text-xs font-medium text-primary-600 hover:text-primary-800 whitespace-nowrap">Guardar</button>
+              <button type="button" onClick={() => setEditandoId(null)} className="text-xs text-gray-400 whitespace-nowrap">Cancelar</button>
             </div>
-            <div className="flex-1">
-              <h3 className="text-base font-semibold text-gray-900 mb-1">Desactivar subproceso</h3>
-              <p className="text-sm text-gray-600 mb-3">
-                Vas a desactivar <span className="font-medium">"{progreso.nombreProgreso}"</span>.
-              </p>
-              {cargando ? (
-                <div className="flex items-center gap-2 text-sm text-gray-400 py-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-indigo-500 border-t-transparent" />
-                  Verificando impacto...
-                </div>
-              ) : impacto?.total > 0 ? (
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-1">
-                  <p className="text-xs font-semibold text-amber-700 mb-2 uppercase tracking-wider">
-                    Procesos afectados ({impacto.total})
-                  </p>
-                  <ul className="space-y-1">
-                    {impacto.procesosAfectados.map(nombre => (
-                      <li key={nombre} className="text-sm text-amber-800 flex items-center gap-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" />
-                        {nombre}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : (
-                <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-sm text-green-700">
-                  Este subproceso no está asignado a ningún proceso activo.
-                </div>
-              )}
+          ) : (
+            <div key={t.idTramo} className="flex items-center justify-between gap-2 text-sm bg-gray-50 rounded-lg px-3 py-2">
+              <span className="text-gray-700">Desde <strong>{t.cantidadMinima}</strong> unidades</span>
+              <span className="font-semibold text-primary-700 whitespace-nowrap">{fmtValor(t.valorUnitario)} c/u</span>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button type="button"
+                  onClick={() => { setEditandoId(t.idTramo); setEdicion({ cantidadMinima: String(t.cantidadMinima), valorUnitario: String(t.valorUnitario) }) }}
+                  className="text-xs text-primary-600 hover:underline">Editar</button>
+                <button type="button" onClick={() => eliminar(t.idTramo)} className="text-xs text-red-500 hover:underline">Eliminar</button>
+              </div>
             </div>
+          )
+        ))}
+
+        {agregando && (
+          <div className="flex items-center gap-2 pt-1">
+            <input type="number" min={2} value={nuevoTramo.cantidadMinima}
+              onChange={e => setNuevoTramo(p => ({ ...p, cantidadMinima: e.target.value }))}
+              placeholder="Cant. mín (ej: 20)" className="w-32 border border-gray-200 rounded-lg px-2 py-1.5 text-xs" />
+            <input type="number" min={0} step="0.01" value={nuevoTramo.valorUnitario}
+              onChange={e => setNuevoTramo(p => ({ ...p, valorUnitario: e.target.value }))}
+              placeholder="Valor unitario" className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs" />
+            <button type="button" disabled={guardando || !nuevoTramo.cantidadMinima || !nuevoTramo.valorUnitario} onClick={crear}
+              className="text-xs font-medium text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50 px-3 py-1.5 rounded-lg whitespace-nowrap">
+              Guardar
+            </button>
+            <button type="button" onClick={() => { setAgregando(false); setNuevoTramo({ cantidadMinima: '', valorUnitario: '' }) }}
+              className="text-xs text-gray-400 whitespace-nowrap">Cancelar</button>
           </div>
-        </div>
-        <div className="px-6 pb-5 flex justify-end gap-3">
-          <button onClick={onCancelar}
-            className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-            Cancelar
-          </button>
-          <button onClick={onConfirmar} disabled={cargando}
-            className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 rounded-lg transition-colors">
-            Sí, desactivar
-          </button>
-        </div>
+        )}
       </div>
     </div>
   )
@@ -144,10 +253,11 @@ function ModalConfirmacion({ progreso, impacto, cargando, onConfirmar, onCancela
 ══════════════════════════════════════════ */
 function FormProceso({ proceso, clasificaciones, clasificacionDefaultId, onClose, onGuardado }) {
   const [form, setForm] = useState({
-    nombreProceso:    proceso?.nombreProceso ?? '',
-    descripcion:      proceso?.descripcion  ?? '',
-    idClasificacion:  proceso?.clasificacion?.idClasificacion ?? clasificacionDefaultId ?? '',
-    valor:            proceso?.valor != null ? String(proceso.valor) : '',
+    nombreProceso:       proceso?.nombreProceso ?? '',
+    descripcion:         proceso?.descripcion  ?? '',
+    idClasificacion:     proceso?.clasificacion?.idClasificacion ?? clasificacionDefaultId ?? '',
+    valor:               proceso?.valor != null ? String(proceso.valor) : '',
+    diasHabilesEntrega:  proceso?.diasHabilesEntrega != null ? String(proceso.diasHabilesEntrega) : '5',
   })
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState(null)
@@ -155,10 +265,11 @@ function FormProceso({ proceso, clasificaciones, clasificacionDefaultId, onClose
   const handleSubmit = async (e) => {
     e.preventDefault(); setGuardando(true); setError(null)
     const payload = {
-      nombreProceso:   form.nombreProceso,
-      descripcion:     form.descripcion || null,
-      idClasificacion: Number(form.idClasificacion),
-      valor:           form.valor !== '' ? Number(form.valor) : null,
+      nombreProceso:      form.nombreProceso,
+      descripcion:        form.descripcion || null,
+      idClasificacion:    Number(form.idClasificacion),
+      valor:              form.valor !== '' ? Number(form.valor) : null,
+      diasHabilesEntrega: form.diasHabilesEntrega !== '' ? Number(form.diasHabilesEntrega) : null,
     }
     try {
       if (proceso) {
@@ -170,7 +281,7 @@ function FormProceso({ proceso, clasificaciones, clasificacionDefaultId, onClose
       }
       onClose()
     } catch (err) {
-      setError(err.response?.data?.mensaje ?? err.response?.data?.message ?? 'Error al guardar.')
+      setError(mensajeErrorValidacion(err))
     } finally { setGuardando(false) }
   }
 
@@ -179,13 +290,13 @@ function FormProceso({ proceso, clasificaciones, clasificacionDefaultId, onClose
       {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{error}</div>}
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-1">Nombre <span className="text-red-500">*</span></label>
-        <input value={form.nombreProceso} onChange={e => setForm(p => ({ ...p, nombreProceso: e.target.value }))} required
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        <input value={form.nombreProceso} onChange={e => setForm(p => ({ ...p, nombreProceso: alCambiarTexto(e.target.value) }))} required
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
       </div>
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-1">Clasificación <span className="text-red-500">*</span></label>
         <select value={form.idClasificacion} onChange={e => setForm(p => ({ ...p, idClasificacion: e.target.value }))} required
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
           <option value="">Seleccionar clasificación…</option>
           {clasificaciones.filter(c => c.activo).map(c => (
             <option key={c.idClasificacion} value={c.idClasificacion}>{c.codigo} — {c.nombre}</option>
@@ -194,15 +305,28 @@ function FormProceso({ proceso, clasificaciones, clasificacionDefaultId, onClose
       </div>
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-1">Descripción</label>
-        <textarea value={form.descripcion} rows={3} onChange={e => setForm(p => ({ ...p, descripcion: e.target.value }))}
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none" />
+        <textarea value={form.descripcion} rows={3} onChange={e => setForm(p => ({ ...p, descripcion: alCambiarTexto(e.target.value) }))}
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" />
       </div>
-      {/* ── Sección de valores ── */}
+      {/* ── Sección de tiempos y valores ── */}
       <div className="rounded-xl border border-gray-200 overflow-hidden">
         <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Valores</p>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Tiempos y valores</p>
         </div>
         <div className="p-4 space-y-4">
+          {/* Tiempo de entrega */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Días hábiles de entrega <span className="text-red-500">*</span>
+              <span className="ml-1.5 text-gray-400 font-normal">— tiempo estándar de respuesta</span>
+            </label>
+            <div className="flex items-center gap-3">
+              <input type="number" min={1} max={365} value={form.diasHabilesEntrega} required
+                onChange={e => setForm(p => ({ ...p, diasHabilesEntrega: e.target.value }))}
+                className="w-28 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+              <span className="text-xs text-gray-400">días hábiles</span>
+            </div>
+          </div>
           {/* Valor base — editable */}
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">
@@ -212,24 +336,24 @@ function FormProceso({ proceso, clasificaciones, clasificacionDefaultId, onClose
             <input type="number" min={0} step="0.01" value={form.valor}
               onChange={e => setForm(p => ({ ...p, valor: e.target.value }))}
               placeholder="Ej: 150000"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
           </div>
 
           {/* Valor calculado — solo lectura */}
           {proceso ? (
             proceso.valorCalculado != null ? (
-              <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3.5 flex items-center gap-4">
-                <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
-                  <svg className="h-5 w-5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <div className="bg-primary-50 border border-primary-200 rounded-xl px-4 py-3.5 flex items-center gap-4">
+                <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center flex-shrink-0">
+                  <svg className="h-5 w-5 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 11h.01M12 11h.01M15 11h.01M4 19h16a2 2 0 002-2V7a2 2 0 00-2-2H4a2 2 0 00-2 2v10a2 2 0 002 2z" />
                   </svg>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-indigo-500 uppercase tracking-wider mb-0.5">Valor calculado desde subprocesos</p>
-                  <p className="text-xl font-bold text-indigo-800 leading-tight">
+                  <p className="text-xs font-semibold text-primary-500 uppercase tracking-wider mb-0.5">Valor calculado desde subprocesos</p>
+                  <p className="text-xl font-bold text-primary-800 leading-tight">
                     {fmtValor(proceso.valorCalculado)}
                   </p>
-                  <p className="text-xs text-indigo-400 mt-0.5">Suma de los {proceso.totalPasos} subproceso{proceso.totalPasos !== 1 ? 's' : ''} habilitados asignados</p>
+                  <p className="text-xs text-primary-400 mt-0.5">Suma de los {proceso.totalPasos} subproceso{proceso.totalPasos !== 1 ? 's' : ''} habilitados asignados</p>
                 </div>
               </div>
             ) : (
@@ -257,10 +381,18 @@ function FormProceso({ proceso, clasificaciones, clasificacionDefaultId, onClose
         </div>
       </div>
 
+      {proceso ? (
+        <SeccionTramos proceso={proceso} onCambio={() => onGuardado()} />
+      ) : (
+        <div className="rounded-xl border border-dashed border-gray-300 px-4 py-3 text-xs text-gray-400">
+          Podrás configurar precios por volumen (descuento por cantidad) después de crear el proceso.
+        </div>
+      )}
+
       <div className="flex justify-end gap-3 pt-1">
         <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancelar</button>
         <button type="submit" disabled={guardando}
-          className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-sm font-medium px-5 py-2 rounded-lg">
+          className="bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white text-sm font-medium px-5 py-2 rounded-lg">
           {guardando ? 'Guardando...' : proceso ? 'Guardar cambios' : 'Crear proceso'}
         </button>
       </div>
@@ -304,8 +436,7 @@ function PasosModal({ proceso, onClose, onToast }) {
   const agregarSeleccionados = async () => {
     if (!seleccionados.size) return
     setGuardando(true); setError(null)
-    const base = pasos.length
-    const items = [...seleccionados].map((id, i) => ({ idTipoProgreso: id, ordenEnProceso: base + i + 1, habilitado: true, obligatorio: true }))
+    const items = [...seleccionados].map(id => ({ idTipoProgreso: id, habilitado: true, obligatorio: true }))
     try {
       await Promise.all(items.map(item => api.post(`/catalogo/procesos/${proceso.idProceso}/pasos`, item)))
       cargar()
@@ -327,7 +458,7 @@ function PasosModal({ proceso, onClose, onToast }) {
     const nuevoObligatorio = campo === 'obligatorio' ? !paso.obligatorio : paso.obligatorio
     try {
       await api.put(`/catalogo/procesos/${proceso.idProceso}/pasos/${paso.id}`, {
-        idTipoProgreso: paso.idTipoProgreso, ordenEnProceso: paso.ordenEnProceso,
+        idTipoProgreso: paso.idTipoProgreso,
         habilitado: nuevoHabilitado, obligatorio: nuevoObligatorio,
       })
       cargar()
@@ -344,7 +475,7 @@ function PasosModal({ proceso, onClose, onToast }) {
       <div>
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Asignados ({pasos.length})</p>
         {cargando ? (
-          <div className="flex justify-center py-6"><div className="animate-spin rounded-full h-6 w-6 border-4 border-indigo-600 border-t-transparent" /></div>
+          <div className="flex justify-center py-6"><div className="animate-spin rounded-full h-6 w-6 border-4 border-primary-600 border-t-transparent" /></div>
         ) : pasos.length === 0 ? (
           <p className="text-sm text-gray-400 py-3 text-center bg-gray-50 rounded-lg">Sin subprocesos asignados.</p>
         ) : (
@@ -353,7 +484,7 @@ function PasosModal({ proceso, onClose, onToast }) {
               const inactivo = !p.tipoActivo
               return (
                 <div key={p.id} className={`flex items-center gap-3 p-3 rounded-lg ${inactivo ? 'bg-red-50 opacity-70' : 'bg-gray-50'}`}>
-                  <span className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 ${inactivo ? 'bg-red-100 text-red-400' : 'bg-indigo-100 text-indigo-600'}`}>
+                  <span className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center flex-shrink-0 ${inactivo ? 'bg-red-100 text-red-400' : 'bg-primary-100 text-primary-600'}`}>
                     {i + 1}
                   </span>
                   <span className={`flex-1 text-sm font-medium ${inactivo ? 'text-gray-400 line-through' : 'text-gray-800'}`}>{p.nombreProgreso}</span>
@@ -383,23 +514,23 @@ function PasosModal({ proceso, onClose, onToast }) {
         <div>
           <div className="flex items-center justify-between mb-2">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Disponibles para agregar</p>
-            <button onClick={seleccionarTodos} className="text-xs text-indigo-600 hover:text-indigo-800 transition-colors">
+            <button onClick={seleccionarTodos} className="text-xs text-primary-600 hover:text-primary-800 transition-colors">
               {seleccionados.size === disponibles.length ? 'Deseleccionar todos' : 'Seleccionar todos'}
             </button>
           </div>
           <div className="border border-gray-200 rounded-lg overflow-hidden divide-y divide-gray-100 max-h-52 overflow-y-auto">
             {disponibles.map(t => (
               <label key={t.idTipoProgreso} title={t.descripcion ?? ''}
-                className="flex items-center gap-3 px-4 py-2.5 hover:bg-indigo-50 cursor-pointer transition-colors">
+                className="flex items-center gap-3 px-4 py-2.5 hover:bg-primary-50 cursor-pointer transition-colors">
                 <input type="checkbox" checked={seleccionados.has(t.idTipoProgreso)} onChange={() => toggleSeleccion(t.idTipoProgreso)}
-                  className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                  className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
                 <span className="text-sm text-gray-800">{t.nombreProgreso}</span>
               </label>
             ))}
           </div>
           {seleccionados.size > 0 && (
             <button onClick={agregarSeleccionados} disabled={guardando}
-              className="mt-3 w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-sm font-medium py-2 rounded-lg transition-colors">
+              className="mt-3 w-full bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white text-sm font-medium py-2 rounded-lg transition-colors">
               {guardando ? 'Agregando...' : `Agregar ${seleccionados.size} subproceso${seleccionados.size > 1 ? 's' : ''} seleccionado${seleccionados.size > 1 ? 's' : ''}`}
             </button>
           )}
@@ -445,6 +576,19 @@ function TarjetaProceso({ p, clasificaciones, onEditar, onPasos, onEstado }) {
             </svg>
             {p.totalPasos} subproceso{p.totalPasos !== 1 ? 's' : ''}
           </span>
+          {p.diasHabilesEntrega != null && (
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border bg-sky-50 text-sky-700 border-sky-200">
+              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              {p.diasHabilesEntrega} día{p.diasHabilesEntrega !== 1 ? 's' : ''} hábil{p.diasHabilesEntrega !== 1 ? 'es' : ''}
+            </span>
+          )}
+          {p.tramosPrecio?.length > 0 && (
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border bg-green-50 text-green-700 border-green-200">
+              {p.tramosPrecio.length} tramo{p.tramosPrecio.length !== 1 ? 's' : ''} de precio
+            </span>
+          )}
         </div>
         {/* Sección de valores */}
         <div className="grid grid-cols-2 gap-2 mb-4 p-2.5 bg-gray-50 rounded-xl border border-gray-100">
@@ -454,7 +598,7 @@ function TarjetaProceso({ p, clasificaciones, onEditar, onPasos, onEstado }) {
           </div>
           <div>
             <p className="text-xs text-gray-400 mb-0.5">Suma subprocesos</p>
-            <p className={`text-sm font-bold ${vc ? 'text-indigo-700' : 'text-gray-300'}`}>{vc ?? '—'}</p>
+            <p className={`text-sm font-bold ${vc ? 'text-primary-700' : 'text-gray-300'}`}>{vc ?? '—'}</p>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap border-t border-gray-100 pt-3 mt-auto">
@@ -463,7 +607,7 @@ function TarjetaProceso({ p, clasificaciones, onEditar, onPasos, onEstado }) {
             Subprocesos
           </button>
           <button onClick={() => onEditar(p)}
-            className="flex-1 text-xs font-medium px-3 py-1.5 rounded-lg border border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition-colors text-center">
+            className="flex-1 text-xs font-medium px-3 py-1.5 rounded-lg border border-primary-200 text-primary-600 hover:bg-primary-50 transition-colors text-center">
             Editar
           </button>
           <button onClick={() => onEstado(p)}
@@ -477,7 +621,7 @@ function TarjetaProceso({ p, clasificaciones, onEditar, onPasos, onEstado }) {
 }
 
 function TablaProcesos({ procesos, clasificaciones, cargando, onEditar, onPasos, onEstado }) {
-  if (cargando) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-4 border-indigo-600 border-t-transparent" /></div>
+  if (cargando) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-4 border-primary-600 border-t-transparent" /></div>
   if (!procesos.length) return <div className="text-center py-16 text-gray-400 text-sm">Sin procesos en esta clasificación.</div>
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -492,7 +636,7 @@ function TablaProcesos({ procesos, clasificaciones, cargando, onEditar, onPasos,
    GRID DE CLASIFICACIONES (vista inicial)
 ══════════════════════════════════════════ */
 function GridClasificaciones({ clasificaciones, procesos, cargando, onSeleccionar }) {
-  if (cargando) return <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-10 w-10 border-4 border-indigo-600 border-t-transparent" /></div>
+  if (cargando) return <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-10 w-10 border-4 border-primary-600 border-t-transparent" /></div>
   if (!clasificaciones.length) return <div className="text-center py-20 text-gray-400 text-sm">No hay clasificaciones registradas. Crea una en la pestaña Clasificaciones.</div>
 
   return (
@@ -523,7 +667,7 @@ function GridClasificaciones({ clasificaciones, procesos, cargando, onSelecciona
                 <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${cfg.color}`}>
                   {total} proceso{total !== 1 ? 's' : ''}
                 </span>
-                <span className="text-xs text-gray-400 group-hover:text-indigo-600 transition-colors flex items-center gap-1">
+                <span className="text-xs text-gray-400 group-hover:text-primary-600 transition-colors flex items-center gap-1">
                   Ver procesos
                   <svg className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
@@ -541,12 +685,25 @@ function GridClasificaciones({ clasificaciones, procesos, cargando, onSelecciona
 /* ══════════════════════════════════════════
    PROGRESOS
 ══════════════════════════════════════════ */
+const ROLES_RESPONSABLE = [
+  { valor: 'ANALISTA_INTERNO', etiqueta: 'Analista interno' },
+  { valor: 'POLIGRAFISTA',     etiqueta: 'Poligrafista' },
+  { valor: 'VISITADOR',        etiqueta: 'Visitador' },
+]
+
+function etiquetaRol(rol) {
+  return ROLES_RESPONSABLE.find(r => r.valor === rol)?.etiqueta ?? rol ?? '—'
+}
+
 function FormProgreso({ progreso, onClose, onGuardado }) {
   const [form, setForm] = useState({
     nombreProgreso: progreso?.nombreProgreso ?? '',
     descripcion:    progreso?.descripcion    ?? '',
     orden:          progreso?.orden          ?? 0,
     valor:          progreso?.valor != null ? String(progreso.valor) : '',
+    horasEstimadas:   progreso?.minutosEstimados != null ? String(Math.floor(progreso.minutosEstimados / 60)) : '',
+    minutosEstimados: progreso?.minutosEstimados != null ? String(progreso.minutosEstimados % 60) : '',
+    rolResponsable: progreso?.rolResponsable ?? 'ANALISTA_INTERNO',
   })
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState(null)
@@ -558,6 +715,11 @@ function FormProgreso({ progreso, onClose, onGuardado }) {
       descripcion:    form.descripcion || null,
       orden:          Number(form.orden),
       valor:          form.valor !== '' ? Number(form.valor) : null,
+      minutosEstimados:
+        form.horasEstimadas !== '' || form.minutosEstimados !== ''
+          ? (Number(form.horasEstimadas || 0) * 60) + Number(form.minutosEstimados || 0)
+          : null,
+      rolResponsable: form.rolResponsable,
     }
     try {
       if (progreso) {
@@ -569,7 +731,7 @@ function FormProgreso({ progreso, onClose, onGuardado }) {
       }
       onClose()
     } catch (err) {
-      setError(err.response?.data?.mensaje ?? err.response?.data?.message ?? 'Error al guardar.')
+      setError(mensajeErrorValidacion(err))
     } finally { setGuardando(false) }
   }
 
@@ -578,31 +740,60 @@ function FormProgreso({ progreso, onClose, onGuardado }) {
       {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{error}</div>}
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-1">Nombre <span className="text-red-500">*</span></label>
-        <input value={form.nombreProgreso} required onChange={e => setForm(p => ({ ...p, nombreProgreso: e.target.value }))}
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+        <input value={form.nombreProgreso} required onChange={e => setForm(p => ({ ...p, nombreProgreso: alCambiarTexto(e.target.value) }))}
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
       </div>
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-1">Descripción</label>
-        <textarea value={form.descripcion} rows={3} onChange={e => setForm(p => ({ ...p, descripcion: e.target.value }))}
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none" />
+        <textarea value={form.descripcion} rows={3} onChange={e => setForm(p => ({ ...p, descripcion: alCambiarTexto(e.target.value) }))}
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-gray-600 mb-1">
+          Rol responsable <span className="text-red-500">*</span>
+          <span className="ml-1.5 text-gray-400 font-normal">— quién ejecuta este subproceso</span>
+        </label>
+        <select value={form.rolResponsable} required
+          onChange={e => setForm(p => ({ ...p, rolResponsable: e.target.value }))}
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
+          {ROLES_RESPONSABLE.map(r => (
+            <option key={r.valor} value={r.valor}>{r.etiqueta}</option>
+          ))}
+        </select>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Orden</label>
           <input type="number" min={0} value={form.orden} onChange={e => setForm(p => ({ ...p, orden: Number(e.target.value) }))}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Valor base (COP)</label>
           <input type="number" min={0} step="0.01" value={form.valor} placeholder="Ej: 80000"
             onChange={e => setForm(p => ({ ...p, valor: e.target.value }))}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+        </div>
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-gray-600 mb-1">
+          Tiempo estimado
+          <span className="ml-1.5 text-gray-400 font-normal">— cuánto puede tardar realizar este subproceso</span>
+        </label>
+        <div className="flex items-center gap-2">
+          <input type="number" min={0} value={form.horasEstimadas} placeholder="0"
+            onChange={e => setForm(p => ({ ...p, horasEstimadas: e.target.value }))}
+            className="w-20 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+          <span className="text-xs text-gray-400">horas</span>
+          <input type="number" min={0} max={59} value={form.minutosEstimados} placeholder="0"
+            onChange={e => setForm(p => ({ ...p, minutosEstimados: e.target.value }))}
+            className="w-20 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+          <span className="text-xs text-gray-400">minutos</span>
         </div>
       </div>
       <div className="flex justify-end gap-3 pt-1">
         <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancelar</button>
         <button type="submit" disabled={guardando}
-          className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-sm font-medium px-5 py-2 rounded-lg">
+          className="bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white text-sm font-medium px-5 py-2 rounded-lg">
           {guardando ? 'Guardando...' : progreso ? 'Guardar cambios' : 'Crear subproceso'}
         </button>
       </div>
@@ -611,16 +802,18 @@ function FormProgreso({ progreso, onClose, onGuardado }) {
 }
 
 function TablaProgresos({ progresos, cargando, onEditar, onDesactivar, onActivar, ordenCol, ordenDir, onOrdenar }) {
-  if (cargando) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-4 border-indigo-600 border-t-transparent" /></div>
+  if (cargando) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-4 border-primary-600 border-t-transparent" /></div>
   if (!progresos.length) return <div className="text-center py-16 text-gray-400 text-sm">No hay subprocesos que coincidan con el filtro.</div>
 
   const cols = [
     { key: 'orden',          label: 'Orden',       sortable: true  },
     { key: 'nombreProgreso', label: 'Nombre',      sortable: true  },
     { key: 'descripcion',    label: 'Descripción', sortable: false },
-    { key: 'valor',          label: 'Valor',       sortable: true  },
-    { key: 'activo',         label: 'Estado',      sortable: true  },
-    { key: '_acc',           label: 'Acciones',    sortable: false },
+    { key: 'valor',            label: 'Valor',         sortable: true  },
+    { key: 'minutosEstimados', label: 'Tiempo est.',   sortable: true  },
+    { key: 'rolResponsable',   label: 'Rol',           sortable: true  },
+    { key: 'activo',           label: 'Estado',        sortable: true  },
+    { key: '_acc',             label: 'Acciones',      sortable: false },
   ]
 
   return (
@@ -643,11 +836,15 @@ function TablaProgresos({ progresos, cargando, onEditar, onDesactivar, onActivar
               <td className="px-4 py-3 text-sm font-medium text-gray-900">{t.nombreProgreso}</td>
               <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">{t.descripcion ?? '—'}</td>
               <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{fmtValor(t.valor) ?? <span className="text-gray-300">—</span>}</td>
+              <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
+                {fmtTiempo(t.minutosEstimados) ?? <span className="text-gray-300">—</span>}
+              </td>
+              <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{etiquetaRol(t.rolResponsable)}</td>
               <td className="px-4 py-3"><Badge activo={t.activo} /></td>
               <td className="px-4 py-3">
                 <div className="flex items-center gap-2">
                   <button onClick={() => onEditar(t)}
-                    className="text-xs font-medium px-3 py-1 rounded-full border border-indigo-200 text-indigo-600 hover:bg-indigo-50">
+                    className="text-xs font-medium px-3 py-1 rounded-full border border-primary-200 text-primary-600 hover:bg-primary-50">
                     Editar
                   </button>
                   {t.activo ? (
@@ -695,7 +892,7 @@ function FormClasificacion({ clasificacion, onClose, onGuardado }) {
       }
       onClose()
     } catch (err) {
-      setError(err.response?.data?.mensaje ?? err.response?.data?.message ?? 'Error al guardar.')
+      setError(mensajeErrorValidacion(err))
     } finally { setGuardando(false) }
   }
 
@@ -706,24 +903,24 @@ function FormClasificacion({ clasificacion, onClose, onGuardado }) {
         <label className="block text-xs font-medium text-gray-600 mb-1">Código <span className="text-red-500">*</span></label>
         <input value={form.codigo} onChange={e => setForm(p => ({ ...p, codigo: e.target.value.toUpperCase() }))} required maxLength={5}
           placeholder="Ej: A, B, EXT…"
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono uppercase focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono uppercase focus:outline-none focus:ring-2 focus:ring-primary-500" />
         <p className="text-xs text-gray-400 mt-1">Máximo 5 caracteres. Se convierte automáticamente a mayúsculas.</p>
       </div>
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-1">Nombre <span className="text-red-500">*</span></label>
-        <input value={form.nombre} onChange={e => setForm(p => ({ ...p, nombre: e.target.value }))} required maxLength={100}
+        <input value={form.nombre} onChange={e => setForm(p => ({ ...p, nombre: alCambiarTexto(e.target.value) }))} required maxLength={100}
           placeholder="Ej: Pruebas de Confiabilidad"
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
       </div>
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-1">Descripción</label>
-        <textarea value={form.descripcion} rows={3} onChange={e => setForm(p => ({ ...p, descripcion: e.target.value }))}
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none" />
+        <textarea value={form.descripcion} rows={3} onChange={e => setForm(p => ({ ...p, descripcion: alCambiarTexto(e.target.value) }))}
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" />
       </div>
       <div className="flex justify-end gap-3 pt-1">
         <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancelar</button>
         <button type="submit" disabled={guardando}
-          className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-sm font-medium px-5 py-2 rounded-lg">
+          className="bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white text-sm font-medium px-5 py-2 rounded-lg">
           {guardando ? 'Guardando...' : clasificacion ? 'Guardar cambios' : 'Crear clasificación'}
         </button>
       </div>
@@ -732,7 +929,7 @@ function FormClasificacion({ clasificacion, onClose, onGuardado }) {
 }
 
 function TablaClasificaciones({ clasificaciones, cargando, onEditar, onEstado }) {
-  if (cargando) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-4 border-indigo-600 border-t-transparent" /></div>
+  if (cargando) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-4 border-primary-600 border-t-transparent" /></div>
   if (!clasificaciones.length) return (
     <div className="text-center py-16">
       <p className="text-gray-400 text-sm mb-1">No hay clasificaciones registradas.</p>
@@ -766,7 +963,7 @@ function TablaClasificaciones({ clasificaciones, cargando, onEditar, onEstado })
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <button onClick={() => onEditar(c)}
-                      className="text-xs font-medium px-3 py-1 rounded-full border border-indigo-200 text-indigo-600 hover:bg-indigo-50">
+                      className="text-xs font-medium px-3 py-1 rounded-full border border-primary-200 text-primary-600 hover:bg-primary-50">
                       Editar
                     </button>
                     <button onClick={() => onEstado(c)}
@@ -1003,13 +1200,13 @@ export default function Catalogo() {
           )}
           {pestana === 'procesos' && clasificacionActiva && (
             <button onClick={() => setModalCrearProceso(true)}
-              className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+              className="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
               <span className="text-base leading-none">+</span> Nuevo proceso
             </button>
           )}
           {pestana === 'progresos' && (
             <button onClick={() => setModalCrearProgreso(true)}
-              className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+              className="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
               <span className="text-base leading-none">+</span> Nuevo Subproceso
             </button>
           )}
@@ -1027,15 +1224,15 @@ export default function Catalogo() {
       <div className="flex gap-0.5 mb-5 p-1 bg-gray-100 rounded-xl w-fit border border-gray-200/60">
         {PESTANAS.map(p => (
           <button key={p.id}
-            onClick={() => { setPestana(p.id); if (p.id !== 'procesos') volverAlGrid() }}
+            onClick={() => { setPestana(p.id); if (p.id !== 'procesos' || clasificacionActiva) volverAlGrid() }}
             className={`flex items-center gap-2.5 px-5 py-2 rounded-[10px] text-sm font-medium transition-all duration-150 ${
               pestana === p.id
-                ? 'bg-white shadow text-indigo-700 ring-1 ring-gray-200/80'
+                ? 'bg-white shadow text-primary-700 ring-1 ring-gray-200/80'
                 : 'text-gray-500 hover:text-gray-700 hover:bg-white/60'
             }`}>
             {p.label}
             <span className={`inline-flex items-center justify-center h-5 min-w-[22px] px-1.5 rounded-full text-xs font-semibold ${
-              pestana === p.id ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-200/80 text-gray-500'
+              pestana === p.id ? 'bg-primary-100 text-primary-700' : 'bg-gray-200/80 text-gray-500'
             }`}>
               {p.count}
             </span>
@@ -1090,9 +1287,9 @@ export default function Catalogo() {
           <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
             <input type="search" value={busquedaClasif} onChange={e => setBusquedaClasif(e.target.value)}
               placeholder="Buscar por código o nombre…"
-              className="flex-1 min-w-[200px] max-w-xs border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              className="flex-1 min-w-[200px] max-w-xs border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
             <button onClick={() => setModalCrearClasif(true)}
-              className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors whitespace-nowrap">
+              className="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors whitespace-nowrap">
               <span className="text-base leading-none">+</span> Nueva clasificación
             </button>
           </div>

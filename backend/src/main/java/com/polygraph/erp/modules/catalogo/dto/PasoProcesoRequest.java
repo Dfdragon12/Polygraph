@@ -4,7 +4,8 @@ import jakarta.validation.constraints.NotNull;
 
 public record PasoProcesoRequest(
         @NotNull Integer idTipoProgreso,
-        @NotNull Integer ordenEnProceso,
+        // El orden ya no se define aquí — siempre lo determina tipos_progreso.orden (la cadena del catálogo).
+        Integer ordenEnProceso,
         Boolean habilitado,
         Boolean obligatorio
 ) {}

@@ -1,6 +1,8 @@
 package com.polygraph.erp.modules.dashboard;
 
+import com.polygraph.erp.modules.pagos.dto.SaldoServicioResponse;
 import com.polygraph.erp.modules.servicios.dto.DashboardClienteResponse;
+import com.polygraph.erp.modules.servicios.dto.GestorContactoResponse;
 import com.polygraph.erp.modules.servicios.dto.SolicitudResumenResponse;
 import com.polygraph.erp.modules.servicios.service.DashboardClienteService;
 import com.polygraph.erp.shared.enums.EstadoServicio;
@@ -27,8 +29,8 @@ public class ClienteDashboardController {
     }
 
     @GetMapping("/service-packages")
-    public ResponseEntity<List<?>> obtenerBolsaServicios() {
-        return ResponseEntity.ok(List.of());
+    public ResponseEntity<List<SaldoServicioResponse>> obtenerBolsaServicios() {
+        return ResponseEntity.ok(servicio.obtenerBolsaServicios());
     }
 
     @GetMapping("/requests")
@@ -37,5 +39,10 @@ public class ClienteDashboardController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         return ResponseEntity.ok(servicio.listarSolicitudes(status, PageRequest.of(page, size)));
+    }
+
+    @GetMapping("/gestor")
+    public ResponseEntity<GestorContactoResponse> obtenerGestor() {
+        return ResponseEntity.ok(servicio.obtenerGestor());
     }
 }

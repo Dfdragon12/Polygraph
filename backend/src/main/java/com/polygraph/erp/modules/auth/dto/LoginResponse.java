@@ -10,6 +10,7 @@ public record LoginResponse(
             String email,
             String rol,
             String nombre,
-            boolean requiereCambioPassword
+            boolean requiereCambioPassword,
+            String tipoCliente
     ) {}
 }

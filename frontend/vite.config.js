@@ -55,6 +55,9 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // Permite exponer el dev server vía túnel (cloudflared/ngrok) para probar
+    // integraciones que exigen una URL pública, como el checkout de Wompi.
+    allowedHosts: ['.trycloudflare.com', '.ngrok-free.app', '.ngrok.io'],
     proxy: {
       '/api': { target: 'http://localhost:8080', changeOrigin: true },
     },

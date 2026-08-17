@@ -2,12 +2,11 @@ package com.polygraph.erp.modules.servicios.service;
 
 import com.polygraph.erp.modules.auth.entity.Usuario;
 import com.polygraph.erp.modules.auth.repository.UsuarioRepository;
+import com.polygraph.erp.modules.evaluados.entity.Candidato;
 import com.polygraph.erp.modules.servicios.dto.DashboardClienteResponse;
-import com.polygraph.erp.modules.servicios.entity.CatalogoServicio;
-import com.polygraph.erp.modules.solicitudes.entity.Solicitud;
-import com.polygraph.erp.modules.solicitudes.entity.SolicitudServicio;
-import com.polygraph.erp.modules.solicitudes.repository.SolicitudRepository;
-import com.polygraph.erp.shared.enums.CategoriaServicio;
+import com.polygraph.erp.modules.servicios.entity.Proceso;
+import com.polygraph.erp.modules.servicios.entity.Servicio;
+import com.polygraph.erp.modules.servicios.repository.ServicioRepository;
 import com.polygraph.erp.shared.enums.EstadoServicio;
 import com.polygraph.erp.shared.enums.Rol;
 import com.polygraph.erp.shared.exceptions.ApiException;
@@ -24,7 +23,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 
-import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -38,7 +37,7 @@ import static org.mockito.Mockito.when;
 @DisplayName("DashboardClienteService — Pruebas de KPIs del cliente")
 class DashboardClienteServiceTest {
 
-    @Mock private SolicitudRepository solicitudRepository;
+    @Mock private ServicioRepository servicioRepository;
     @Mock private UsuarioRepository usuarioRepository;
 
     @InjectMocks
@@ -72,17 +71,17 @@ class DashboardClienteServiceTest {
     // ── obtenerDashboard ──────────────────────────────────────────
 
     @Test
-    @DisplayName("Dashboard retorna conteos correctos con solicitudes mixtas")
+    @DisplayName("Dashboard retorna conteos correctos con servicios mixtos")
     void dashboard_retorna_conteos_correctos() {
         when(usuarioRepository.findByEmail(EMAIL_CLIENTE)).thenReturn(Optional.of(usuarioCliente));
-        when(solicitudRepository.countByCliente_IdClienteAndEstadoIn(eq(ID_CLIENTE), any()))
+        when(servicioRepository.countByCliente_IdClienteAndEstadoIn(eq(ID_CLIENTE), any()))
                 .thenReturn(5L);
-        when(solicitudRepository.countByCliente_IdClienteAndEstado(ID_CLIENTE, EstadoServicio.PENDIENTE))
+        when(servicioRepository.countByCliente_IdClienteAndEstado(ID_CLIENTE, EstadoServicio.PENDIENTE))
                 .thenReturn(3L);
-        when(solicitudRepository.countByCliente_IdClienteAndEstadoInAndFechaSolicitudBetween(
+        when(servicioRepository.countByCliente_IdClienteAndEstadoInAndFechaSolicitudBetween(
                 eq(ID_CLIENTE), any(), any(), any()))
                 .thenReturn(2L);
-        when(solicitudRepository.findByCliente_IdClienteOrderByFechaSolicitudDesc(eq(ID_CLIENTE), any(Pageable.class)))
+        when(servicioRepository.findByCliente_IdClienteOrderByFechaSolicitudDescHoraSolicitudDesc(eq(ID_CLIENTE), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of()));
 
         DashboardClienteResponse respuesta = dashboardService.obtenerDashboard();
@@ -94,14 +93,14 @@ class DashboardClienteServiceTest {
     }
 
     @Test
-    @DisplayName("Dashboard cliente sin solicitudes retorna todos los conteos en cero")
+    @DisplayName("Dashboard cliente sin servicios retorna todos los conteos en cero")
     void dashboard_cliente_sin_solicitudes_retorna_ceros() {
         when(usuarioRepository.findByEmail(EMAIL_CLIENTE)).thenReturn(Optional.of(usuarioCliente));
-        when(solicitudRepository.countByCliente_IdClienteAndEstadoIn(any(), any())).thenReturn(0L);
-        when(solicitudRepository.countByCliente_IdClienteAndEstado(any(), any())).thenReturn(0L);
-        when(solicitudRepository.countByCliente_IdClienteAndEstadoInAndFechaSolicitudBetween(
+        when(servicioRepository.countByCliente_IdClienteAndEstadoIn(any(), any())).thenReturn(0L);
+        when(servicioRepository.countByCliente_IdClienteAndEstado(any(), any())).thenReturn(0L);
+        when(servicioRepository.countByCliente_IdClienteAndEstadoInAndFechaSolicitudBetween(
                 any(), any(), any(), any())).thenReturn(0L);
-        when(solicitudRepository.findByCliente_IdClienteOrderByFechaSolicitudDesc(any(), any(Pageable.class)))
+        when(servicioRepository.findByCliente_IdClienteOrderByFechaSolicitudDescHoraSolicitudDesc(any(), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of()));
 
         DashboardClienteResponse respuesta = dashboardService.obtenerDashboard();
@@ -114,17 +113,17 @@ class DashboardClienteServiceTest {
     }
 
     @Test
-    @DisplayName("Dashboard incluye las últimas 5 solicitudes del cliente")
+    @DisplayName("Dashboard incluye los últimos 5 servicios del cliente")
     void dashboard_incluye_ultimas_5_solicitudes() {
         when(usuarioRepository.findByEmail(EMAIL_CLIENTE)).thenReturn(Optional.of(usuarioCliente));
-        when(solicitudRepository.countByCliente_IdClienteAndEstadoIn(any(), any())).thenReturn(0L);
-        when(solicitudRepository.countByCliente_IdClienteAndEstado(any(), any())).thenReturn(0L);
-        when(solicitudRepository.countByCliente_IdClienteAndEstadoInAndFechaSolicitudBetween(
+        when(servicioRepository.countByCliente_IdClienteAndEstadoIn(any(), any())).thenReturn(0L);
+        when(servicioRepository.countByCliente_IdClienteAndEstado(any(), any())).thenReturn(0L);
+        when(servicioRepository.countByCliente_IdClienteAndEstadoInAndFechaSolicitudBetween(
                 any(), any(), any(), any())).thenReturn(0L);
 
-        List<Solicitud> solicitudes = crearSolicitudesDePrueba(3);
-        when(solicitudRepository.findByCliente_IdClienteOrderByFechaSolicitudDesc(eq(ID_CLIENTE), any(Pageable.class)))
-                .thenReturn(new PageImpl<>(solicitudes));
+        List<Servicio> servicios = crearServiciosDePrueba(3);
+        when(servicioRepository.findByCliente_IdClienteOrderByFechaSolicitudDescHoraSolicitudDesc(eq(ID_CLIENTE), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(servicios));
 
         DashboardClienteResponse respuesta = dashboardService.obtenerDashboard();
 
@@ -154,12 +153,12 @@ class DashboardClienteServiceTest {
     void dashboard_activos_incluye_tres_estados() {
         when(usuarioRepository.findByEmail(EMAIL_CLIENTE)).thenReturn(Optional.of(usuarioCliente));
         // 3 pendientes + 2 programando + 1 en ejecución = 6 activos
-        when(solicitudRepository.countByCliente_IdClienteAndEstadoIn(eq(ID_CLIENTE), any()))
+        when(servicioRepository.countByCliente_IdClienteAndEstadoIn(eq(ID_CLIENTE), any()))
                 .thenReturn(6L);
-        when(solicitudRepository.countByCliente_IdClienteAndEstado(any(), any())).thenReturn(3L);
-        when(solicitudRepository.countByCliente_IdClienteAndEstadoInAndFechaSolicitudBetween(
+        when(servicioRepository.countByCliente_IdClienteAndEstado(any(), any())).thenReturn(3L);
+        when(servicioRepository.countByCliente_IdClienteAndEstadoInAndFechaSolicitudBetween(
                 any(), any(), any(), any())).thenReturn(0L);
-        when(solicitudRepository.findByCliente_IdClienteOrderByFechaSolicitudDesc(any(), any(Pageable.class)))
+        when(servicioRepository.findByCliente_IdClienteOrderByFechaSolicitudDescHoraSolicitudDesc(any(), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of()));
 
         DashboardClienteResponse respuesta = dashboardService.obtenerDashboard();
@@ -170,27 +169,24 @@ class DashboardClienteServiceTest {
 
     // ── helper ───────────────────────────────────────────────────
 
-    private List<Solicitud> crearSolicitudesDePrueba(int cantidad) {
-        List<Solicitud> lista = new ArrayList<>();
+    private List<Servicio> crearServiciosDePrueba(int cantidad) {
+        List<Servicio> lista = new ArrayList<>();
         for (int i = 1; i <= cantidad; i++) {
-            CatalogoServicio catalogo = CatalogoServicio.builder()
-                    .nombre("Estudio Básico")
-                    .categoria(CategoriaServicio.ESTUDIOS_SEGURIDAD)
+            Proceso proceso = Proceso.builder()
+                    .nombreProceso("Estudio Básico")
                     .build();
-            SolicitudServicio item = SolicitudServicio.builder()
-                    .catalogoServicio(catalogo)
-                    .estado(EstadoServicio.PENDIENTE)
+            Candidato candidato = Candidato.builder()
+                    .cedula("1000000" + i)
+                    .nombres("Evaluado" + i)
+                    .apellidos("Apellido" + i)
                     .build();
-            Solicitud s = Solicitud.builder()
-                    .idSolicitud((long) i)
-                    .cedulaEvaluado("1000000" + i)
-                    .nombresEvaluado("Evaluado" + i)
-                    .apellidosEvaluado("Apellido" + i)
+            Servicio s = Servicio.builder()
+                    .idServicio(i)
+                    .candidato(candidato)
+                    .proceso(proceso)
                     .cargo("Cargo " + i)
-                    .ciudadEvaluado("Bogotá")
                     .estado(EstadoServicio.PENDIENTE)
-                    .fechaSolicitud(LocalDateTime.now().minusDays(i))
-                    .servicios(new ArrayList<>(List.of(item)))
+                    .fechaSolicitud(LocalDate.now().minusDays(i))
                     .build();
             lista.add(s);
         }

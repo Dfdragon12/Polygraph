@@ -174,10 +174,10 @@ function FormJuridica({ onExito }) {
         {[1, 2].map((n) => (
           <div key={n} className="flex items-center">
             <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold
-              ${paso >= n ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-500'}`}>
+              ${paso >= n ? 'bg-primary-600 text-white' : 'bg-gray-200 text-gray-500'}`}>
               {n}
             </div>
-            {n < 2 && <div className={`h-0.5 w-16 mx-1 ${paso > 1 ? 'bg-indigo-600' : 'bg-gray-200'}`} />}
+            {n < 2 && <div className={`h-0.5 w-16 mx-1 ${paso > 1 ? 'bg-primary-600' : 'bg-gray-200'}`} />}
           </div>
         ))}
         <span className="ml-3 text-xs text-gray-500">
@@ -300,7 +300,7 @@ function Alerta({ mensaje }) {
 function BotonSubmit({ cargando, texto }) {
   return (
     <button type="submit" disabled={cargando}
-      className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-semibold py-2.5 px-4 rounded-lg text-sm transition flex items-center justify-center gap-2">
+      className="w-full bg-primary-600 hover:bg-primary-700 disabled:bg-primary-400 text-white font-semibold py-2.5 px-4 rounded-lg text-sm transition flex items-center justify-center gap-2">
       {cargando ? (
         <>
           <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
@@ -315,7 +315,7 @@ function BotonSubmit({ cargando, texto }) {
 }
 
 function estiloInput(error) {
-  return `w-full px-4 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition bg-white ${
+  return `w-full px-4 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 transition bg-white ${
     error ? 'border-red-400 bg-red-50' : 'border-gray-300'
   }`
 }
@@ -334,7 +334,7 @@ function PantallaExito() {
       <p className="text-sm text-gray-600 mb-6">
         Te enviamos un correo de activación. Revisa tu bandeja de entrada y haz clic en el enlace para activar tu cuenta.
       </p>
-      <Link to="/login" className="text-indigo-600 font-medium hover:underline text-sm">
+      <Link to="/login" className="text-primary-600 font-medium hover:underline text-sm">
         Ir al inicio de sesión →
       </Link>
     </div>
@@ -348,13 +348,13 @@ export default function Register() {
   const [registrado, setRegistrado] = useState(false)
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-indigo-900 px-4 py-10">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-primary-900 px-4 py-10">
       <div className="w-full max-w-lg">
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
           {/* Header */}
-          <div className="bg-indigo-600 px-8 py-6 text-center">
+          <div className="bg-primary-600 px-8 py-6 text-center">
             <h1 className="text-xl font-bold text-white">Polygraph Service</h1>
-            <p className="text-indigo-200 text-sm mt-1">Crear cuenta</p>
+            <p className="text-primary-200 text-sm mt-1">Crear cuenta</p>
           </div>
 
           <div className="px-8 py-8">
@@ -371,7 +371,7 @@ export default function Register() {
                     <button key={key} type="button" onClick={() => setTab(key)}
                       className={`flex-1 py-2 rounded-md text-sm font-medium transition ${
                         tab === key
-                          ? 'bg-white text-indigo-700 shadow-sm'
+                          ? 'bg-white text-primary-700 shadow-sm'
                           : 'text-gray-500 hover:text-gray-700'
                       }`}>
                       {label}
@@ -387,7 +387,7 @@ export default function Register() {
 
             <p className="text-center text-sm text-gray-500 mt-6">
               ¿Ya tienes cuenta?{' '}
-              <Link to="/login" className="text-indigo-600 font-medium hover:underline">
+              <Link to="/login" className="text-primary-600 font-medium hover:underline">
                 Inicia sesión
               </Link>
             </p>

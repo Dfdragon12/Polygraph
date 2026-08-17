@@ -1,3 +1,10 @@
+# Env files (raíz y subcarpetas) — nunca versionar secretos reales
+.env
+.env.local
+*.env
+!.env.example
+!**/.env.example
+
 # Backend
 backend/target/
 backend/.env

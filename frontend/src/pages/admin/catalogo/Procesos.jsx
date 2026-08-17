@@ -27,7 +27,7 @@ function Modal({ titulo, onClose, ancho = 'max-w-md', children }) {
 
 function IconoOrden({ activo, dir }) {
   if (!activo) return <span className="ml-1 text-gray-300 text-xs">↕</span>
-  return <span className="ml-1 text-indigo-500 text-xs">{dir === 'asc' ? '↑' : '↓'}</span>
+  return <span className="ml-1 text-primary-500 text-xs">{dir === 'asc' ? '↑' : '↓'}</span>
 }
 
 /* ─── Modal crear / editar proceso ─── */
@@ -61,18 +61,18 @@ function ModalProceso({ proceso, onClose, onGuardado }) {
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-1">Nombre del proceso <span className="text-red-500">*</span></label>
         <input name="nombreProceso" value={form.nombreProceso} onChange={handleChange} required
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
       </div>
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-1">Descripción</label>
         <textarea name="descripcion" value={form.descripcion} onChange={handleChange} rows={3}
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none" />
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" />
       </div>
 
       <div className="flex justify-end gap-3 pt-1">
         <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancelar</button>
         <button type="submit" disabled={guardando}
-          className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-sm font-medium px-5 py-2 rounded-lg">
+          className="bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white text-sm font-medium px-5 py-2 rounded-lg">
           {guardando ? 'Guardando...' : proceso ? 'Guardar cambios' : 'Crear proceso'}
         </button>
       </div>
@@ -85,7 +85,7 @@ function ModalPasos({ proceso, onClose }) {
   const [pasos, setPasos] = useState([])
   const [tipos, setTipos] = useState([])
   const [cargando, setCargando] = useState(true)
-  const [formPaso, setFormPaso] = useState({ idTipoProgreso: '', ordenEnProceso: 1, habilitado: true, obligatorio: true })
+  const [formPaso, setFormPaso] = useState({ idTipoProgreso: '', habilitado: true, obligatorio: true })
   const [guardandoPaso, setGuardandoPaso] = useState(false)
   const [error, setError] = useState(null)
 
@@ -115,7 +115,7 @@ function ModalPasos({ proceso, onClose }) {
         ...formPaso,
         idTipoProgreso: Number(formPaso.idTipoProgreso),
       })
-      setFormPaso({ idTipoProgreso: '', ordenEnProceso: pasos.length + 2, habilitado: true, obligatorio: true })
+      setFormPaso({ idTipoProgreso: '', habilitado: true, obligatorio: true })
       cargarPasos()
     } catch (err) {
       setError(err.response?.data?.mensaje ?? 'Error al agregar el paso.')
@@ -133,7 +133,6 @@ function ModalPasos({ proceso, onClose }) {
     try {
       await api.put(`/catalogo/procesos/${proceso.idProceso}/pasos/${paso.id}`, {
         idTipoProgreso: paso.idTipoProgreso,
-        ordenEnProceso: paso.ordenEnProceso,
         habilitado: campo === 'habilitado' ? !paso.habilitado : paso.habilitado,
         obligatorio: campo === 'obligatorio' ? !paso.obligatorio : paso.obligatorio,
       })
@@ -151,7 +150,7 @@ function ModalPasos({ proceso, onClose }) {
         </p>
         {cargando ? (
           <div className="flex justify-center py-6">
-            <div className="animate-spin rounded-full h-6 w-6 border-4 border-indigo-600 border-t-transparent" />
+            <div className="animate-spin rounded-full h-6 w-6 border-4 border-primary-600 border-t-transparent" />
           </div>
         ) : pasos.length === 0 ? (
           <p className="text-sm text-gray-400 py-4 text-center">Sin pasos asignados aún.</p>
@@ -159,7 +158,7 @@ function ModalPasos({ proceso, onClose }) {
           <div className="space-y-2">
             {pasos.map((p, i) => (
               <div key={p.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                <span className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-600 text-xs font-bold flex items-center justify-center flex-shrink-0">
+                <span className="w-6 h-6 rounded-full bg-primary-100 text-primary-600 text-xs font-bold flex items-center justify-center flex-shrink-0">
                   {i + 1}
                 </span>
                 <span className="flex-1 text-sm text-gray-800 font-medium">{p.nombreProgreso}</span>
@@ -200,21 +199,16 @@ function ModalPasos({ proceso, onClose }) {
             <div className="flex-1">
               <label className="block text-xs font-medium text-gray-600 mb-1">Tipo de subproceso</label>
               <select value={formPaso.idTipoProgreso} onChange={e => setFormPaso(p => ({ ...p, idTipoProgreso: e.target.value }))}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
                 <option value="">Seleccionar...</option>
                 {tiposDisponibles.map(t => (
                   <option key={t.idTipoProgreso} value={t.idTipoProgreso}>{t.nombreProgreso}</option>
                 ))}
               </select>
-            </div>
-            <div className="w-20">
-              <label className="block text-xs font-medium text-gray-600 mb-1">Orden</label>
-              <input type="number" min={1} value={formPaso.ordenEnProceso}
-                onChange={e => setFormPaso(p => ({ ...p, ordenEnProceso: Number(e.target.value) }))}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              <p className="text-xs text-gray-400 mt-1">El orden lo define el catálogo de Tipos de subproceso.</p>
             </div>
             <button type="submit" disabled={guardandoPaso || !formPaso.idTipoProgreso}
-              className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors whitespace-nowrap">
+              className="bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors whitespace-nowrap">
               {guardandoPaso ? '...' : 'Agregar'}
             </button>
           </form>
@@ -313,7 +307,7 @@ export default function Procesos() {
           <p className="text-sm text-gray-500 mt-0.5">Flujos de trabajo y sus subprocesos</p>
         </div>
         <button onClick={() => setModalCrear(true)}
-          className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+          className="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
           <span className="text-base leading-none">+</span> Nuevo proceso
         </button>
       </div>
@@ -327,7 +321,7 @@ export default function Procesos() {
           value={busqueda}
           onChange={e => setBusqueda(e.target.value)}
           placeholder="Buscar por nombre o descripción…"
-          className="flex-1 min-w-[200px] max-w-xs border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          className="flex-1 min-w-[200px] max-w-xs border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
         />
         <div className="flex gap-1">
           {[
@@ -344,7 +338,7 @@ export default function Procesos() {
                     ? 'bg-red-100 text-red-700'
                     : f.key === 'activos'
                       ? 'bg-green-100 text-green-700'
-                      : 'bg-indigo-100 text-indigo-700'
+                      : 'bg-primary-100 text-primary-700'
                   : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
               }`}
             >
@@ -363,7 +357,7 @@ export default function Procesos() {
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         {cargando ? (
           <div className="flex items-center justify-center py-16">
-            <div className="animate-spin rounded-full h-8 w-8 border-4 border-indigo-600 border-t-transparent" />
+            <div className="animate-spin rounded-full h-8 w-8 border-4 border-primary-600 border-t-transparent" />
           </div>
         ) : procesosVisibles.length === 0 ? (
           <div className="text-center py-16 text-gray-400 text-sm">
@@ -394,7 +388,7 @@ export default function Procesos() {
                     <td className="px-4 py-3 text-sm text-gray-900 font-medium whitespace-nowrap">{p.nombreProceso}</td>
                     <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">{p.descripcion ?? '—'}</td>
                     <td className="px-4 py-3">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary-100 text-primary-700">
                         {p.totalPasos} paso{p.totalPasos !== 1 ? 's' : ''}
                       </span>
                     </td>
@@ -406,7 +400,7 @@ export default function Procesos() {
                           Pasos
                         </button>
                         <button onClick={() => setEditando(p)}
-                          className="text-xs font-medium px-3 py-1 rounded-full border border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition-colors">
+                          className="text-xs font-medium px-3 py-1 rounded-full border border-primary-200 text-primary-600 hover:bg-primary-50 transition-colors">
                           Editar
                         </button>
                         <button onClick={() => cambiarEstado(p)}

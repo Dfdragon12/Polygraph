@@ -1,5 +1,6 @@
 package com.polygraph.erp.modules.catalogo.entity;
 
+import com.polygraph.erp.shared.enums.Rol;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -32,4 +33,12 @@ public class TipoProgreso {
 
     @Column(name = "valor", precision = 15, scale = 2)
     private BigDecimal valor;
+
+    @Column(name = "minutos_estimados")
+    private Integer minutosEstimados;
+
+    /** Qué rol interno ejecuta este subproceso — ANALISTA_INTERNO, POLIGRAFISTA o VISITADOR. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "rol_responsable", nullable = false, length = 30)
+    private Rol rolResponsable;
 }

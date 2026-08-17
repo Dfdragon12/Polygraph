@@ -1,5 +1,6 @@
 package com.polygraph.erp.modules.servicios.entity;
 
+import com.polygraph.erp.modules.auth.entity.Usuario;
 import com.polygraph.erp.modules.clientes.entity.Cliente;
 import com.polygraph.erp.modules.evaluados.entity.Candidato;
 import com.polygraph.erp.shared.enums.EstadoServicio;
@@ -15,7 +16,7 @@ import java.time.LocalTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@ToString(exclude = {"cliente", "candidato", "proceso"})
+@ToString(exclude = {"cliente", "candidato", "proceso", "usuarioSolicita"})
 public class Servicio {
 
     @Id
@@ -56,4 +57,17 @@ public class Servicio {
 
     @Column(name = "fecha_de_envio")
     private LocalDate fechaDeEnvio;
+
+    @Column(name = "cargo", length = 150)
+    private String cargo;
+
+    @Column(name = "notas", columnDefinition = "TEXT")
+    private String notas;
+
+    @Column(name = "fecha_entrega_estimada")
+    private LocalDate fechaEntregaEstimada;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "id_usuario_solicita", nullable = false)
+    private Usuario usuarioSolicita;
 }

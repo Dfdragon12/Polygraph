@@ -65,10 +65,40 @@ public class AuthService {
         usuario.setUltimoAcceso(LocalDateTime.now());
         log.info("Login exitoso: {} — cambio de contraseña requerido: {}", usuario.getEmail(), cambioRequerido);
 
+        String nombreCompleto = usuario.getNombre()
+                + (usuario.getApellido() != null && !usuario.getApellido().isBlank()
+                   ? " " + usuario.getApellido() : "");
+        String etiquetaRol = switch (usuario.getRol()) {
+            case ADMIN_POLYGRAPH  -> "Administrador";
+            case GESTOR           -> "Gestor";
+            case ANALISTA_INTERNO -> "Analista interno";
+            case PROGRAMADOR      -> "Programador";
+            case POLIGRAFISTA     -> "Poligrafista";
+            case VISITADOR        -> "Visitador";
+            case ADMIN_CLIENTE    -> "Admin cliente";
+            case ANALISTA_CLIENTE -> "Analista cliente";
+            case EVALUADO         -> "Evaluado";
+            default               -> usuario.getRol().name();
+        };
+        notificacionService.crearParaSesion(
+                "Inicio de sesión",
+                nombreCompleto + " (" + etiquetaRol + ") ha ingresado al sistema",
+                usuario.getIdUsuario()
+        );
+
         return new LoginResponse(token, refreshToken,
                 new LoginResponse.UsuarioInfo(
                         usuario.getIdUsuario(), usuario.getEmail(),
-                        usuario.getRol().name(), usuario.getNombre(), cambioRequerido));
+                        usuario.getRol().name(), usuario.getNombre(), cambioRequerido,
+                        resolverTipoCliente(usuario)));
+    }
+
+    /** Solo aplica a roles del portal cliente (ADMIN_CLIENTE/ANALISTA_CLIENTE); null para roles internos. */
+    private String resolverTipoCliente(Usuario usuario) {
+        if (usuario.getIdCliente() == null) return null;
+        return clienteRepository.findById(usuario.getIdCliente())
+                .map(cliente -> cliente.getTipoCliente().name())
+                .orElse(null);
     }
 
     public void cambiarPassword(String email, CambiarPasswordRequest request) {
@@ -200,7 +230,8 @@ public class AuthService {
         return new LoginResponse(nuevoToken, nuevoRefresh,
                 new LoginResponse.UsuarioInfo(
                         usuario.getIdUsuario(), usuario.getEmail(),
-                        usuario.getRol().name(), usuario.getNombre(), false));
+                        usuario.getRol().name(), usuario.getNombre(), false,
+                        resolverTipoCliente(usuario)));
     }
 
     public void forgotPassword(ForgotPasswordRequest request) {

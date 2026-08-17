@@ -15,6 +15,11 @@ const dashboardService = {
     const { data } = await api.get('/client/service-packages')
     return data
   },
+
+  async obtenerGestor() {
+    const { data } = await api.get('/client/gestor')
+    return data
+  },
 }
 
 export default dashboardService
