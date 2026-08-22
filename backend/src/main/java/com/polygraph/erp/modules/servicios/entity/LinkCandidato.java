@@ -1,5 +1,6 @@
 package com.polygraph.erp.modules.servicios.entity;
 
+import com.polygraph.erp.modules.auth.entity.Usuario;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -11,7 +12,7 @@ import java.time.LocalDateTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@ToString(exclude = "servicio")
+@ToString(exclude = {"servicio", "generadoPor"})
 public class LinkCandidato {
 
     @Id
@@ -20,11 +21,8 @@ public class LinkCandidato {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "id_servicio")
+    @JoinColumn(name = "id_servicio", nullable = false)
     private Servicio servicio;
-
-    @Column(name = "id_solicitud")
-    private Long idSolicitud;
 
     @Column(name = "token", unique = true, nullable = false, length = 200)
     private String token;
@@ -37,4 +35,21 @@ public class LinkCandidato {
 
     @Column(name = "usado", nullable = false)
     private Boolean usado;
+
+    @Column(name = "fecha_uso")
+    private LocalDateTime fechaUso;
+
+    @Column(name = "ip_origen", length = 45)
+    private String ipOrigen;
+
+    @Column(name = "fecha_primer_ingreso")
+    private LocalDateTime fechaPrimerIngreso;
+
+    @Column(name = "intentos_fallidos", nullable = false)
+    @Builder.Default
+    private Short intentosFallidos = 0;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "generado_por_id")
+    private Usuario generadoPor;
 }

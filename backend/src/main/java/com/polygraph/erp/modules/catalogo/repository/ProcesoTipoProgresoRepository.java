@@ -9,7 +9,9 @@ import java.math.BigDecimal;
 import java.util.List;
 
 public interface ProcesoTipoProgresoRepository extends JpaRepository<ProcesoTipoProgreso, Integer> {
-    List<ProcesoTipoProgreso> findByProceso_IdProcesoOrderByOrdenEnProcesoAsc(Integer idProceso);
+    // El orden siempre lo define el catálogo (tipos_progreso.orden) — es la cadena canónica
+    // de subprocesos, independiente de cualquier valor manual por proceso.
+    List<ProcesoTipoProgreso> findByProceso_IdProcesoOrderByTipoProgreso_OrdenAscTipoProgreso_NombreProgresoAsc(Integer idProceso);
     long countByProceso_IdProceso(Integer idProceso);
     boolean existsByProceso_IdProcesoAndTipoProgreso_IdTipoProgreso(Integer idProceso, Integer idTipoProgreso);
     List<ProcesoTipoProgreso> findByTipoProgreso_IdTipoProgreso(Integer idTipoProgreso);

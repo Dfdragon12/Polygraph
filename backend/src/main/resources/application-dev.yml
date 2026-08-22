@@ -13,10 +13,17 @@ spring:
         format_sql: true
 
   mail:
-    host: smtp.mailtrap.io
-    port: 587
-    username: dev_user
-    password: dev_pass
+    host: ${MAIL_HOST:smtp.mailtrap.io}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USER:dev_user}
+    password: ${MAIL_PASS:dev_pass}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
 
 app:
   jwt:

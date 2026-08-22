@@ -9,7 +9,7 @@ export default function ProgramadorDashboard() {
         {new Date().toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
       </p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-        <TarjetaModulo titulo="Agenda" descripcion="Programa poligrafías y visitas en el calendario" icono="📅" color="indigo" />
+        <TarjetaModulo titulo="Agenda" descripcion="Programa poligrafías y visitas en el calendario" icono="📅" color="primary" />
         <TarjetaModulo titulo="Servicios" descripcion="Gestiona los servicios pendientes de agendar" icono="🔧" color="amber" />
       </div>
     </div>
@@ -18,7 +18,7 @@ export default function ProgramadorDashboard() {
 
 function TarjetaModulo({ titulo, descripcion, icono, color }) {
   const colores = {
-    indigo: 'bg-indigo-50 border-indigo-100 text-indigo-600',
+    primary: 'bg-primary-50 border-primary-100 text-primary-600',
     amber:  'bg-amber-50  border-amber-100  text-amber-600',
   }
   return (

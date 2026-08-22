@@ -1,13 +1,13 @@
 package com.polygraph.erp.modules.dashboard.service;
 
 import com.polygraph.erp.modules.auth.repository.UsuarioRepository;
+import com.polygraph.erp.modules.catalogo.entity.ClasificacionProceso;
 import com.polygraph.erp.modules.clientes.repository.ClienteRepository;
 import com.polygraph.erp.modules.dashboard.dto.DashboardAdminResponse;
 import com.polygraph.erp.modules.dashboard.dto.ServiciosPorEstadoResponse;
-import com.polygraph.erp.modules.servicios.entity.CatalogoServicio;
-import com.polygraph.erp.modules.servicios.repository.CatalogoServicioRepository;
+import com.polygraph.erp.modules.servicios.entity.Proceso;
+import com.polygraph.erp.modules.servicios.repository.ProcesoRepository;
 import com.polygraph.erp.modules.servicios.repository.ServicioRepository;
-import com.polygraph.erp.shared.enums.CategoriaServicio;
 import com.polygraph.erp.shared.enums.EstadoServicio;
 import com.polygraph.erp.shared.enums.Rol;
 import com.polygraph.erp.shared.enums.TipoPersona;
@@ -36,7 +36,7 @@ public class DashboardAdminService {
     );
 
     private final UsuarioRepository usuarioRepository;
-    private final CatalogoServicioRepository catalogoServicioRepository;
+    private final ProcesoRepository procesoRepository;
     private final ServicioRepository servicioRepository;
     private final ClienteRepository clienteRepository;
 
@@ -55,16 +55,16 @@ public class DashboardAdminService {
                         ))
                         .toList();
 
-        Map<CategoriaServicio, List<CatalogoServicio>> porCategoria =
-                catalogoServicioRepository.findAll().stream()
-                        .collect(Collectors.groupingBy(CatalogoServicio::getCategoria));
+        Map<ClasificacionProceso, List<Proceso>> porClasificacion =
+                procesoRepository.findAll().stream()
+                        .collect(Collectors.groupingBy(Proceso::getClasificacion));
 
         List<DashboardAdminResponse.ServicioCategoriaDto> serviciosPorCategoria =
-                porCategoria.entrySet().stream()
+                porClasificacion.entrySet().stream()
                         .map(e -> new DashboardAdminResponse.ServicioCategoriaDto(
-                                e.getKey().name(),
+                                e.getKey().getNombre(),
                                 e.getValue().size(),
-                                e.getValue().stream().filter(s -> Boolean.TRUE.equals(s.getActivo())).count()
+                                e.getValue().stream().filter(p -> Boolean.TRUE.equals(p.getActivo())).count()
                         ))
                         .sorted(Comparator.comparingLong(DashboardAdminResponse.ServicioCategoriaDto::total).reversed())
                         .toList();

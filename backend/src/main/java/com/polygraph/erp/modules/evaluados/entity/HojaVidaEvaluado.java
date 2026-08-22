@@ -1,6 +1,5 @@
 package com.polygraph.erp.modules.evaluados.entity;
 
-import com.polygraph.erp.modules.solicitudes.entity.Solicitud;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -15,7 +14,7 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@ToString(exclude = {"solicitud", "educacion", "experienciaLaboral", "inactividades", "referencias", "documentos"})
+@ToString(exclude = {"candidato", "educacion", "experienciaLaboral", "inactividades", "referencias", "documentos"})
 public class HojaVidaEvaluado {
 
     @Id
@@ -24,8 +23,8 @@ public class HojaVidaEvaluado {
     private Long id;
 
     @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "id_solicitud", nullable = false, unique = true)
-    private Solicitud solicitud;
+    @JoinColumn(name = "id_candidato", nullable = false, unique = true)
+    private Candidato candidato;
 
     @Column(name = "autorizacion_datos", nullable = false)
     private Boolean autorizacionDatos;
@@ -41,6 +40,9 @@ public class HojaVidaEvaluado {
 
     @Column(name = "progreso_porcentaje")
     private Integer progresoPorcentaje;
+
+    @Column(name = "paso_actual")
+    private Integer pasoActual;
 
     @Column(name = "fecha_nacimiento")
     private LocalDate fechaNacimiento;
@@ -68,6 +70,27 @@ public class HojaVidaEvaluado {
 
     @Column(name = "celular", length = 20)
     private String celular;
+
+    @Column(name = "rh", length = 5)
+    private String rh;
+
+    @Column(name = "libreta_militar", length = 50)
+    private String libretaMilitar;
+
+    @Column(name = "visa", length = 50)
+    private String visa;
+
+    @Column(name = "pasaporte", length = 50)
+    private String pasaporte;
+
+    @Column(name = "fondo_pensiones", length = 100)
+    private String fondoPensiones;
+
+    @Column(name = "eps", length = 100)
+    private String eps;
+
+    @Column(name = "telefono_fijo", length = 20)
+    private String telefonoFijo;
 
     @OneToMany(mappedBy = "hojaVidaEvaluado", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default

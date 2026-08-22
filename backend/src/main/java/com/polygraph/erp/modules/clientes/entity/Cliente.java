@@ -66,4 +66,7 @@ public class Cliente {
 
     @Column(name = "estado", length = 20)
     private String estado;
+
+    @Column(name = "id_gestor")
+    private Long idGestor;
 }

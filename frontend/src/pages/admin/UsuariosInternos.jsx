@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import api from '../../services/api'
 import Toast from '../../components/Toast'
+import { Modal } from '../../components/ui/Modal'
+import CiudadSelect from '../../components/CiudadSelect'
 
 const ROLES_OPCIONES = [
   { value: 'ADMIN_POLYGRAPH',  label: 'Administrador' },
@@ -41,7 +43,7 @@ function Campo({ label, name, value, onChange, type = 'text', required = false, 
       <input
         name={name} type={type} value={value} onChange={onChange}
         required={required} placeholder={placeholder}
-        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
       />
     </div>
   )
@@ -75,19 +77,14 @@ function ModalSala({ valorActual, novedadesActual, onConfirmar, onClose }) {
   const [novedades, setNovedades] = useState(novedadesActual ?? '')
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
-        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white">
-          <h4 className="text-sm font-semibold text-gray-900">Configurar sala</h4>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
-        </div>
-        <div className="px-5 py-4 space-y-4">
+    <Modal titulo="Configurar sala" onClose={onClose} ancho="max-w-md">
+      <div className="px-5 py-4 space-y-4">
           {/* Ciudad y número */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Ciudad <span className="text-red-500">*</span></label>
               <select value={ciudad} onChange={e => setCiudad(e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
                 {CIUDADES_CO.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
@@ -95,12 +92,12 @@ function ModalSala({ valorActual, novedadesActual, onConfirmar, onClose }) {
               <label className="block text-xs font-medium text-gray-600 mb-1">N.° de sala <span className="text-red-500">*</span></label>
               <input type="number" min={1} value={numero}
                 onChange={e => setNumero(e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
             </div>
           </div>
 
           {/* Preview */}
-          <div className="bg-indigo-50 rounded-lg px-3 py-2 text-sm text-indigo-700 font-medium text-center">
+          <div className="bg-primary-50 rounded-lg px-3 py-2 text-sm text-primary-700 font-medium text-center">
             {ciudad} — Sala {numero || '?'}
           </div>
 
@@ -115,7 +112,7 @@ function ModalSala({ valorActual, novedadesActual, onConfirmar, onClose }) {
               onChange={e => setNovedades(e.target.value)}
               rows={4}
               placeholder="Registra aquí novedades, incidencias o notas importantes de esta sala…"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
             />
             {novedades && (
               <p className="text-xs text-gray-400 mt-0.5 text-right">{novedades.length} caracteres</p>
@@ -128,20 +125,19 @@ function ModalSala({ valorActual, novedadesActual, onConfirmar, onClose }) {
           <button
             onClick={() => { if (numero && ciudad) { onConfirmar(`${ciudad} - Sala ${numero}`, novedades); onClose() } }}
             disabled={!numero || !ciudad}
-            className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            className="bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
           >
             Confirmar
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
 /* ─── Icono de orden ─── */
 function IconoOrden({ activo, dir }) {
   if (!activo) return <span className="ml-1 text-gray-300 text-xs">↕</span>
-  return <span className="ml-1 text-indigo-500 text-xs">{dir === 'asc' ? '↑' : '↓'}</span>
+  return <span className="ml-1 text-primary-500 text-xs">{dir === 'asc' ? '↑' : '↓'}</span>
 }
 
 /* ─── Paginación ─── */
@@ -164,7 +160,7 @@ function Paginacion({ pagina, total, porPagina, onChange }) {
         {nums.map(p => (
           <button key={p} onClick={() => onChange(p)}
             className={`w-8 h-8 text-xs rounded-lg border transition-colors ${
-              p === pagina ? 'bg-indigo-600 border-indigo-600 text-white font-semibold' : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+              p === pagina ? 'bg-primary-600 border-primary-600 text-white font-semibold' : 'border-gray-200 text-gray-500 hover:bg-gray-50'
             }`}>
             {p}
           </button>
@@ -194,35 +190,23 @@ function ModalDetalleEmpleado({ usuario, onClose }) {
   const inicial = (usuario.nombre?.[0] ?? '?').toUpperCase()
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-auto flex flex-col max-h-[92vh]">
-
-        {/* ── Header ── */}
-        <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 px-5 py-5 rounded-t-2xl flex items-center gap-4 flex-shrink-0">
-          <div className="w-14 h-14 rounded-full bg-white/20 text-white text-2xl font-bold flex items-center justify-center flex-shrink-0">
+    <Modal titulo={`${usuario.nombre} ${usuario.apellido ?? ''}`} subtitulo={usuario.email} onClose={onClose} ancho="max-w-md">
+        {/* ── Avatar y estado ── */}
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-4 flex-shrink-0">
+          <div className="w-14 h-14 rounded-full bg-primary-100 text-primary-700 text-2xl font-bold flex items-center justify-center flex-shrink-0">
             {inicial}
           </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-white font-semibold text-base leading-tight">
-              {usuario.nombre} {usuario.apellido ?? ''}
-            </p>
-            <p className="text-indigo-200 text-xs mt-0.5 truncate">{usuario.email}</p>
-            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                usuario.activo ? 'bg-green-400/30 text-green-100' : 'bg-red-400/30 text-red-100'
-              }`}>
-                {usuario.activo ? 'Activo' : 'Inactivo'}
-              </span>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-white/20 text-indigo-100 font-medium">
-                {ETIQUETA_ROL[usuario.rol] ?? usuario.rol}
-              </span>
-            </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+              usuario.activo ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
+            }`}>
+              {usuario.activo ? 'Activo' : 'Inactivo'}
+            </span>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-primary-50 text-primary-700 font-medium">
+              {ETIQUETA_ROL[usuario.rol] ?? usuario.rol}
+            </span>
           </div>
-          <button onClick={onClose} className="text-indigo-200 hover:text-white flex-shrink-0 text-xl leading-none p-1">×</button>
         </div>
-
-        {/* ── Cuerpo scrollable ── */}
-        <div className="overflow-y-auto flex-1 scrollbar-thin">
 
           {/* Datos del empleado */}
           <Seccion titulo="Datos del empleado">
@@ -230,7 +214,7 @@ function ModalDetalleEmpleado({ usuario, onClose }) {
             <FilaDetalle label="Tipo de documento" valor={usuario.tipoDocumento ?? '—'} />
             <FilaDetalle label="N.° de documento" valor={usuario.documento ?? '—'} />
             <FilaDetalle label="Teléfono" valor={usuario.telefono ?? '—'} />
-            <FilaDetalle label="Ciudad de residencia" valor={usuario.ciudadResidencia ?? '—'} />
+            <FilaDetalle label="Ciudad de residencia" valor={usuario.nombreCiudad ?? '—'} />
             <FilaDetalle label="Fecha de ingreso" valor={fmtFecha(usuario.fechaIngreso)} />
           </Seccion>
 
@@ -250,7 +234,7 @@ function ModalDetalleEmpleado({ usuario, onClose }) {
             <FilaDetalle label="Requiere 2FA"
               valor={
                 <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                  usuario.requiere2fa ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500'
+                  usuario.requiere2fa ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-500'
                 }`}>
                   {usuario.requiere2fa ? 'Sí' : 'No'}
                 </span>
@@ -294,7 +278,7 @@ function ModalDetalleEmpleado({ usuario, onClose }) {
             {usuario.zonasVisita ? (
               <div className="flex flex-wrap gap-2 pt-1">
                 {usuario.zonasVisita.split(',').map(z => z.trim()).filter(Boolean).map(zona => (
-                  <span key={zona} className="text-xs bg-indigo-50 text-indigo-700 border border-indigo-100 px-2.5 py-1 rounded-full">
+                  <span key={zona} className="text-xs bg-primary-50 text-primary-700 border border-primary-100 px-2.5 py-1 rounded-full">
                     {zona}
                   </span>
                 ))}
@@ -304,8 +288,6 @@ function ModalDetalleEmpleado({ usuario, onClose }) {
             )}
           </Seccion>
 
-        </div>
-
         {/* Footer */}
         <div className="px-5 py-4 border-t border-gray-100 flex-shrink-0">
           <button onClick={onClose}
@@ -313,8 +295,7 @@ function ModalDetalleEmpleado({ usuario, onClose }) {
             Cerrar
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -354,7 +335,7 @@ function Th({ children, sortable, onClick, ordenCol, col, ordenDir, cls = '' }) 
       {children}
       {sortable && (
         ordenCol === col
-          ? <span className="ml-1 text-indigo-500">{ordenDir === 'asc' ? '↑' : '↓'}</span>
+          ? <span className="ml-1 text-primary-500">{ordenDir === 'asc' ? '↑' : '↓'}</span>
           : <span className="ml-1 text-gray-300">↕</span>
       )}
     </th>
@@ -365,7 +346,7 @@ function Th({ children, sortable, onClick, ordenCol, col, ordenDir, cls = '' }) 
 function TablaInternos({ usuarios, cargando, onCambiarEstado, onEditar, onDetalle, ordenCol, ordenDir, onOrdenar }) {
   if (cargando) return (
     <div className="flex items-center justify-center py-16">
-      <div className="animate-spin rounded-full h-8 w-8 border-4 border-indigo-600 border-t-transparent" />
+      <div className="animate-spin rounded-full h-8 w-8 border-4 border-primary-600 border-t-transparent" />
     </div>
   )
   if (usuarios.length === 0) return (
@@ -392,12 +373,12 @@ function TablaInternos({ usuarios, cargando, onCambiarEstado, onEditar, onDetall
               <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">
                 {u.nombre} {u.apellido ?? ''}
                 <p className="sm:hidden text-xs font-normal text-gray-500 mt-0.5">{u.email}</p>
-                <p className="md:hidden text-xs font-normal text-indigo-500 mt-0.5">{ETIQUETA_ROL[u.rol] ?? u.rol}</p>
+                <p className="md:hidden text-xs font-normal text-primary-500 mt-0.5">{ETIQUETA_ROL[u.rol] ?? u.rol}</p>
               </td>
               <td className="hidden sm:table-cell px-4 py-3 text-gray-600 whitespace-nowrap">{u.email}</td>
               <td className="hidden md:table-cell px-4 py-3 text-gray-600 whitespace-nowrap">{ETIQUETA_ROL[u.rol] ?? u.rol}</td>
               <td className="hidden lg:table-cell px-4 py-3 text-gray-500">{u.telefono ?? '—'}</td>
-              <td className="hidden lg:table-cell px-4 py-3 text-gray-500 whitespace-nowrap">{u.ciudadResidencia ?? '—'}</td>
+              <td className="hidden lg:table-cell px-4 py-3 text-gray-500 whitespace-nowrap">{u.nombreCiudad ?? '—'}</td>
               <td className="px-4 py-3"><Badge activo={u.activo} /></td>
               <td className="px-4 py-3">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -406,7 +387,7 @@ function TablaInternos({ usuarios, cargando, onCambiarEstado, onEditar, onDetall
                     Detalle
                   </button>
                   <button onClick={() => onEditar(u)}
-                    className="text-xs font-medium px-3 py-1 rounded-full border border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition-colors whitespace-nowrap">
+                    className="text-xs font-medium px-3 py-1 rounded-full border border-primary-200 text-primary-600 hover:bg-primary-50 transition-colors whitespace-nowrap">
                     Editar
                   </button>
                   <button onClick={() => onCambiarEstado(u.idUsuario, !u.activo)}
@@ -430,15 +411,17 @@ function ModalCrear({ onClose, onGuardado }) {
   const [form, setForm] = useState({
     nombre: '', apellido: '', email: '', password: '',
     rol: 'GESTOR', telefono: '',
-    tipoDocumento: 'CC', documento: '', ciudadResidencia: '',
+    tipoDocumento: 'CC', documento: '', idCiudadResidencia: null,
     salaEncargada: '', novedadesSala: '', zonasVisita: '',
+    idsSubprocesos: [],
   })
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState(null)
 
   const handleChange = (e) => {
     const { name, value } = e.target
-    setForm(prev => ({ ...prev, [name]: value }))
+    // Al cambiar de rol, las capacidades del rol anterior ya no aplican (p.ej. de ANALISTA_INTERNO a POLIGRAFISTA).
+    setForm(prev => ({ ...prev, [name]: value, ...(name === 'rol' ? { idsSubprocesos: [] } : {}) }))
   }
 
   const handleSubmit = async (e) => {
@@ -457,7 +440,7 @@ function ModalCrear({ onClose, onGuardado }) {
   }
 
   return (
-    <Modal titulo="Nuevo usuario interno" onClose={onClose}>
+    <Modal titulo="Nuevo usuario interno" onClose={onClose} ancho="max-w-lg">
       <FormularioUsuario
         form={form}
         onChange={handleChange}
@@ -482,17 +465,19 @@ function ModalEditar({ usuario, onClose, onGuardado }) {
     telefono:        usuario.telefono ?? '',
     tipoDocumento:   usuario.tipoDocumento ?? 'CC',
     documento:       usuario.documento ?? '',
-    ciudadResidencia:usuario.ciudadResidencia ?? '',
+    idCiudadResidencia: usuario.idCiudadResidencia ?? null,
     salaEncargada:   usuario.salaEncargada ?? '',
     novedadesSala:   usuario.novedadesSala ?? '',
     zonasVisita:     usuario.zonasVisita ?? '',
+    idsSubprocesos:  usuario.subprocesosAsignados?.map(p => p.idTipoProgreso) ?? [],
   })
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState(null)
 
   const handleChange = (e) => {
     const { name, value } = e.target
-    setForm(prev => ({ ...prev, [name]: value }))
+    // Al cambiar de rol, las capacidades del rol anterior ya no aplican (p.ej. de ANALISTA_INTERNO a POLIGRAFISTA).
+    setForm(prev => ({ ...prev, [name]: value, ...(name === 'rol' ? { idsSubprocesos: [] } : {}) }))
   }
 
   const handleSubmit = async (e) => {
@@ -512,7 +497,7 @@ function ModalEditar({ usuario, onClose, onGuardado }) {
   }
 
   return (
-    <Modal titulo={`Editar — ${usuario.nombre} ${usuario.apellido ?? ''}`} onClose={onClose}>
+    <Modal titulo={`Editar — ${usuario.nombre} ${usuario.apellido ?? ''}`} onClose={onClose} ancho="max-w-lg">
       <FormularioUsuario
         form={form}
         onChange={handleChange}
@@ -526,21 +511,6 @@ function ModalEditar({ usuario, onClose, onGuardado }) {
   )
 }
 
-/* ─── Contenedor modal ─── */
-function Modal({ titulo, onClose, children }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white z-10">
-          <h3 className="text-base font-semibold text-gray-900">{titulo}</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
-        </div>
-        {children}
-      </div>
-    </div>
-  )
-}
-
 /* ─── Formulario compartido (crear y editar) ─── */
 function FormularioUsuario({ form, onChange, onSubmit, onCancel, guardando, error, esEdicion }) {
   const [mostrarPwd, setMostrarPwd] = useState(false)
@@ -548,8 +518,26 @@ function FormularioUsuario({ form, onChange, onSubmit, onCancel, guardando, erro
   const [confirmPwd, setConfirmPwd] = useState('')
   const [localError, setLocalError] = useState(null)
   const [salaModal, setSalaModal] = useState(false)
+  const [subprocesos, setSubprocesos] = useState([])
 
   const rolActual = form.rol
+
+  useEffect(() => {
+    api.get('/catalogo/tipos-progreso')
+      .then(r => setSubprocesos(r.data.filter(p => p.activo)))
+      .catch(() => {})
+  }, [])
+
+  const ROLES_CON_CAPACIDADES = ['ANALISTA_INTERNO', 'POLIGRAFISTA', 'VISITADOR']
+  const subprocesosDelRol = subprocesos.filter(p => p.rolResponsable === rolActual)
+
+  const toggleSubproceso = (idTipoProgreso) => {
+    const actual = form.idsSubprocesos ?? []
+    const nuevo = actual.includes(idTipoProgreso)
+      ? actual.filter(id => id !== idTipoProgreso)
+      : [...actual, idTipoProgreso]
+    onChange({ target: { name: 'idsSubprocesos', value: nuevo } })
+  }
 
   const handleLocalSubmit = (e) => {
     e.preventDefault()
@@ -618,7 +606,7 @@ function FormularioUsuario({ form, onChange, onSubmit, onCancel, guardando, erro
               value={form.password} onChange={onChange}
               required={!esEdicion} minLength={form.password ? 8 : undefined}
               placeholder={esEdicion ? '••••••••' : 'Mín. 8 caracteres'}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
             <button type="button" onClick={() => setMostrarPwd(v => !v)}
               className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
@@ -637,7 +625,7 @@ function FormularioUsuario({ form, onChange, onSubmit, onCancel, guardando, erro
               value={confirmPwd}
               onChange={e => setConfirmPwd(e.target.value)}
               placeholder="Repite la contraseña"
-              className={`w-full border rounded-lg px-3 py-2 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+              className={`w-full border rounded-lg px-3 py-2 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 ${
                 confirmPwd && confirmPwd !== form.password ? 'border-red-300 bg-red-50' : 'border-gray-200'
               }`}
             />
@@ -658,7 +646,7 @@ function FormularioUsuario({ form, onChange, onSubmit, onCancel, guardando, erro
           Rol <span className="text-red-500">*</span>
         </label>
         <select name="rol" value={form.rol} onChange={onChange} required
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
           {ROLES_OPCIONES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
         </select>
       </div>
@@ -670,7 +658,7 @@ function FormularioUsuario({ form, onChange, onSubmit, onCancel, guardando, erro
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Tipo doc.</label>
           <select name="tipoDocumento" value={form.tipoDocumento} onChange={onChange}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
             <option value="CC">C.C.</option>
             <option value="CE">C.E.</option>
             <option value="TI">T.I.</option>
@@ -688,8 +676,13 @@ function FormularioUsuario({ form, onChange, onSubmit, onCancel, guardando, erro
       <div className="grid grid-cols-2 gap-3">
         <Campo label="Teléfono" name="telefono" value={form.telefono} onChange={onChange}
           placeholder="Ej: 3001234567" />
-        <Campo label="Ciudad de residencia" name="ciudadResidencia" value={form.ciudadResidencia}
-          onChange={onChange} placeholder="Ej: Bogotá" />
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Ciudad de residencia</label>
+          <CiudadSelect
+            value={form.idCiudadResidencia}
+            onChange={(idCiudad) => onChange({ target: { name: 'idCiudadResidencia', value: idCiudad } })}
+          />
+        </div>
       </div>
 
       {/* Sala — solo POLIGRAFISTA usa el sub-modal */}
@@ -703,7 +696,7 @@ function FormularioUsuario({ form, onChange, onSubmit, onCancel, guardando, erro
               {form.salaEncargada || <span className="text-gray-400">Sin sala configurada</span>}
             </div>
             <button type="button" onClick={() => setSalaModal(true)}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium px-3 py-2 rounded-lg whitespace-nowrap transition-colors">
+              className="bg-primary-600 hover:bg-primary-700 text-white text-xs font-medium px-3 py-2 rounded-lg whitespace-nowrap transition-colors">
               {form.salaEncargada ? 'Cambiar' : 'Configurar'}
             </button>
           </div>
@@ -723,13 +716,37 @@ function FormularioUsuario({ form, onChange, onSubmit, onCancel, guardando, erro
         placeholder={rolActual === 'VISITADOR' ? 'Obligatorio — Ej: Norte, Sur' : 'Ej: Norte, Sur, Occidente'}
       />
 
+      {/* Capacidades — qué subprocesos puede este empleado tener asignados. Solo se ofrecen los
+          subprocesos cuyo rol_responsable coincide con el rol elegido (lo valida también el backend). */}
+      {ROLES_CON_CAPACIDADES.includes(rolActual) && (
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Subprocesos asignados</label>
+          <p className="text-xs text-gray-400 mb-2">Subprocesos del catálogo que este {rolActual === 'ANALISTA_INTERNO' ? 'analista' : rolActual.toLowerCase()} puede ejecutar.</p>
+          {subprocesosDelRol.length === 0 ? (
+            <p className="text-xs text-gray-400">No hay subprocesos de este rol en el catálogo todavía.</p>
+          ) : (
+            <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-48 overflow-y-auto">
+              {subprocesosDelRol.map(p => (
+                <label key={p.idTipoProgreso} className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer">
+                  <input type="checkbox"
+                    checked={(form.idsSubprocesos ?? []).includes(p.idTipoProgreso)}
+                    onChange={() => toggleSubproceso(p.idTipoProgreso)}
+                    className="accent-primary-600" />
+                  {p.nombreProgreso}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="flex justify-end gap-3 pt-2">
         <button type="button" onClick={onCancel}
           className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors">
           Cancelar
         </button>
         <button type="submit" disabled={guardando}
-          className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-sm font-medium px-5 py-2 rounded-lg transition-colors">
+          className="bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white text-sm font-medium px-5 py-2 rounded-lg transition-colors">
           {guardando ? 'Guardando...' : esEdicion ? 'Guardar cambios' : 'Crear usuario'}
         </button>
       </div>
@@ -837,7 +854,7 @@ export default function UsuariosInternos() {
         </div>
         <button
           onClick={() => setModalCrear(true)}
-          className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+          className="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
         >
           <span className="text-base leading-none">+</span>
           Nuevo usuario interno
@@ -857,7 +874,7 @@ export default function UsuariosInternos() {
           value={busqueda}
           onChange={e => setBusqueda(e.target.value)}
           placeholder="Buscar por nombre, email o rol…"
-          className="flex-1 min-w-[200px] max-w-xs border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          className="flex-1 min-w-[200px] max-w-xs border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
         />
         <div className="flex gap-1">
           {[
@@ -874,7 +891,7 @@ export default function UsuariosInternos() {
                     ? 'bg-red-100 text-red-700'
                     : f.key === 'activos'
                       ? 'bg-green-100 text-green-700'
-                      : 'bg-indigo-100 text-indigo-700'
+                      : 'bg-primary-100 text-primary-700'
                   : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
               }`}
             >

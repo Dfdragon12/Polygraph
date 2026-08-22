@@ -17,7 +17,10 @@ public record ExperienciaLaboralRequest(
 
         LocalDate fechaFin,
         Boolean laboraActualmente,
+
+        @NotBlank(message = "La ciudad es obligatoria")
         String ciudad,
+
         String telefonoEmpresa,
         String motivoRetiro,
         String nombreJefe,

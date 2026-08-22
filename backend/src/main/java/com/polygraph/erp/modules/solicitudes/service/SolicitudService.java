@@ -1,21 +1,35 @@
 package com.polygraph.erp.modules.solicitudes.service;
 
 import com.polygraph.erp.modules.auth.repository.UsuarioRepository;
+import com.polygraph.erp.modules.clientes.entity.Cliente;
+import com.polygraph.erp.modules.clientes.entity.ClientePospago;
 import com.polygraph.erp.modules.clientes.repository.ClienteRepository;
+import com.polygraph.erp.modules.clientes.repository.ClientePospagoRepository;
+import com.polygraph.erp.modules.pagos.service.SaldoServicioClienteService;
+import com.polygraph.erp.shared.enums.EstadoMora;
+import com.polygraph.erp.shared.enums.TipoCliente;
+import com.polygraph.erp.shared.enums.TipoPersona;
+import com.polygraph.erp.modules.catalogo.entity.ProcesoTipoProgreso;
+import com.polygraph.erp.modules.catalogo.repository.ProcesoTipoProgresoRepository;
 import com.polygraph.erp.modules.evaluados.entity.Candidato;
 import com.polygraph.erp.modules.evaluados.repository.CandidatoRepository;
-import com.polygraph.erp.modules.servicios.entity.CatalogoServicio;
+import com.polygraph.erp.modules.gestor.service.AsignacionService;
+import com.polygraph.erp.modules.servicios.entity.HistorialEstadoServicio;
 import com.polygraph.erp.modules.servicios.entity.LinkCandidato;
-import com.polygraph.erp.modules.servicios.repository.CatalogoServicioRepository;
+import com.polygraph.erp.modules.servicios.entity.Proceso;
+import com.polygraph.erp.modules.servicios.entity.ReversionSolicitud;
+import com.polygraph.erp.modules.servicios.entity.Servicio;
+import com.polygraph.erp.modules.servicios.entity.ServicioSubproceso;
+import com.polygraph.erp.modules.servicios.repository.HistorialEstadoServicioRepository;
 import com.polygraph.erp.modules.servicios.repository.LinkCandidatoRepository;
+import com.polygraph.erp.modules.servicios.repository.ProcesoRepository;
+import com.polygraph.erp.modules.servicios.repository.ReversionSolicitudRepository;
+import com.polygraph.erp.modules.servicios.repository.ServicioRepository;
+import com.polygraph.erp.modules.servicios.repository.ServicioSubprocesoRepository;
 import com.polygraph.erp.modules.solicitudes.dto.*;
-import com.polygraph.erp.modules.solicitudes.entity.HistorialSolicitud;
-import com.polygraph.erp.modules.solicitudes.entity.Solicitud;
-import com.polygraph.erp.modules.solicitudes.entity.SolicitudServicio;
-import com.polygraph.erp.modules.solicitudes.repository.HistorialSolicitudRepository;
-import com.polygraph.erp.modules.solicitudes.repository.SolicitudRepository;
-import com.polygraph.erp.modules.solicitudes.repository.SolicitudServicioRepository;
 import com.polygraph.erp.shared.entity.Notificacion;
+import com.polygraph.erp.shared.enums.EstadoAprobacion;
+import com.polygraph.erp.shared.enums.EstadoAsignacion;
 import com.polygraph.erp.shared.enums.EstadoServicio;
 import com.polygraph.erp.shared.enums.Rol;
 import com.polygraph.erp.shared.exceptions.ApiException;
@@ -47,91 +61,106 @@ import java.util.UUID;
 @Transactional
 public class SolicitudService {
 
-    private final SolicitudRepository solicitudRepository;
-    private final SolicitudServicioRepository solicitudServicioRepository;
-    private final HistorialSolicitudRepository historialRepository;
+    private final ServicioRepository servicioRepository;
+    private final HistorialEstadoServicioRepository historialRepository;
     private final CandidatoRepository candidatoRepository;
-    private final CatalogoServicioRepository catalogoRepository;
+    private final ProcesoRepository procesoRepository;
     private final ClienteRepository clienteRepository;
+    private final ClientePospagoRepository clientePospagoRepository;
     private final UsuarioRepository usuarioRepository;
     private final LinkCandidatoRepository linkCandidatoRepository;
     private final NotificacionRepository notificacionRepository;
+    private final ReversionSolicitudRepository reversionSolicitudRepository;
     private final DiasHabilesService diasHabilesService;
+    private final ProcesoTipoProgresoRepository procesoTipoProgresoRepository;
+    private final ServicioSubprocesoRepository servicioSubprocesoRepository;
+    private final AsignacionService asignacionService;
+    private final SaldoServicioClienteService saldoServicioClienteService;
 
-    public SolicitudDetalleResponse crearSolicitud(SolicitudRequest request, String emailUsuario) {
+    public List<SolicitudDetalleResponse> crearSolicitud(SolicitudRequest request, String emailUsuario) {
         var usuario = usuarioRepository.findByEmail(emailUsuario)
                 .orElseThrow(() -> new ApiException("Usuario no encontrado", HttpStatus.NOT_FOUND));
 
         var cliente = clienteRepository.findById(usuario.getIdCliente())
                 .orElseThrow(() -> new ApiException("Cliente no encontrado", HttpStatus.NOT_FOUND));
 
-        // Validar catálogo y duplicados
-        List<CatalogoServicio> catalogos = new ArrayList<>();
-        LocalDateTime ahora = LocalDateTime.now();
-        LocalDateTime limiteAntiDuplicado = ahora.minusMonths(3);
-
-        for (Integer idCatalogo : request.serviciosIds()) {
-            CatalogoServicio catalogo = catalogoRepository.findById(idCatalogo)
-                    .orElseThrow(() -> new ApiException(
-                            "Servicio de catálogo no encontrado: " + idCatalogo, HttpStatus.BAD_REQUEST));
-
-            if (!Boolean.TRUE.equals(catalogo.getActivo())) {
-                throw new ApiException("El servicio '" + catalogo.getNombre() + "' no está disponible", HttpStatus.BAD_REQUEST);
-            }
-
-            if (solicitudServicioRepository.existeDuplicado(request.cedula(), idCatalogo, limiteAntiDuplicado)) {
-                throw new ApiException(
-                        "El evaluado con cédula " + request.cedula() +
-                        " ya tiene una solicitud activa para '" + catalogo.getNombre() +
-                        "' en los últimos 3 meses", HttpStatus.CONFLICT);
-            }
-            catalogos.add(catalogo);
+        if (cliente.getTipoCliente() == TipoCliente.POSPAGO) {
+            validarMoraPospago(cliente);
         }
 
-        // Reutilizar candidato existente o crear referencia
-        Optional<Candidato> candidatoExistente = candidatoRepository.findByCedula(request.cedula());
+        // Validar catálogo y duplicados
+        List<Proceso> procesos = new ArrayList<>();
+        LocalDateTime ahora = LocalDateTime.now();
+        LocalDate limiteAntiDuplicado = ahora.toLocalDate().minusMonths(3);
 
-        // Calcular fecha de entrega (máximo de días hábiles de todos los servicios)
-        int maxDiasHabiles = catalogos.stream()
-                .mapToInt(c -> c.getDiasHabilesEntrega() != null ? c.getDiasHabilesEntrega() : 5)
+        for (Integer idProceso : request.procesosIds()) {
+            Proceso proceso = procesoRepository.findById(idProceso)
+                    .orElseThrow(() -> new ApiException(
+                            "Proceso de catálogo no encontrado: " + idProceso, HttpStatus.BAD_REQUEST));
+
+            if (!Boolean.TRUE.equals(proceso.getActivo())) {
+                throw new ApiException("El proceso '" + proceso.getNombreProceso() + "' no está disponible", HttpStatus.BAD_REQUEST);
+            }
+
+            if (servicioRepository.existeDuplicado(request.cedula(), idProceso, limiteAntiDuplicado)) {
+                throw new ApiException(
+                        "El evaluado con cédula " + request.cedula() +
+                        " ya tiene un servicio activo para '" + proceso.getNombreProceso() +
+                        "' en los últimos 3 meses", HttpStatus.CONFLICT);
+            }
+
+            if (cliente.getTipoCliente() == TipoCliente.PREPAGO) {
+                saldoServicioClienteService.validarDisponibilidad(cliente.getIdCliente(), proceso);
+            }
+
+            procesos.add(proceso);
+        }
+
+        // Reutilizar candidato existente o crear uno nuevo
+        Candidato candidato = candidatoRepository.findByCedula(request.cedula())
+                .orElseGet(() -> candidatoRepository.save(Candidato.builder()
+                        .cedula(request.cedula())
+                        .tipoDocumento("CC")
+                        .nombres(request.nombres())
+                        .apellidos(request.apellidos())
+                        .celular(request.celular())
+                        .emailPrincipal(request.email())
+                        .build()));
+
+        // Calcular fecha de entrega (máximo de días hábiles de todos los procesos)
+        int maxDiasHabiles = procesos.stream()
+                .mapToInt(p -> p.getDiasHabilesEntrega() != null ? p.getDiasHabilesEntrega() : 5)
                 .max()
                 .orElse(5);
         LocalDate fechaEntrega = diasHabilesService.calcularFechaEntrega(ahora, maxDiasHabiles);
 
-        // Crear solicitud
-        Solicitud solicitud = Solicitud.builder()
-                .cliente(cliente)
-                .candidato(candidatoExistente.orElse(null))
-                .cedulaEvaluado(request.cedula())
-                .nombresEvaluado(request.nombres())
-                .apellidosEvaluado(request.apellidos())
-                .celularEvaluado(request.celular())
-                .emailEvaluado(request.email())
-                .ciudadEvaluado(request.ciudad())
-                .cargo(request.cargo())
-                .notas(request.notas())
-                .estado(EstadoServicio.PENDIENTE)
-                .fechaSolicitud(ahora)
-                .fechaEntregaEstimada(fechaEntrega)
-                .usuarioSolicita(usuario)
-                .build();
-        solicitudRepository.save(solicitud);
-
-        // Crear items de servicio
-        for (CatalogoServicio catalogo : catalogos) {
-            SolicitudServicio item = SolicitudServicio.builder()
-                    .solicitud(solicitud)
-                    .catalogoServicio(catalogo)
+        // Crear un servicio por cada proceso elegido
+        List<Servicio> serviciosCreados = new ArrayList<>();
+        for (Proceso proceso : procesos) {
+            Servicio servicio = Servicio.builder()
+                    .cliente(cliente)
+                    .candidato(candidato)
+                    .proceso(proceso)
+                    .fechaSolicitud(ahora.toLocalDate())
+                    .horaSolicitud(ahora.toLocalTime())
                     .estado(EstadoServicio.PENDIENTE)
+                    .cargo(request.cargo())
+                    .notas(request.notas())
+                    .fechaEntregaEstimada(fechaEntrega)
+                    .usuarioSolicita(usuario)
                     .build();
-            solicitud.getServicios().add(item);
+            Servicio guardado = servicioRepository.save(servicio);
+            if (cliente.getTipoCliente() == TipoCliente.PREPAGO) {
+                saldoServicioClienteService.descontar(cliente.getIdCliente(), proceso);
+            }
+            serviciosCreados.add(guardado);
+            generarSubprocesos(guardado);
         }
-        solicitudRepository.save(solicitud);
 
-        // Generar link para evaluado
+        // Generar link para que el evaluado llene su hoja de vida (cubre toda la tanda)
         String tokenLink = UUID.randomUUID().toString().replace("-", "");
         LinkCandidato link = LinkCandidato.builder()
-                .idSolicitud(solicitud.getIdSolicitud())
+                .servicio(serviciosCreados.get(0))
                 .token(tokenLink)
                 .fechaCreacion(ahora)
                 .fechaExpiracion(ahora.plusHours(36))
@@ -140,20 +169,20 @@ public class SolicitudService {
         linkCandidatoRepository.save(link);
 
         // Notificar gestores
+        Integer primerIdServicio = serviciosCreados.get(0).getIdServicio();
         usuarioRepository.findAll().stream()
                 .filter(u -> Rol.GESTOR.equals(u.getRol()) && Boolean.TRUE.equals(u.getActivo()))
                 .forEach(gestor -> notificacionRepository.save(Notificacion.builder()
                         .usuario(gestor)
                         .tipo("NUEVA_SOLICITUD")
                         .titulo("Nueva solicitud de servicio")
-                        .mensaje("El cliente " + cliente.getNombre() + " " +
-                                 (cliente.getApellido() != null ? cliente.getApellido() : "") +
+                        .mensaje("El cliente " + nombreCliente(cliente) +
                                  " ha registrado una nueva solicitud para " +
                                  request.nombres() + " " + request.apellidos())
                         .leida(false)
                         .fechaCreacion(ahora)
-                        .referenciaTipo("SOLICITUD")
-                        .referenciaId(solicitud.getIdSolicitud())
+                        .referenciaTipo("SERVICIO")
+                        .referenciaId(primerIdServicio.longValue())
                         .build()));
 
         // Notificar al usuario cliente
@@ -165,51 +194,56 @@ public class SolicitudService {
                          " fue registrada. Fecha estimada de entrega: " + fechaEntrega)
                 .leida(false)
                 .fechaCreacion(ahora)
-                .referenciaTipo("SOLICITUD")
-                .referenciaId(solicitud.getIdSolicitud())
+                .referenciaTipo("SERVICIO")
+                .referenciaId(primerIdServicio.longValue())
                 .build());
 
-        log.info("Solicitud creada: id={}, cliente={}, evaluado={}", solicitud.getIdSolicitud(),
+        log.info("Servicios creados: ids={}, cliente={}, evaluado={}",
+                serviciosCreados.stream().map(Servicio::getIdServicio).toList(),
                 cliente.getIdCliente(), request.cedula());
 
-        return construirDetalle(solicitud, tokenLink);
+        List<SolicitudDetalleResponse> respuesta = new ArrayList<>();
+        for (int i = 0; i < serviciosCreados.size(); i++) {
+            respuesta.add(construirDetalle(serviciosCreados.get(i), i == 0 ? tokenLink : null));
+        }
+        return respuesta;
     }
 
     @Transactional(readOnly = true)
     public Page<SolicitudResponse> listarSolicitudes(Integer idCliente, String estado, Pageable pageable) {
-        Page<Solicitud> pagina;
+        Page<Servicio> pagina;
         if (estado != null && !estado.isBlank()) {
             EstadoServicio estadoEnum = EstadoServicio.valueOf(estado.toUpperCase());
-            pagina = solicitudRepository.findByCliente_IdClienteAndEstadoOrderByFechaSolicitudDesc(
+            pagina = servicioRepository.findByCliente_IdClienteAndEstadoOrderByFechaSolicitudDescHoraSolicitudDesc(
                     idCliente, estadoEnum, pageable);
         } else {
-            pagina = solicitudRepository.findByCliente_IdClienteOrderByFechaSolicitudDesc(idCliente, pageable);
+            pagina = servicioRepository.findByCliente_IdClienteOrderByFechaSolicitudDescHoraSolicitudDesc(idCliente, pageable);
         }
         return pagina.map(this::construirResumen);
     }
 
     @Transactional(readOnly = true)
-    public SolicitudDetalleResponse obtenerDetalle(Long idSolicitud) {
-        Solicitud solicitud = solicitudRepository.findById(idSolicitud)
-                .orElseThrow(() -> new ApiException("Solicitud no encontrada", HttpStatus.NOT_FOUND));
-        return construirDetalle(solicitud, null);
+    public SolicitudDetalleResponse obtenerDetalle(Integer idServicio) {
+        Servicio servicio = servicioRepository.findById(idServicio)
+                .orElseThrow(() -> new ApiException("Servicio no encontrado", HttpStatus.NOT_FOUND));
+        return construirDetalle(servicio, null);
     }
 
-    public void cambiarEstado(Long idSolicitud, CambioEstadoRequest request, UserDetails userDetails) {
-        Solicitud solicitud = solicitudRepository.findById(idSolicitud)
-                .orElseThrow(() -> new ApiException("Solicitud no encontrada", HttpStatus.NOT_FOUND));
+    public void cambiarEstado(Integer idServicio, CambioEstadoRequest request, UserDetails userDetails) {
+        Servicio servicio = servicioRepository.findById(idServicio)
+                .orElseThrow(() -> new ApiException("Servicio no encontrado", HttpStatus.NOT_FOUND));
 
         var usuario = usuarioRepository.findByEmail(userDetails.getUsername())
                 .orElseThrow(() -> new ApiException("Usuario no encontrado", HttpStatus.NOT_FOUND));
 
         EstadoServicio nuevoEstado = EstadoServicio.valueOf(request.estado().toUpperCase());
-        EstadoServicio estadoAnterior = solicitud.getEstado();
+        EstadoServicio estadoAnterior = servicio.getEstado();
         validarTransicion(usuario.getRol(), estadoAnterior, nuevoEstado);
 
-        solicitud.setEstado(nuevoEstado);
+        servicio.setEstado(nuevoEstado);
 
-        historialRepository.save(HistorialSolicitud.builder()
-                .solicitud(solicitud)
+        historialRepository.save(HistorialEstadoServicio.builder()
+                .servicio(servicio)
                 .estadoAnterior(estadoAnterior)
                 .estadoNuevo(nuevoEstado)
                 .usuario(usuario)
@@ -217,8 +251,72 @@ public class SolicitudService {
                 .observacion(request.observacion())
                 .build());
 
-        log.info("Estado cambiado: solicitud={}, {} → {}, usuario={}",
-                idSolicitud, estadoAnterior, nuevoEstado, userDetails.getUsername());
+        log.info("Estado cambiado: servicio={}, {} → {}, usuario={}",
+                idServicio, estadoAnterior, nuevoEstado, userDetails.getUsername());
+    }
+
+    /**
+     * El GESTOR no puede revertir directamente una solicitud CANCELADA — solo puede
+     * solicitarlo. Esto crea un registro PENDIENTE (y una notificación a los
+     * ADMIN_POLYGRAPH); el estado de la solicitud no cambia hasta que un
+     * administrador la apruebe desde /admin/reversiones.
+     */
+    public void solicitarReversion(Integer idServicio, CambioEstadoRequest request, UserDetails userDetails) {
+        Servicio servicio = servicioRepository.findById(idServicio)
+                .orElseThrow(() -> new ApiException("Servicio no encontrado", HttpStatus.NOT_FOUND));
+
+        if (servicio.getEstado() != EstadoServicio.CANCELADO) {
+            throw new ApiException("Solo se puede solicitar reversión de solicitudes canceladas", HttpStatus.CONFLICT);
+        }
+
+        if (reversionSolicitudRepository.existsByServicio_IdServicioAndEstado(idServicio, EstadoAprobacion.PENDIENTE)) {
+            throw new ApiException("Ya existe una solicitud de reversión pendiente para esta solicitud", HttpStatus.CONFLICT);
+        }
+
+        EstadoServicio estadoDeseado = EstadoServicio.valueOf(request.estado().toUpperCase());
+        if (estadoDeseado != EstadoServicio.PROGRAMANDO && estadoDeseado != EstadoServicio.REPROGRAMADO) {
+            throw new ApiException("El estado deseado solo puede ser PROGRAMANDO o REPROGRAMADO", HttpStatus.BAD_REQUEST);
+        }
+
+        if (request.observacion() == null || request.observacion().isBlank()) {
+            throw new ApiException("Debes indicar el motivo de la solicitud", HttpStatus.BAD_REQUEST);
+        }
+
+        var gestor = usuarioRepository.findByEmail(userDetails.getUsername())
+                .orElseThrow(() -> new ApiException("Usuario no encontrado", HttpStatus.NOT_FOUND));
+
+        String nombreEvaluado = servicio.getCandidato() != null
+                ? servicio.getCandidato().getNombres() + " " + servicio.getCandidato().getApellidos()
+                : "el evaluado";
+        LocalDateTime ahora = LocalDateTime.now();
+
+        reversionSolicitudRepository.save(ReversionSolicitud.builder()
+                .servicio(servicio)
+                .estadoDeseado(estadoDeseado)
+                .motivo(request.observacion())
+                .estado(EstadoAprobacion.PENDIENTE)
+                .solicitadoPor(gestor)
+                .fechaSolicitud(ahora)
+                .build());
+
+        usuarioRepository.findAll().stream()
+                .filter(u -> Rol.ADMIN_POLYGRAPH.equals(u.getRol()) && Boolean.TRUE.equals(u.getActivo()))
+                .forEach(admin -> notificacionRepository.save(Notificacion.builder()
+                        .usuario(admin)
+                        .tipo("SOLICITUD_REVERSION")
+                        .titulo("Solicitud de reversión de estado")
+                        .mensaje(gestor.getNombre() + " solicita revertir la solicitud #" + idServicio +
+                                 " (" + nombreEvaluado + ") de CANCELADO a " + estadoDeseado +
+                                 ". Motivo: " + request.observacion())
+                        .leida(false)
+                        .fechaCreacion(ahora)
+                        .realizadoPor(gestor)
+                        .referenciaTipo("SERVICIO")
+                        .referenciaId(idServicio.longValue())
+                        .build()));
+
+        log.info("Reversión solicitada: servicio={}, CANCELADO → {}, gestor={}",
+                idServicio, estadoDeseado, userDetails.getUsername());
     }
 
     public BulkUploadResponse procesarCargaMasiva(MultipartFile archivo, String emailUsuario) {
@@ -247,9 +345,9 @@ public class SolicitudService {
                         continue;
                     }
 
-                    // Buscar catálogo por nombre
-                    List<CatalogoServicio> coincidencias = catalogoRepository.findAll().stream()
-                            .filter(c -> c.getNombre().equalsIgnoreCase(tipoServicio.trim()))
+                    // Buscar proceso del catálogo por nombre
+                    List<Proceso> coincidencias = procesoRepository.findAll().stream()
+                            .filter(p -> p.getNombreProceso().equalsIgnoreCase(tipoServicio.trim()))
                             .toList();
 
                     if (coincidencias.isEmpty()) {
@@ -260,7 +358,7 @@ public class SolicitudService {
 
                     SolicitudRequest req = new SolicitudRequest(
                             cedula, nombres, apellidos, telefono, null, ciudad, cargo,
-                            List.of(coincidencias.get(0).getIdCatalogo()), null);
+                            List.of(coincidencias.get(0).getIdProceso()), null);
                     crearSolicitud(req, emailUsuario);
                     exitosas++;
                 } catch (ApiException e) {
@@ -282,10 +380,11 @@ public class SolicitudService {
     private void validarTransicion(Rol rol, EstadoServicio actual, EstadoServicio nuevo) {
         boolean permitido = switch (rol) {
             case ADMIN_POLYGRAPH -> true;
-            case GESTOR -> nuevo == EstadoServicio.PROGRAMANDO ||
-                           nuevo == EstadoServicio.PUBLICADO   ||
-                           nuevo == EstadoServicio.CANCELADO   ||
-                           nuevo == EstadoServicio.REPROGRAMADO;
+            case GESTOR -> actual != EstadoServicio.CANCELADO &&
+                           (nuevo == EstadoServicio.PROGRAMANDO ||
+                            nuevo == EstadoServicio.PUBLICADO   ||
+                            nuevo == EstadoServicio.CANCELADO   ||
+                            nuevo == EstadoServicio.REPROGRAMADO);
             case ADMIN_CLIENTE, ANALISTA_CLIENTE -> nuevo == EstadoServicio.CANCELADO;
             case ANALISTA_INTERNO -> nuevo == EstadoServicio.EN_EJECUCION ||
                                      nuevo == EstadoServicio.FINALIZADO ||
@@ -297,28 +396,21 @@ public class SolicitudService {
         }
     }
 
-    private SolicitudResponse construirResumen(Solicitud s) {
-        List<String> servicios = s.getServicios().stream()
-                .map(ss -> ss.getCatalogoServicio().getNombre())
-                .toList();
+    private SolicitudResponse construirResumen(Servicio s) {
         return new SolicitudResponse(
-                s.getIdSolicitud(), s.getCedulaEvaluado(), s.getNombresEvaluado(),
-                s.getApellidosEvaluado(), s.getCargo(), s.getCiudadEvaluado(),
+                s.getIdServicio(),
+                s.getCandidato() != null ? s.getCandidato().getCedula()     : null,
+                s.getCandidato() != null ? s.getCandidato().getNombres()    : null,
+                s.getCandidato() != null ? s.getCandidato().getApellidos() : null,
+                s.getCargo(),
                 s.getEstado() != null ? s.getEstado().name() : null,
-                s.getFechaSolicitud(), s.getFechaEntregaEstimada(), servicios);
+                s.getFechaSolicitud(), s.getFechaEntregaEstimada(),
+                s.getProceso() != null ? s.getProceso().getNombreProceso() : null);
     }
 
-    private SolicitudDetalleResponse construirDetalle(Solicitud s, String tokenLink) {
-        List<SolicitudDetalleResponse.ServicioItemResponse> itemsResp = s.getServicios().stream()
-                .map(ss -> new SolicitudDetalleResponse.ServicioItemResponse(
-                        ss.getCatalogoServicio().getIdCatalogo(),
-                        ss.getCatalogoServicio().getNombre(),
-                        ss.getCatalogoServicio().getCategoria().name(),
-                        ss.getEstado() != null ? ss.getEstado().name() : null))
-                .toList();
-
+    private SolicitudDetalleResponse construirDetalle(Servicio s, String tokenLink) {
         List<SolicitudDetalleResponse.HistorialResponse> historialResp = historialRepository
-                .findBySolicitud_IdSolicitudOrderByFechaCambioDesc(s.getIdSolicitud()).stream()
+                .findByServicio_IdServicioOrderByFechaCambioDesc(s.getIdServicio()).stream()
                 .map(h -> new SolicitudDetalleResponse.HistorialResponse(
                         h.getEstadoAnterior() != null ? h.getEstadoAnterior().name() : null,
                         h.getEstadoNuevo().name(),
@@ -327,13 +419,72 @@ public class SolicitudService {
                         h.getObservacion()))
                 .toList();
 
+        Cliente cliente = s.getCliente();
+
         return new SolicitudDetalleResponse(
-                s.getIdSolicitud(), s.getCedulaEvaluado(), s.getNombresEvaluado(),
-                s.getApellidosEvaluado(), s.getCelularEvaluado(), s.getEmailEvaluado(),
-                s.getCiudadEvaluado(), s.getCargo(), s.getNotas(),
+                s.getIdServicio(),
+                s.getCandidato() != null ? s.getCandidato().getCedula()      : null,
+                s.getCandidato() != null ? s.getCandidato().getNombres()     : null,
+                s.getCandidato() != null ? s.getCandidato().getApellidos()  : null,
+                s.getCandidato() != null ? s.getCandidato().getCelular()    : null,
+                s.getCandidato() != null ? s.getCandidato().getEmailPrincipal() : null,
+                s.getCargo(), s.getNotas(),
+                s.getProceso() != null ? s.getProceso().getIdProceso() : null,
+                s.getProceso() != null ? s.getProceso().getNombreProceso() : null,
+                s.getProceso() != null && s.getProceso().getClasificacion() != null
+                        ? s.getProceso().getClasificacion().getNombre() : null,
                 s.getEstado() != null ? s.getEstado().name() : null,
-                s.getFechaSolicitud(), s.getFechaEntregaEstimada(),
-                tokenLink, itemsResp, historialResp);
+                s.getFechaSolicitud(), s.getHoraSolicitud(), s.getFechaEntregaEstimada(),
+                tokenLink, historialResp,
+                cliente != null ? nombreCliente(cliente)      : null,
+                cliente != null ? cliente.getNit()            : null,
+                cliente != null ? cliente.getTelefono()       : null,
+                cliente != null ? cliente.getEmailPrincipal() : null);
+    }
+
+    /** Genera una fila de asignación (PENDIENTE) por cada subproceso habilitado del proceso del servicio. */
+    /** Regla de negocio: "Cliente con mora no puede solicitar servicios" — solo aplica a pospago (prepago se limita por saldo). */
+    private void validarMoraPospago(Cliente cliente) {
+        ClientePospago pospago = clientePospagoRepository.findByIdCliente(cliente.getIdCliente()).orElse(null);
+        if (pospago == null || pospago.getEstadoMora() == null || pospago.getEstadoMora() == EstadoMora.NORMAL) {
+            return;
+        }
+        String motivo = pospago.getEstadoMora() == EstadoMora.SUSPENDIDO
+                ? "tu cuenta está suspendida por mora"
+                : "tu cuenta está en mora";
+        throw new ApiException(
+                "No puedes solicitar servicios: " + motivo + ". Contacta a tu gestor para regularizar tu situación.",
+                HttpStatus.FORBIDDEN);
+    }
+
+    private void generarSubprocesos(Servicio servicio) {
+        List<ProcesoTipoProgreso> pasos = procesoTipoProgresoRepository
+                .findByProceso_IdProcesoOrderByTipoProgreso_OrdenAscTipoProgreso_NombreProgresoAsc(
+                        servicio.getProceso().getIdProceso());
+
+        LocalDateTime ahora = LocalDateTime.now();
+        for (ProcesoTipoProgreso paso : pasos) {
+            if (!Boolean.TRUE.equals(paso.getHabilitado())) continue;
+            ServicioSubproceso subproceso = ServicioSubproceso.builder()
+                    .servicio(servicio)
+                    .tipoProgreso(paso.getTipoProgreso())
+                    .estado(EstadoAsignacion.PENDIENTE)
+                    .fechaCreacion(ahora)
+                    .build();
+            // Si ya hay alguien calificado (capacidad marcada en Equipo Polygraph), se asigna
+            // solo — el gestor/programador solo interviene para casos puntuales o reasignar.
+            asignacionService.autoAsignar(subproceso);
+            servicioSubprocesoRepository.save(subproceso);
+        }
+    }
+
+    private String nombreCliente(Cliente c) {
+        if (TipoPersona.JURIDICA.equals(c.getTipoPersona()) && c.getRazonSocial() != null) {
+            return c.getRazonSocial();
+        }
+        String nombre = c.getNombre() != null ? c.getNombre() : "";
+        String apellido = c.getApellido() != null ? " " + c.getApellido() : "";
+        return (nombre + apellido).trim();
     }
 
     private String obtenerCelda(Row fila, int columna) {

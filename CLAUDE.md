@@ -98,3 +98,15 @@ erp-polygraph/
 - Manejo de excepciones centralizado con @ControllerAdvice
 - Logs con SLF4J en cada operación crítica
 - Todos los endpoints bajo /api/v1/
+
+## Módulo de Pagos (Wompi)
+
+- Pasarela: Wompi (Bancolombia), moneda COP, montos SIEMPRE en centavos (entero long).
+- Integración elegida: Web Checkout / Widget. NO usamos API REST pura (evitamos alcance PCI-DSS).
+- Ambientes: sandbox y produccion, con llaves y URL de eventos separadas.
+- Fuente de verdad del estado de un pago: el WEBHOOK de eventos, nunca el redirect.
+- Estados posibles de transacción: APPROVED, DECLINED, VOIDED, ERROR, PENDING.
+- Roles con acceso al módulo: ADMIN_POLYGRAPH y GESTOR (gestión total),
+  ADMIN_CLIENTE (pagar y ver sus propios pagos). Ningún otro rol accede.
+- Regla de negocio: un pago APPROVED debe levantar la restricción de acceso por deuda
+  del cliente correspondiente.

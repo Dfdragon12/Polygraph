@@ -42,7 +42,7 @@ export default function PWAInstallBanner() {
       style={{ paddingBottom: 'calc(1rem + var(--sab))' }}
     >
       <div className="flex items-center gap-3 px-4 pt-4 pb-1">
-        <img src="/icon.svg" alt="Polygraph" className="w-12 h-12 rounded-2xl flex-shrink-0 bg-indigo-600 p-1" />
+        <img src="/icon.svg" alt="Polygraph" className="w-12 h-12 rounded-2xl flex-shrink-0 bg-primary-600 p-1" />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold leading-tight">Instalar Polygraph ERP</p>
           <p className="text-xs text-slate-400 mt-0.5">Acceso rápido desde tu pantalla de inicio, sin navegador</p>
@@ -59,7 +59,7 @@ export default function PWAInstallBanner() {
           Ahora no
         </button>
         <button onClick={instalar}
-          className="flex-1 py-2.5 text-sm font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl transition-colors">
+          className="flex-1 py-2.5 text-sm font-semibold bg-primary-600 hover:bg-primary-500 text-white rounded-xl transition-colors">
           Instalar app
         </button>
       </div>

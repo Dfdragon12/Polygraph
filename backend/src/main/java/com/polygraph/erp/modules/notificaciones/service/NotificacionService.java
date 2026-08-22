@@ -42,7 +42,9 @@ public class NotificacionService {
     private static final Map<String, List<Rol>> ROLES_POR_TIPO = Map.of(
             "CATALOGO", TODOS_INTERNOS,
             "CLIENTE",  TODOS_INTERNOS,
-            "USUARIO",  List.of(Rol.ADMIN_POLYGRAPH, Rol.GESTOR)
+            "USUARIO",  List.of(Rol.ADMIN_POLYGRAPH, Rol.GESTOR),
+            "SESION",   List.of(Rol.ADMIN_POLYGRAPH),
+            "ENLACES",  TODOS_INTERNOS
     );
     private static final List<Rol> ROLES_DEFAULT = List.of(Rol.ADMIN_POLYGRAPH);
 
@@ -87,34 +89,96 @@ public class NotificacionService {
         self.crearParaAdmins(tipo, titulo, mensaje, resolverActorIdActual());
     }
 
+    /**
+     * Crea notificaciones de sesión de forma SÍNCRONA para ADMIN_POLYGRAPH y GESTOR.
+     * Se llama desde el método login() de AuthService (que ya tiene @Transactional),
+     * por lo que la notificación se guarda en la misma transacción del login y
+     * ya existe en BD cuando el cliente recibe el token — sin condición de carrera.
+     */
+    @Transactional
+    public void crearParaSesion(String titulo, String mensaje, Long usuarioId) {
+        try {
+            Usuario actor = usuarioId != null
+                    ? usuarioRepository.findById(usuarioId).orElse(null)
+                    : null;
+
+            List<Rol> roles = ROLES_POR_TIPO.get("SESION");
+            List<Usuario> destinatarios = usuarioRepository.findByRolIn(roles)
+                    .stream()
+                    .filter(u -> Boolean.TRUE.equals(u.getActivo()))
+                    // No notificar al mismo usuario que está iniciando sesión
+                    .filter(u -> !u.getIdUsuario().equals(usuarioId))
+                    .toList();
+
+            destinatarios.forEach(dest -> notificacionRepository.save(
+                    Notificacion.builder()
+                            .usuario(dest)
+                            .tipo("SESION")
+                            .titulo(titulo)
+                            .mensaje(mensaje)
+                            .leida(false)
+                            .fechaCreacion(LocalDateTime.now())
+                            .realizadoPor(actor)
+                            .build()
+            ));
+            log.info("Notificación de sesión '{}' enviada a {} usuario(s) — actor: {}",
+                    titulo, destinatarios.size(), actor != null ? actor.getEmail() : "desconocido");
+        } catch (Exception e) {
+            log.error("Error al crear notificación de sesión para usuarioId={}: {}", usuarioId, e.getMessage(), e);
+        }
+    }
+
     @Async
     @Transactional
     public void crearParaAdmins(String tipo, String titulo, String mensaje, Long realizadoPorId) {
-        // Recargar el actor dentro de esta transacción para que sea una entidad managed.
-        Usuario actor = realizadoPorId != null
-                ? usuarioRepository.findById(realizadoPorId).orElse(null)
-                : null;
+        try {
+            // Recargar el actor dentro de esta transacción para que sea una entidad managed.
+            Usuario actor = realizadoPorId != null
+                    ? usuarioRepository.findById(realizadoPorId).orElse(null)
+                    : null;
 
-        List<Rol> rolesDestino = ROLES_POR_TIPO.getOrDefault(tipo, ROLES_DEFAULT);
+            List<Rol> rolesDestino = ROLES_POR_TIPO.getOrDefault(tipo, ROLES_DEFAULT);
 
-        List<Usuario> destinatarios = usuarioRepository.findByRolIn(rolesDestino)
-                .stream()
+            List<Usuario> destinatarios = usuarioRepository.findByRolIn(rolesDestino)
+                    .stream()
+                    .filter(u -> Boolean.TRUE.equals(u.getActivo()))
+                    .toList();
+
+            destinatarios.forEach(dest -> notificacionRepository.save(
+                    Notificacion.builder()
+                            .usuario(dest)
+                            .tipo(tipo)
+                            .titulo(titulo)
+                            .mensaje(mensaje)
+                            .leida(false)
+                            .fechaCreacion(LocalDateTime.now())
+                            .realizadoPor(actor)
+                            .build()
+            ));
+            log.info("Notificación '{}' enviada a {} usuario(s) [roles: {}] — actor: {}",
+                    titulo, destinatarios.size(), rolesDestino, actor != null ? actor.getEmail() : "sistema");
+        } catch (Exception e) {
+            log.error("Error al crear notificación tipo='{}' titulo='{}': {}", tipo, titulo, e.getMessage(), e);
+        }
+    }
+
+    /** Notifica a UN usuario puntual (no un bucket de roles) — p.ej. el cliente dueño de un
+     *  documento, o el gestor asignado a un cliente específico. */
+    @Transactional
+    public void crearParaUsuario(Long idUsuario, String tipo, String titulo, String mensaje) {
+        if (idUsuario == null) return;
+        usuarioRepository.findById(idUsuario)
                 .filter(u -> Boolean.TRUE.equals(u.getActivo()))
-                .toList();
-
-        destinatarios.forEach(dest -> notificacionRepository.save(
-                Notificacion.builder()
-                        .usuario(dest)
-                        .tipo(tipo)
-                        .titulo(titulo)
-                        .mensaje(mensaje)
-                        .leida(false)
-                        .fechaCreacion(LocalDateTime.now())
-                        .realizadoPor(actor)
-                        .build()
-        ));
-        log.info("Notificación '{}' enviada a {} usuario(s) [roles: {}] — actor: {}",
-                titulo, destinatarios.size(), rolesDestino, actor != null ? actor.getEmail() : "sistema");
+                .ifPresent(dest -> notificacionRepository.save(
+                        Notificacion.builder()
+                                .usuario(dest)
+                                .tipo(tipo)
+                                .titulo(titulo)
+                                .mensaje(mensaje)
+                                .leida(false)
+                                .fechaCreacion(LocalDateTime.now())
+                                .build()
+                ));
     }
 
     private Long resolverActorIdActual() {

@@ -8,6 +8,9 @@ import com.polygraph.erp.modules.usuarios.dto.UsuarioClienteResponse;
 import com.polygraph.erp.modules.usuarios.dto.UsuarioInternoResponse;
 import com.polygraph.erp.modules.usuarios.entity.UsuariosInternos;
 import com.polygraph.erp.modules.notificaciones.service.NotificacionService;
+import com.polygraph.erp.modules.catalogo.entity.Ciudad;
+import com.polygraph.erp.modules.catalogo.repository.CiudadRepository;
+import com.polygraph.erp.modules.catalogo.repository.TipoProgresoRepository;
 import com.polygraph.erp.modules.usuarios.repository.UsuariosIntenosRepository;
 import com.polygraph.erp.shared.enums.Rol;
 import com.polygraph.erp.shared.exceptions.ApiException;
@@ -40,6 +43,8 @@ public class UsuariosInternosService {
 
     private final UsuarioRepository usuarioRepository;
     private final UsuariosIntenosRepository empleadoRepository;
+    private final TipoProgresoRepository tipoProgresoRepository;
+    private final CiudadRepository ciudadRepository;
     private final PasswordEncoder passwordEncoder;
     private final NotificacionService notificacionService;
 
@@ -50,7 +55,7 @@ public class UsuariosInternosService {
                     UsuariosInternos emp = u.getIdEmpleado() != null
                             ? empleadoRepository.findById(u.getIdEmpleado()).orElse(null)
                             : null;
-                    return UsuarioInternoResponse.from(u, emp);
+                    return toResponse(u, emp);
                 })
                 .toList();
     }
@@ -69,6 +74,9 @@ public class UsuariosInternosService {
         if (usuarioRepository.existsByEmail(req.email())) {
             throw new ApiException("El email ya está registrado", HttpStatus.CONFLICT);
         }
+        if (req.idCiudadResidencia() != null && !ciudadRepository.existsById(req.idCiudadResidencia())) {
+            throw new ApiException("Ciudad no encontrada", HttpStatus.BAD_REQUEST);
+        }
 
         UsuariosInternos empleado = UsuariosInternos.builder()
                 .tipoEmpleado(req.rol().name())
@@ -78,13 +86,16 @@ public class UsuariosInternosService {
                 .telefono(req.telefono())
                 .tipoDocumento(req.tipoDocumento())
                 .documento(req.documento())
-                .ciudadResidencia(req.ciudadResidencia())
+                .idCiudadResidencia(req.idCiudadResidencia())
                 .salaEncargada(req.salaEncargada())
                 .novedadesSala(req.novedadesSala())
                 .zonasVisita(req.zonasVisita())
                 .activo(true)
                 .fechaIngreso(LocalDate.now())
                 .build();
+        if (req.idsSubprocesos() != null) {
+            empleado.setSubprocesosAsignados(validarCapacidades(req.rol(), req.idsSubprocesos()));
+        }
         empleadoRepository.save(empleado);
 
         // Si no se envía contraseña, se usa el número de documento como contraseña inicial
@@ -115,7 +126,7 @@ public class UsuariosInternosService {
         notificacionService.crearParaAdmins("USUARIO", "Nuevo usuario interno creado",
                 "Se creó el usuario " + req.nombre() + " " + (req.apellido() != null ? req.apellido() : "")
                 + " — Rol: " + req.rol().name());
-        return UsuarioInternoResponse.from(usuario, empleado);
+        return toResponse(usuario, empleado);
     }
 
     public UsuarioInternoResponse actualizar(Long idUsuario, ActualizarUsuarioInternoRequest req) {
@@ -132,6 +143,9 @@ public class UsuariosInternosService {
 
         if (!usuario.getEmail().equals(req.email()) && usuarioRepository.existsByEmail(req.email())) {
             throw new ApiException("El email ya está en uso por otro usuario", HttpStatus.CONFLICT);
+        }
+        if (req.idCiudadResidencia() != null && !ciudadRepository.existsById(req.idCiudadResidencia())) {
+            throw new ApiException("Ciudad no encontrada", HttpStatus.BAD_REQUEST);
         }
 
         usuario.setNombre(req.nombre());
@@ -152,11 +166,14 @@ public class UsuariosInternosService {
                 emp.setTelefono(req.telefono());
                 emp.setTipoDocumento(req.tipoDocumento());
                 emp.setDocumento(req.documento());
-                emp.setCiudadResidencia(req.ciudadResidencia());
+                emp.setIdCiudadResidencia(req.idCiudadResidencia());
                 emp.setSalaEncargada(req.salaEncargada());
                 emp.setNovedadesSala(req.novedadesSala());
                 emp.setZonasVisita(req.zonasVisita());
                 emp.setTipoEmpleado(req.rol().name());
+                if (req.idsSubprocesos() != null) {
+                    emp.setSubprocesosAsignados(validarCapacidades(req.rol(), req.idsSubprocesos()));
+                }
             }
         }
 
@@ -164,7 +181,7 @@ public class UsuariosInternosService {
         notificacionService.crearParaAdmins("USUARIO", "Usuario interno actualizado",
                 "Se editó el usuario " + req.nombre() + " " + (req.apellido() != null ? req.apellido() : "")
                 + " — Rol: " + req.rol().name());
-        return UsuarioInternoResponse.from(usuario, emp);
+        return toResponse(usuario, emp);
     }
 
     public UsuarioInternoResponse cambiarEstado(Long idUsuario, boolean activo) {
@@ -190,6 +207,29 @@ public class UsuariosInternosService {
         UsuariosInternos emp = usuario.getIdEmpleado() != null
                 ? empleadoRepository.findById(usuario.getIdEmpleado()).orElse(null)
                 : null;
-        return UsuarioInternoResponse.from(usuario, emp);
+        return toResponse(usuario, emp);
+    }
+
+    /** Un empleado solo puede tener como "capacidad" subprocesos cuyo rol_responsable coincida con su propio rol
+     *  — evita que, p.ej., un ANALISTA_INTERNO quede marcado como capaz de hacer "Poligrafía". */
+    private List<com.polygraph.erp.modules.catalogo.entity.TipoProgreso> validarCapacidades(Rol rol, List<Integer> idsSubprocesos) {
+        var tipos = tipoProgresoRepository.findAllById(idsSubprocesos);
+        var fueraDeRol = tipos.stream()
+                .filter(t -> t.getRolResponsable() != rol)
+                .map(com.polygraph.erp.modules.catalogo.entity.TipoProgreso::getNombreProgreso)
+                .toList();
+        if (!fueraDeRol.isEmpty()) {
+            throw new ApiException(
+                    "Estos subprocesos no corresponden al rol " + rol.name() + ": " + String.join(", ", fueraDeRol),
+                    HttpStatus.BAD_REQUEST);
+        }
+        return tipos;
+    }
+
+    private UsuarioInternoResponse toResponse(Usuario u, UsuariosInternos emp) {
+        String nombreCiudad = emp != null && emp.getIdCiudadResidencia() != null
+                ? ciudadRepository.findById(emp.getIdCiudadResidencia()).map(Ciudad::getNombreCiudad).orElse(null)
+                : null;
+        return UsuarioInternoResponse.from(u, emp, nombreCiudad);
     }
 }

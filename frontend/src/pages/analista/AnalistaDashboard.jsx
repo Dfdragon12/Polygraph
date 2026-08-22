@@ -9,7 +9,7 @@ export default function AnalistaDashboard() {
         {new Date().toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
       </p>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-        <TarjetaModulo titulo="Mis Asignaciones" descripcion="Servicios asignados pendientes de validar" icono="📌" color="indigo" />
+        <TarjetaModulo titulo="Mis Asignaciones" descripcion="Servicios asignados pendientes de validar" icono="📌" color="primary" />
         <TarjetaModulo titulo="Validaciones" descripcion="Valida información de candidatos" icono="✅" color="emerald" />
         <TarjetaModulo titulo="Informes" descripcion="Genera y envía informes finales" icono="📄" color="amber" />
       </div>
@@ -19,7 +19,7 @@ export default function AnalistaDashboard() {
 
 function TarjetaModulo({ titulo, descripcion, icono, color }) {
   const colores = {
-    indigo:  'bg-indigo-50  border-indigo-100  text-indigo-600',
+    primary:  'bg-primary-50  border-primary-100  text-primary-600',
     amber:   'bg-amber-50   border-amber-100   text-amber-600',
     emerald: 'bg-emerald-50 border-emerald-100 text-emerald-600',
   }

@@ -66,7 +66,7 @@ export default function CambiarPassword() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-indigo-900 flex items-center justify-center px-4">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-primary-900 flex items-center justify-center px-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
         {/* Header */}
         <div className="bg-amber-500 px-8 py-7 text-center">
@@ -101,7 +101,7 @@ export default function CambiarPassword() {
                   required
                   minLength={8}
                   placeholder="Mínimo 8 caracteres"
-                  className={`w-full border rounded-lg px-4 py-2.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                  className={`w-full border rounded-lg px-4 py-2.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 ${
                     nueva && !fuerte ? 'border-red-300 bg-red-50' : 'border-gray-300'
                   }`}
                 />
@@ -130,7 +130,7 @@ export default function CambiarPassword() {
                   onChange={e => setConfirmar(e.target.value)}
                   required
                   placeholder="Repite la nueva contraseña"
-                  className={`w-full border rounded-lg px-4 py-2.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                  className={`w-full border rounded-lg px-4 py-2.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 ${
                     noCoinciden ? 'border-red-300 bg-red-50' : 'border-gray-300'
                   }`}
                 />
@@ -147,7 +147,7 @@ export default function CambiarPassword() {
             <button
               type="submit"
               disabled={guardando || noCoinciden || !fuerte}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white font-semibold py-2.5 rounded-lg text-sm transition flex items-center justify-center gap-2"
+              className="w-full bg-primary-600 hover:bg-primary-700 disabled:bg-primary-300 text-white font-semibold py-2.5 rounded-lg text-sm transition flex items-center justify-center gap-2"
             >
               {guardando ? (
                 <>

@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
+import { CarritoProvider } from './context/CarritoContext'
 import { useAuth } from './hooks/useAuth'
 import ProtectedRoute from './components/ProtectedRoute'
 import OfflineIndicator from './components/OfflineIndicator'
@@ -27,6 +28,10 @@ import NewRequest       from './pages/client/NewRequest'
 import BulkUpload       from './pages/client/BulkUpload'
 import Solicitudes      from './pages/client/Solicitudes'
 import SolicitudDetalle from './pages/client/SolicitudDetalle'
+import Documentos       from './pages/client/Documentos'
+import ComprarServicios from './pages/client/ComprarServicios'
+import SimuladorPago    from './pages/client/SimuladorPago'
+import ResultadoPago    from './pages/client/ResultadoPago'
 
 // Portal admin
 import AdminDashboard    from './pages/admin/AdminDashboard'
@@ -34,10 +39,12 @@ import UsuariosInternos  from './pages/admin/UsuariosInternos'
 import Clientes          from './pages/admin/Clientes'
 import SemaforoServicios from './pages/admin/SemaforoServicios'
 import Catalogo          from './pages/admin/catalogo/Catalogo'
+import AdminReversiones  from './pages/admin/AdminReversiones'
 
 // Portales de rol
 import GestorDashboard       from './pages/gestor/GestorDashboard'
 import GestorSolicitudes     from './pages/gestor/Solicitudes'
+import GestorReversiones     from './pages/gestor/GestorReversiones'
 import AnalistaDashboard     from './pages/analista/AnalistaDashboard'
 import ProgramadorDashboard  from './pages/programador/ProgramadorDashboard'
 import PoligrafistaDashboard from './pages/poligrafista/PoligrafistaDashboard'
@@ -101,13 +108,17 @@ function App() {
             <div className="text-center">
               <h2 className="text-2xl font-bold text-gray-900 mb-2">Acceso denegado</h2>
               <p className="text-gray-500 mb-4">No tienes permisos para ver esta página.</p>
-              <a href="/" className="text-indigo-600 hover:underline text-sm">Volver al inicio</a>
+              <a href="/" className="text-primary-600 hover:underline text-sm">Volver al inicio</a>
             </div>
           </div>
         } />
 
         {/* ── Portal cliente ── */}
-        <Route path="/cliente" element={<ProtectedRoute roles={ROLES_CLIENTE}><ClientLayout /></ProtectedRoute>}>
+        <Route path="/cliente" element={
+          <ProtectedRoute roles={ROLES_CLIENTE}>
+            <CarritoProvider><ClientLayout /></CarritoProvider>
+          </ProtectedRoute>
+        }>
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard"         element={<Dashboard />} />
           <Route path="catalogo"          element={<ServiceCatalog />} />
@@ -115,8 +126,10 @@ function App() {
           <Route path="carga-masiva"      element={<BulkUpload />} />
           <Route path="solicitudes"       element={<Solicitudes />} />
           <Route path="solicitudes/:id"   element={<SolicitudDetalle />} />
-          <Route path="comprar-servicios" element={<Proximamente titulo="Comprar Servicios" />} />
-          <Route path="documentos"        element={<Proximamente titulo="Documentos de la empresa" />} />
+          <Route path="comprar-servicios" element={<ComprarServicios />} />
+          <Route path="comprar-servicios/simulador/:idOrden" element={<SimuladorPago />} />
+          <Route path="comprar-servicios/resultado/:idOrden" element={<ResultadoPago />} />
+          <Route path="documentos"        element={<Documentos />} />
           <Route path="estadisticas"      element={<Proximamente titulo="Estadísticas" />} />
         </Route>
 
@@ -127,6 +140,7 @@ function App() {
           <Route path="usuarios-internos" element={<UsuariosInternos />} />
           <Route path="clientes"          element={<Clientes />} />
           <Route path="semaforo"          element={<SemaforoServicios />} />
+          <Route path="reversiones"       element={<AdminReversiones />} />
           <Route path="catalogo"                  element={<Catalogo key="grid" />} />
           <Route path="catalogo/:clasificacion"   element={<Catalogo key="detalle" />} />
         </Route>
@@ -134,8 +148,9 @@ function App() {
         {/* ── Portal GESTOR ── */}
         <Route path="/gestor" element={<ProtectedRoute roles={['GESTOR']}><GestorLayout /></ProtectedRoute>}>
           <Route index element={<Navigate to="dashboard" replace />} />
-          <Route path="dashboard"   element={<GestorDashboard />} />
-          <Route path="solicitudes" element={<GestorSolicitudes />} />
+          <Route path="dashboard"    element={<GestorDashboard />} />
+          <Route path="solicitudes"   element={<GestorSolicitudes />} />
+          <Route path="reversiones"  element={<GestorReversiones />} />
         </Route>
 
         {/* ── Portal ANALISTA_INTERNO ── */}

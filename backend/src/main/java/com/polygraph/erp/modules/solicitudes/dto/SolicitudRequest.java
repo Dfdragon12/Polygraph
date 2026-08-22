@@ -20,8 +20,8 @@ public record SolicitudRequest(
         String ciudad,
         String cargo,
 
-        @NotEmpty(message = "Debe seleccionar al menos un servicio")
-        List<Integer> serviciosIds,
+        @NotEmpty(message = "Debe seleccionar al menos un proceso")
+        List<Integer> procesosIds,
 
         String notas
 ) {}

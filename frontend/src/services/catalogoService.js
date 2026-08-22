@@ -2,27 +2,23 @@ import api from './api'
 
 const catalogoService = {
   async listarServicios() {
-    const { data } = await api.get('/services')
+    const { data } = await api.get('/catalogo/procesos/activos')
     return data
   },
 
-  async obtenerServicio(id) {
-    const { data } = await api.get(`/services/${id}`)
+  async obtenerSubprocesos(idProceso) {
+    const { data } = await api.get(`/catalogo/procesos/${idProceso}/pasos-publico`)
     return data
   },
 
-  async crearServicio(solicitud) {
-    const { data } = await api.post('/services', solicitud)
+  async listarCiudades() {
+    const { data } = await api.get('/ciudades')
     return data
   },
 
-  async actualizarServicio(id, solicitud) {
-    const { data } = await api.put(`/services/${id}`, solicitud)
+  async crearCiudad({ nombreCiudad, departamento, codigoDaneCiudad, codigoDaneDepto }) {
+    const { data } = await api.post('/ciudades', { nombreCiudad, departamento, codigoDaneCiudad, codigoDaneDepto })
     return data
-  },
-
-  async desactivarServicio(id) {
-    await api.delete(`/services/${id}`)
   },
 }
 

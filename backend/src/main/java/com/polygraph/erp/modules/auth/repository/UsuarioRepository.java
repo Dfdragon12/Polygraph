@@ -19,4 +19,5 @@ public interface UsuarioRepository extends JpaRepository<Usuario, Long> {
     long countByActivoTrueAndRolIn(Collection<Rol> roles);
     List<Usuario> findByIdCliente(Integer idCliente);
     Optional<Usuario> findFirstByIdClienteAndRol(Integer idCliente, Rol rol);
+    Optional<Usuario> findByIdEmpleado(Integer idEmpleado);
 }

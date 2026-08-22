@@ -56,7 +56,7 @@ export default function Solicitudes() {
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-gray-800">Mis Solicitudes</h2>
         <Link to="/cliente/nueva-solicitud"
-          className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors">
+          className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors">
           + Nueva Solicitud
         </Link>
       </div>
@@ -67,7 +67,7 @@ export default function Solicitudes() {
           <div>
             <label className="block text-xs text-gray-500 mb-1">Estado</label>
             <select
-              className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
+              className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none bg-white"
               value={filtroEstado}
               onChange={(e) => { setFiltroEstado(e.target.value); setPagina(0) }}>
               <option value="">Todos los estados</option>
@@ -95,17 +95,17 @@ export default function Solicitudes() {
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
         {cargando ? (
           <div className="flex items-center justify-center h-40">
-            <div className="animate-spin rounded-full h-6 w-6 border-4 border-indigo-600 border-t-transparent" />
+            <div className="animate-spin rounded-full h-6 w-6 border-4 border-primary-600 border-t-transparent" />
           </div>
         ) : error ? (
           <div className="flex flex-col items-center justify-center h-40 gap-2">
             <p className="text-red-500 text-sm">{error}</p>
-            <button onClick={cargar} className="text-xs text-indigo-600 hover:underline">Reintentar</button>
+            <button onClick={cargar} className="text-xs text-primary-600 hover:underline">Reintentar</button>
           </div>
         ) : solicitudes.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-40 gap-2">
             <p className="text-gray-400 text-sm">No hay solicitudes registradas.</p>
-            <Link to="/cliente/nueva-solicitud" className="text-xs text-indigo-600 hover:underline">
+            <Link to="/cliente/nueva-solicitud" className="text-xs text-primary-600 hover:underline">
               Crear primera solicitud →
             </Link>
           </div>
@@ -117,8 +117,7 @@ export default function Solicitudes() {
                   <th className="px-4 py-3 text-left">Cédula</th>
                   <th className="px-4 py-3 text-left">Candidato</th>
                   <th className="px-4 py-3 text-left">Cargo</th>
-                  <th className="px-4 py-3 text-left">Ciudad</th>
-                  <th className="px-4 py-3 text-left">Servicios</th>
+                  <th className="px-4 py-3 text-left">Servicio</th>
                   <th className="px-4 py-3 text-left">Fecha solicitud</th>
                   <th className="px-4 py-3 text-left">Fecha límite</th>
                   <th className="px-4 py-3 text-left">Estado</th>
@@ -127,17 +126,16 @@ export default function Solicitudes() {
               <tbody className="divide-y divide-gray-50">
                 {solicitudes.map((s) => (
                   <tr
-                    key={s.idSolicitud}
-                    onClick={() => navigate(`/cliente/solicitudes/${s.idSolicitud}`)}
-                    className="hover:bg-indigo-50 cursor-pointer transition-colors">
+                    key={s.idServicio}
+                    onClick={() => navigate(`/cliente/solicitudes/${s.idServicio}`)}
+                    className="hover:bg-primary-50 cursor-pointer transition-colors">
                     <td className="px-4 py-3 text-gray-500 font-mono text-xs">{s.cedulaEvaluado}</td>
                     <td className="px-4 py-3 font-medium text-gray-800">
                       {s.nombresEvaluado} {s.apellidosEvaluado}
                     </td>
                     <td className="px-4 py-3 text-gray-600">{s.cargo || '—'}</td>
-                    <td className="px-4 py-3 text-gray-600">{s.ciudadEvaluado || '—'}</td>
                     <td className="px-4 py-3 text-gray-600 max-w-[160px]">
-                      <span className="truncate block">{s.servicios?.join(', ') || '—'}</span>
+                      <span className="truncate block">{s.proceso || '—'}</span>
                     </td>
                     <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
                       {s.fechaSolicitud

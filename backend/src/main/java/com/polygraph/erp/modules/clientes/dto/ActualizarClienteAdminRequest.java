@@ -13,5 +13,7 @@ public record ActualizarClienteAdminRequest(
         // Común
         @Size(max = 20) String telefono,
         String direccion,
-        String observaciones
+        String observaciones,
+        Integer idCiudad,
+        Long idGestor
 ) {}

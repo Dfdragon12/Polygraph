@@ -45,12 +45,16 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/v1/auth/**").permitAll()
                 .requestMatchers("/api/v1/evaluees/link/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/v1/ciudades", "/api/v1/ciudades/**").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/v1/ciudades").permitAll()
                 .requestMatchers(
                     "/api/v1/api-docs/**",
                     "/api/v1/swagger-ui/**",
                     "/api/v1/swagger-ui.html"
                 ).permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/services", "/api/v1/services/**").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/v1/pagos/wompi/webhook").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/wompi").permitAll()
                 .anyRequest().authenticated()
             )
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

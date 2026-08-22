@@ -19,14 +19,14 @@ export default function SolicitudDetalle() {
 
   if (cargando) return (
     <div className="flex items-center justify-center h-64">
-      <div className="animate-spin rounded-full h-8 w-8 border-4 border-indigo-600 border-t-transparent" />
+      <div className="animate-spin rounded-full h-8 w-8 border-4 border-primary-600 border-t-transparent" />
     </div>
   )
 
   if (error || !detalle) return (
     <div className="flex flex-col items-center justify-center h-64 gap-3">
       <p className="text-red-500 text-sm">{error || 'No encontrado.'}</p>
-      <button onClick={() => navigate('/cliente/solicitudes')} className="text-sm text-indigo-600 hover:underline">
+      <button onClick={() => navigate('/cliente/solicitudes')} className="text-sm text-primary-600 hover:underline">
         ← Volver a solicitudes
       </button>
     </div>
@@ -41,11 +41,11 @@ export default function SolicitudDetalle() {
           className="text-sm text-gray-500 hover:text-gray-800">
           ← Volver
         </button>
-        <h1 className="text-2xl font-bold text-gray-900">Solicitud #{detalle.idSolicitud}</h1>
+        <h1 className="text-xl font-bold text-gray-800">Solicitud #{detalle.idServicio}</h1>
       </div>
 
       {/* Estado y fechas */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5 flex flex-wrap items-center gap-6">
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 flex flex-wrap items-center gap-6">
         <div className="flex items-center gap-3">
           <ServiceStatusBadge status={detalle.estado} />
           <span className="text-sm font-medium text-gray-700">Estado actual</span>
@@ -53,19 +53,19 @@ export default function SolicitudDetalle() {
         <div>
           <p className="text-xs text-gray-400">Fecha de solicitud</p>
           <p className="text-sm font-medium text-gray-700">
-            {detalle.fechaSolicitud ? new Date(detalle.fechaSolicitud).toLocaleString('es-CO') : '—'}
+            {detalle.fechaSolicitud ? new Date(detalle.fechaSolicitud).toLocaleDateString('es-CO') : '—'}
           </p>
         </div>
         {detalle.fechaEntregaEstimada && (
           <div className="ml-auto">
             <p className="text-xs text-gray-400">Entrega estimada</p>
-            <p className="text-sm font-semibold text-indigo-700">{detalle.fechaEntregaEstimada}</p>
+            <p className="text-sm font-semibold text-primary-700">{detalle.fechaEntregaEstimada}</p>
           </div>
         )}
       </div>
 
       {/* Datos del evaluado */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5">
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
         <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">Datos del evaluado</h2>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-3 text-sm">
           <div>
@@ -79,10 +79,6 @@ export default function SolicitudDetalle() {
           <div>
             <span className="block text-xs text-gray-400">Cargo</span>
             <span className="text-gray-800">{detalle.cargo || '—'}</span>
-          </div>
-          <div>
-            <span className="block text-xs text-gray-400">Ciudad</span>
-            <span className="text-gray-800">{detalle.ciudadEvaluado || '—'}</span>
           </div>
           <div>
             <span className="block text-xs text-gray-400">Celular</span>
@@ -101,32 +97,28 @@ export default function SolicitudDetalle() {
         )}
       </div>
 
-      {/* Servicios contratados */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">Servicios contratados</h2>
-        <ul className="divide-y divide-gray-50">
-          {detalle.servicios?.map((sv, i) => (
-            <li key={i} className="flex items-center justify-between py-2.5">
-              <div>
-                <p className="text-sm font-medium text-gray-800">{sv.nombre}</p>
-                {sv.categoria && (
-                  <p className="text-xs text-gray-400">{sv.categoria.replace(/_/g, ' ')}</p>
-                )}
-              </div>
-              <ServiceStatusBadge status={sv.estado} />
-            </li>
-          ))}
-        </ul>
+      {/* Servicio contratado */}
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">Servicio contratado</h2>
+        <div className="flex items-center justify-between py-2.5">
+          <div>
+            <p className="text-sm font-medium text-gray-800">{detalle.proceso}</p>
+            {detalle.clasificacion && (
+              <p className="text-xs text-gray-400">{detalle.clasificacion}</p>
+            )}
+          </div>
+          <ServiceStatusBadge status={detalle.estado} />
+        </div>
       </div>
 
       {/* Historial de cambios */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5">
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
         <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">Historial de cambios</h2>
         {detalle.historial?.length ? (
           <ol className="relative border-l border-gray-200 space-y-5 ml-2 pl-5">
             {detalle.historial.map((h, i) => (
               <li key={i} className="relative">
-                <div className="absolute w-3 h-3 bg-indigo-400 rounded-full -left-[1.65rem] top-0.5 border-2 border-white" />
+                <div className="absolute w-3 h-3 bg-primary-400 rounded-full -left-[1.65rem] top-0.5 border-2 border-white" />
                 <p className="text-xs text-gray-400">
                   {h.fechaCambio ? new Date(h.fechaCambio).toLocaleString('es-CO') : '—'}
                   {h.usuario && <> · <span className="text-gray-500">{h.usuario}</span></>}
@@ -147,7 +139,7 @@ export default function SolicitudDetalle() {
 
       {/* Descargar informe — solo si PUBLICADO */}
       {detalle.estado === 'PUBLICADO' && (
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
           <button className="w-full py-3 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center gap-2">
             <span>📄</span>
             Descargar informe

@@ -24,6 +24,12 @@ public class ProcesoController {
         return ResponseEntity.ok(service.listarTodos());
     }
 
+    @GetMapping("/activos")
+    @PreAuthorize("hasAnyRole('ADMIN_CLIENTE', 'ANALISTA_CLIENTE', 'GESTOR', 'ADMIN_POLYGRAPH')")
+    public ResponseEntity<List<ProcesoPublicoResponse>> listarActivos() {
+        return ResponseEntity.ok(service.listarActivos());
+    }
+
     @PostMapping
     public ResponseEntity<ProcesoResponse> crear(@Valid @RequestBody ProcesoRequest req) {
         return ResponseEntity.status(HttpStatus.CREATED).body(service.crear(req));
@@ -51,6 +57,12 @@ public class ProcesoController {
         return ResponseEntity.ok(service.obtenerPasos(id));
     }
 
+    @GetMapping("/{id}/pasos-publico")
+    @PreAuthorize("hasAnyRole('ADMIN_CLIENTE', 'ANALISTA_CLIENTE', 'GESTOR', 'ADMIN_POLYGRAPH')")
+    public ResponseEntity<List<PasoProcesoPublicoResponse>> obtenerPasosPublicos(@PathVariable Integer id) {
+        return ResponseEntity.ok(service.obtenerPasosPublicos(id));
+    }
+
     @PostMapping("/{id}/pasos")
     public ResponseEntity<PasoProcesoResponse> asignarPaso(
             @PathVariable Integer id,
@@ -71,6 +83,29 @@ public class ProcesoController {
             @PathVariable Integer id,
             @PathVariable Integer pasoId) {
         service.eliminarPaso(pasoId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/tramos")
+    public ResponseEntity<TramoPrecioResponse> agregarTramo(
+            @PathVariable Integer id,
+            @Valid @RequestBody TramoPrecioRequest req) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.agregarTramo(id, req));
+    }
+
+    @PutMapping("/{id}/tramos/{tramoId}")
+    public ResponseEntity<TramoPrecioResponse> actualizarTramo(
+            @PathVariable Integer id,
+            @PathVariable Integer tramoId,
+            @Valid @RequestBody TramoPrecioRequest req) {
+        return ResponseEntity.ok(service.actualizarTramo(tramoId, req));
+    }
+
+    @DeleteMapping("/{id}/tramos/{tramoId}")
+    public ResponseEntity<Void> eliminarTramo(
+            @PathVariable Integer id,
+            @PathVariable Integer tramoId) {
+        service.eliminarTramo(tramoId);
         return ResponseEntity.noContent().build();
     }
 }

@@ -1,7 +1,13 @@
 import { useState, useEffect, useMemo } from 'react'
 import api from '../../../services/api'
 
-const FORM_VACIO = { nombreProgreso: '', descripcion: '', orden: 0 }
+const FORM_VACIO = { nombreProgreso: '', descripcion: '', orden: 0, rolResponsable: 'ANALISTA_INTERNO' }
+
+const ROLES_RESPONSABLE = [
+  { value: 'ANALISTA_INTERNO', label: 'Analista interno', badge: 'bg-blue-100 text-blue-700' },
+  { value: 'POLIGRAFISTA',     label: 'Poligrafista',     badge: 'bg-purple-100 text-purple-700' },
+  { value: 'VISITADOR',        label: 'Visitador',        badge: 'bg-teal-100 text-teal-700' },
+]
 
 function Badge({ activo }) {
   return (
@@ -9,6 +15,15 @@ function Badge({ activo }) {
       activo ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
     }`}>
       {activo ? 'Activo' : 'Inactivo'}
+    </span>
+  )
+}
+
+function BadgeRol({ rol }) {
+  const cfg = ROLES_RESPONSABLE.find(r => r.value === rol)
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${cfg?.badge ?? 'bg-gray-100 text-gray-600'}`}>
+      {cfg?.label ?? rol ?? '—'}
     </span>
   )
 }
@@ -29,7 +44,7 @@ function Modal({ titulo, onClose, children }) {
 
 function IconoOrden({ activo, dir }) {
   if (!activo) return <span className="ml-1 text-gray-300 text-xs">↕</span>
-  return <span className="ml-1 text-indigo-500 text-xs">{dir === 'asc' ? '↑' : '↓'}</span>
+  return <span className="ml-1 text-primary-500 text-xs">{dir === 'asc' ? '↑' : '↓'}</span>
 }
 
 function Formulario({ form, onChange, onSubmit, onCancel, guardando, error, esEdicion }) {
@@ -40,23 +55,31 @@ function Formulario({ form, onChange, onSubmit, onCancel, guardando, error, esEd
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-1">Nombre <span className="text-red-500">*</span></label>
         <input name="nombreProgreso" value={form.nombreProgreso} onChange={onChange} required
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
       </div>
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-1">Descripción</label>
         <textarea name="descripcion" value={form.descripcion} onChange={onChange} rows={3}
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none" />
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" />
       </div>
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-1">Orden</label>
         <input name="orden" type="number" min={0} value={form.orden} onChange={onChange}
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-gray-600 mb-1">Rol responsable <span className="text-red-500">*</span></label>
+        <select name="rolResponsable" value={form.rolResponsable} onChange={onChange} required
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
+          {ROLES_RESPONSABLE.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+        </select>
+        <p className="text-xs text-gray-400 mt-1">Quién ejecuta este subproceso — define quién puede quedar asignado.</p>
       </div>
 
       <div className="flex justify-end gap-3 pt-1">
         <button type="button" onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancelar</button>
         <button type="submit" disabled={guardando}
-          className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-sm font-medium px-5 py-2 rounded-lg transition-colors">
+          className="bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white text-sm font-medium px-5 py-2 rounded-lg transition-colors">
           {guardando ? 'Guardando...' : esEdicion ? 'Guardar cambios' : 'Crear tipo'}
         </button>
       </div>
@@ -92,7 +115,10 @@ export default function TiposProgreso() {
 
   const abrirCrear = () => { setForm(FORM_VACIO); setError(null); setModalCrear(true) }
   const abrirEditar = (t) => {
-    setForm({ nombreProgreso: t.nombreProgreso, descripcion: t.descripcion ?? '', orden: t.orden ?? 0 })
+    setForm({
+      nombreProgreso: t.nombreProgreso, descripcion: t.descripcion ?? '', orden: t.orden ?? 0,
+      rolResponsable: t.rolResponsable ?? 'ANALISTA_INTERNO',
+    })
     setError(null)
     setEditando(t)
   }
@@ -167,6 +193,7 @@ export default function TiposProgreso() {
     { key: 'orden',         label: 'Orden',       sortable: true  },
     { key: 'nombreProgreso',label: 'Nombre',       sortable: true  },
     { key: 'descripcion',   label: 'Descripción',  sortable: false },
+    { key: 'rolResponsable',label: 'Rol responsable', sortable: true },
     { key: 'activo',        label: 'Estado',       sortable: true  },
     { key: '_acciones',     label: 'Acciones',     sortable: false },
   ]
@@ -179,7 +206,7 @@ export default function TiposProgreso() {
           <p className="text-sm text-gray-500 mt-0.5">Pasos disponibles para configurar en los procesos</p>
         </div>
         <button onClick={abrirCrear}
-          className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+          className="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
           <span className="text-base leading-none">+</span> Nuevo tipo
         </button>
       </div>
@@ -193,7 +220,7 @@ export default function TiposProgreso() {
           value={busqueda}
           onChange={e => setBusqueda(e.target.value)}
           placeholder="Buscar por nombre o descripción…"
-          className="flex-1 min-w-[200px] max-w-xs border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          className="flex-1 min-w-[200px] max-w-xs border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
         />
         <div className="flex gap-1">
           {[
@@ -210,7 +237,7 @@ export default function TiposProgreso() {
                     ? 'bg-red-100 text-red-700'
                     : f.key === 'activos'
                       ? 'bg-green-100 text-green-700'
-                      : 'bg-indigo-100 text-indigo-700'
+                      : 'bg-primary-100 text-primary-700'
                   : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
               }`}
             >
@@ -229,7 +256,7 @@ export default function TiposProgreso() {
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         {cargando ? (
           <div className="flex items-center justify-center py-16">
-            <div className="animate-spin rounded-full h-8 w-8 border-4 border-indigo-600 border-t-transparent" />
+            <div className="animate-spin rounded-full h-8 w-8 border-4 border-primary-600 border-t-transparent" />
           </div>
         ) : tiposVisibles.length === 0 ? (
           <div className="text-center py-16 text-gray-400 text-sm">
@@ -260,11 +287,12 @@ export default function TiposProgreso() {
                     <td className="px-4 py-3 text-sm text-gray-500 text-center w-16">{t.orden ?? 0}</td>
                     <td className="px-4 py-3 text-sm text-gray-900 font-medium">{t.nombreProgreso}</td>
                     <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">{t.descripcion ?? '—'}</td>
+                    <td className="px-4 py-3"><BadgeRol rol={t.rolResponsable} /></td>
                     <td className="px-4 py-3"><Badge activo={t.activo} /></td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <button onClick={() => abrirEditar(t)}
-                          className="text-xs font-medium px-3 py-1 rounded-full border border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition-colors">
+                          className="text-xs font-medium px-3 py-1 rounded-full border border-primary-200 text-primary-600 hover:bg-primary-50 transition-colors">
                           Editar
                         </button>
                         <button onClick={() => cambiarEstado(t)}

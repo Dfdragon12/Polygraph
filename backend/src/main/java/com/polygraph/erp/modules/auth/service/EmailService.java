@@ -1,11 +1,14 @@
 package com.polygraph.erp.modules.auth.service;
 
+import com.polygraph.erp.shared.exceptions.ApiException;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.http.HttpStatus;
+import org.springframework.mail.MailException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.scheduling.annotation.Async;
@@ -45,6 +48,27 @@ public class EmailService {
         enviar(destinatario, "Restablecer contraseña - Polygraph Service", html);
     }
 
+    public void enviarLinkEvaluado(String destinatario, String nombre, String token, String proceso) {
+        String enlace = frontendUrl + "/evaluado/link/" + token;
+        String html = cargarPlantilla("templates/email/link_evaluado.html")
+                .replace("{{nombre}}", nombre)
+                .replace("{{enlace}}", enlace)
+                .replace("{{proceso}}", proceso != null ? proceso : "tu proceso");
+        enviar(destinatario, "Completa tu información - Polygraph Service", html);
+    }
+
+    @Async
+    public void enviarSoporteVencimiento(String destinatario, String nombre, String tipoSoporte, boolean vencido) {
+        String enlace = frontendUrl + "/cliente/documentos";
+        String estadoTexto = vencido ? "venció" : "está por vencer en los próximos días";
+        String html = cargarPlantilla("templates/email/soporte_vencimiento.html")
+                .replace("{{nombre}}", nombre)
+                .replace("{{tipoSoporte}}", tipoSoporte)
+                .replace("{{estadoTexto}}", estadoTexto)
+                .replace("{{enlace}}", enlace);
+        enviar(destinatario, vencido ? "Documento vencido - Polygraph Service" : "Documento por vencer - Polygraph Service", html);
+    }
+
     private void enviar(String destinatario, String asunto, String html) {
         try {
             MimeMessage mensaje = mailSender.createMimeMessage();
@@ -55,8 +79,9 @@ public class EmailService {
             helper.setText(html, true);
             mailSender.send(mensaje);
             log.info("Email enviado a: {} | Asunto: {}", destinatario, asunto);
-        } catch (MessagingException e) {
+        } catch (MessagingException | MailException e) {
             log.error("Error enviando email a {}: {}", destinatario, e.getMessage());
+            throw new ApiException("No se pudo enviar el correo. Verifica la configuración SMTP.", HttpStatus.BAD_GATEWAY);
         }
     }
 

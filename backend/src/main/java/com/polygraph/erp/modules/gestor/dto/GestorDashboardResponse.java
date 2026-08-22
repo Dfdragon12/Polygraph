@@ -1,7 +1,6 @@
 package com.polygraph.erp.modules.gestor.dto;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.List;
 
 public record GestorDashboardResponse(
@@ -11,19 +10,22 @@ public record GestorDashboardResponse(
         long finalizados,
         long publicados,
         long cancelados,
+        long reprogramados,
         long total,
-        List<SolicitudResumen> recientes
+        List<SolicitudResumen> recientes,
+        List<SolicitudResumen> pendientesPorEntrega,
+        List<LinkCandidatoResponse> linksPorAtender
 ) {
     public record SolicitudResumen(
-            Long idSolicitud,
+            Integer idServicio,
             String cedulaEvaluado,
             String nombresEvaluado,
             String apellidosEvaluado,
             String cargo,
             String estado,
-            LocalDateTime fechaSolicitud,
+            LocalDate fechaSolicitud,
             LocalDate fechaEntregaEstimada,
             String nombreCliente,
-            List<String> servicios
+            String proceso
     ) {}
 }

@@ -2,7 +2,9 @@ import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useState, useEffect, useRef, Fragment } from 'react'
 import { useAuth } from '../../hooks/useAuth'
 import Campana from '../Campana'
+import PanelEnlaces from '../PanelEnlaces'
 import api from '../../services/api'
+import reversionService from '../../services/reversionService'
 
 const ETIQUETAS_ROL = {
   ADMIN_POLYGRAPH: 'Administrador',
@@ -29,6 +31,12 @@ const SECCIONES_ADMIN = [
     ],
   },*/
   {
+    titulo: 'Solicitudes',
+    items: [
+      { ruta: '/admin/reversiones', etiqueta: 'Reversiones', icono: '↩️', badgeKey: 'reversiones' },
+    ],
+  },
+  {
     titulo: 'Catálogo',
     items: [
       { ruta: '/admin/catalogo', etiqueta: 'Catálogo', icono: '📋' },
@@ -47,6 +55,7 @@ const ETIQUETAS_RUTA = {
   'tipos-progreso':    'Tipos de Subproceso',
   semaforo:            'Semáforo de Servicios',
   candidatos:          'Candidatos',
+  reversiones:         'Solicitudes de reversión',
 }
 
 function Breadcrumb() {
@@ -97,12 +106,12 @@ function Breadcrumb() {
 }
 
 /* ─── Contenido del sidebar ─── */
-function SidebarContent({ usuario, onNavClick, collapsed }) {
+function SidebarContent({ usuario, onNavClick, collapsed, badges = {} }) {
   return (
     <>
       <div className={`border-b border-slate-700 ${collapsed ? 'px-2 py-4 flex justify-center' : 'px-6 py-5'}`}>
         {collapsed ? (
-          <div className="w-8 h-8 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center">
+          <div className="w-8 h-8 rounded-full bg-primary-600 text-white text-xs font-bold flex items-center justify-center">
             {(usuario?.nombre?.[0] ?? '?').toUpperCase()}
           </div>
         ) : (
@@ -123,18 +132,35 @@ function SidebarContent({ usuario, onNavClick, collapsed }) {
               </p>
             )}
             <div className="space-y-0.5">
-              {seccion.items.map(({ ruta, etiqueta, icono }) => (
-                <NavLink key={ruta} to={ruta} onClick={onNavClick}
-                  title={collapsed ? etiqueta : undefined}
-                  className={({ isActive }) =>
-                    `flex items-center rounded-lg text-sm transition-colors ${
-                      collapsed ? 'justify-center p-2.5' : 'gap-3 px-3 py-2.5'
-                    } ${isActive ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`
-                  }>
-                  <span className="text-base flex-shrink-0">{icono}</span>
-                  {!collapsed && etiqueta}
-                </NavLink>
-              ))}
+              {seccion.items.map(({ ruta, etiqueta, icono, badgeKey }) => {
+                const badge = badgeKey ? badges[badgeKey] : null
+                return (
+                  <NavLink key={ruta} to={ruta} onClick={onNavClick}
+                    title={collapsed ? etiqueta : undefined}
+                    className={({ isActive }) =>
+                      `flex items-center rounded-lg text-sm transition-colors ${
+                        collapsed ? 'justify-center p-2.5' : 'gap-3 px-3 py-2.5'
+                      } ${isActive ? 'bg-primary-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`
+                    }>
+                    <span className="text-base flex-shrink-0 relative">
+                      {icono}
+                      {collapsed && badge > 0 && (
+                        <span className="absolute -top-1 -right-1.5 w-3.5 h-3.5 bg-amber-500 rounded-full" />
+                      )}
+                    </span>
+                    {!collapsed && (
+                      <span className="flex-1 flex items-center justify-between gap-2">
+                        {etiqueta}
+                        {badge > 0 && (
+                          <span className="bg-amber-500 text-white text-xs font-bold rounded-full px-1.5 py-0.5 leading-none">
+                            {badge}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </NavLink>
+                )
+              })}
             </div>
           </div>
         ))}
@@ -205,9 +231,9 @@ function BuscadorGlobal() {
                 <p className="text-sm text-gray-400 text-center py-6">Sin resultados</p>
               ) : resultados.map(item => (
                 <button key={item.ruta} onClick={() => ir(item.ruta)}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-indigo-50 transition-colors group">
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-primary-50 transition-colors group">
                   <span className="text-lg w-6 text-center flex-shrink-0">{item.icono}</span>
-                  <span className="text-sm text-gray-700 group-hover:text-indigo-700 font-medium">{item.etiqueta}</span>
+                  <span className="text-sm text-gray-700 group-hover:text-primary-700 font-medium">{item.etiqueta}</span>
                 </button>
               ))}
             </div>
@@ -283,7 +309,7 @@ function AvatarUsuario({ usuario, cerrarSesion }) {
     <div className="relative" ref={ref}>
       <button onClick={() => setAbierto(v => !v)}
         className="flex items-center gap-2 p-1 rounded-lg hover:bg-gray-100 transition-colors">
-        <div className="w-8 h-8 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
+        <div className="w-8 h-8 rounded-full bg-primary-600 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
           {iniciales}
         </div>
         <div className="hidden md:block text-left">
@@ -302,7 +328,7 @@ function AvatarUsuario({ usuario, cerrarSesion }) {
           <div className="px-4 py-3 border-b border-gray-100">
             <p className="text-sm font-semibold text-gray-900 truncate">{usuario?.nombre} {usuario?.apellido ?? ''}</p>
             <p className="text-xs text-gray-400 truncate mt-0.5">{usuario?.email}</p>
-            <span className="inline-block mt-1.5 text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-medium">
+            <span className="inline-block mt-1.5 text-xs bg-primary-100 text-primary-700 px-2 py-0.5 rounded-full font-medium">
               {ETIQUETAS_ROL[usuario?.rol] ?? usuario?.rol}
             </span>
           </div>
@@ -325,11 +351,23 @@ export default function AdminLayout() {
   const { usuario, logout } = useAuth()
   const navigate = useNavigate()
   const [menuMovil, setMenuMovil] = useState(false)
+  const [panelEnlaces, setPanelEnlaces] = useState(false)
   const [collapsed, setCollapsed] = useState(() =>
     localStorage.getItem('admin-sidebar-collapsed') === 'true'
   )
-
+  const [badges, setBadges] = useState({})
   const cerrarSesion = () => { logout(); navigate('/login') }
+
+  useEffect(() => {
+    const cargarBadges = () => {
+      reversionService.contarPendientes()
+        .then(n => setBadges(b => ({ ...b, reversiones: n })))
+        .catch(() => {})
+    }
+    cargarBadges()
+    const t = setInterval(cargarBadges, 30000)
+    return () => clearInterval(t)
+  }, [])
 
   const toggleSidebar = () => {
     const next = !collapsed
@@ -341,7 +379,7 @@ export default function AdminLayout() {
     <div className="flex h-screen bg-gray-50">
       {/* ─── Sidebar desktop ─── */}
       <aside className={`hidden md:flex md:flex-col bg-slate-900 text-white flex-shrink-0 transition-all duration-300 ${collapsed ? 'w-16' : 'w-64'}`}>
-        <SidebarContent usuario={usuario} collapsed={collapsed} />
+        <SidebarContent usuario={usuario} collapsed={collapsed} badges={badges} />
       </aside>
 
       {/* ─── Sidebar móvil ─── */}
@@ -355,7 +393,7 @@ export default function AdminLayout() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
-            <SidebarContent usuario={usuario} onNavClick={() => setMenuMovil(false)} collapsed={false} />
+            <SidebarContent usuario={usuario} onNavClick={() => setMenuMovil(false)} collapsed={false} badges={badges} />
           </aside>
         </>
       )}
@@ -387,6 +425,12 @@ export default function AdminLayout() {
           <div className="flex items-center gap-1">
             <BuscadorGlobal />
             <ConfiguracionMenu />
+            <button onClick={() => setPanelEnlaces(true)} title="Referencias externas"
+              className="relative p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+              </svg>
+            </button>
             <Campana />
             <div className="w-px h-6 bg-gray-200 mx-1" />
             <AvatarUsuario usuario={usuario} cerrarSesion={cerrarSesion} />
@@ -399,6 +443,8 @@ export default function AdminLayout() {
           <Outlet />
         </main>
       </div>
+
+      <PanelEnlaces abierto={panelEnlaces} onCerrar={() => setPanelEnlaces(false)} />
     </div>
   )
 }
