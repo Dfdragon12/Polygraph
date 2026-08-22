@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, Fragment } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import api from '../../../services/api'
 import Toast from '../../../components/Toast'
@@ -192,57 +192,100 @@ function SeccionTramos({ proceso, onCambio }) {
             className="text-xs font-medium text-primary-600 hover:text-primary-800">+ Agregar tramo</button>
         )}
       </div>
-      <div className="p-4 space-y-2">
-        {error && <div className="bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2 rounded-lg">{error}</div>}
+      <div className="p-4">
+        {error && <div className="bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2 rounded-lg mb-2">{error}</div>}
 
         {tramos.length === 0 && !agregando && (
           <p className="text-xs text-gray-400">Sin tramos configurados — siempre se cobra el valor base.</p>
         )}
 
-        {tramos.map(t => (
-          editandoId === t.idTramo ? (
-            <div key={t.idTramo} className="flex items-center gap-2">
-              <input type="number" min={2} value={edicion.cantidadMinima}
-                onChange={e => setEdicion(p => ({ ...p, cantidadMinima: e.target.value }))}
-                placeholder="Cant. mín" className="w-24 border border-gray-200 rounded-lg px-2 py-1.5 text-xs" />
-              <span className="text-xs text-gray-400 whitespace-nowrap">und →</span>
-              <input type="number" min={0} step="0.01" value={edicion.valorUnitario}
-                onChange={e => setEdicion(p => ({ ...p, valorUnitario: e.target.value }))}
-                placeholder="Valor unitario" className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs" />
-              <button type="button" disabled={guardando} onClick={() => actualizar(t.idTramo)}
-                className="text-xs font-medium text-primary-600 hover:text-primary-800 whitespace-nowrap">Guardar</button>
-              <button type="button" onClick={() => setEditandoId(null)} className="text-xs text-gray-400 whitespace-nowrap">Cancelar</button>
-            </div>
-          ) : (
-            <div key={t.idTramo} className="flex items-center justify-between gap-2 text-sm bg-gray-50 rounded-lg px-3 py-2">
-              <span className="text-gray-700">Desde <strong>{t.cantidadMinima}</strong> unidades</span>
-              <span className="font-semibold text-primary-700 whitespace-nowrap">{fmtValor(t.valorUnitario)} c/u</span>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <button type="button"
-                  onClick={() => { setEditandoId(t.idTramo); setEdicion({ cantidadMinima: String(t.cantidadMinima), valorUnitario: String(t.valorUnitario) }) }}
-                  className="text-xs text-primary-600 hover:underline">Editar</button>
-                <button type="button" onClick={() => eliminar(t.idTramo)} className="text-xs text-red-500 hover:underline">Eliminar</button>
-              </div>
-            </div>
-          )
-        ))}
+        {(tramos.length > 0 || agregando) && (
+          <div className="grid grid-cols-[1fr_1fr_auto] gap-x-3 gap-y-1.5 items-center">
+            <span className="text-xs font-medium text-gray-400">Cantidad mínima</span>
+            <span className="text-xs font-medium text-gray-400">Valor unitario</span>
+            <span />
 
-        {agregando && (
-          <div className="flex items-center gap-2 pt-1">
-            <input type="number" min={2} value={nuevoTramo.cantidadMinima}
-              onChange={e => setNuevoTramo(p => ({ ...p, cantidadMinima: e.target.value }))}
-              placeholder="Cant. mín (ej: 20)" className="w-32 border border-gray-200 rounded-lg px-2 py-1.5 text-xs" />
-            <input type="number" min={0} step="0.01" value={nuevoTramo.valorUnitario}
-              onChange={e => setNuevoTramo(p => ({ ...p, valorUnitario: e.target.value }))}
-              placeholder="Valor unitario" className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-xs" />
-            <button type="button" disabled={guardando || !nuevoTramo.cantidadMinima || !nuevoTramo.valorUnitario} onClick={crear}
-              className="text-xs font-medium text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50 px-3 py-1.5 rounded-lg whitespace-nowrap">
-              Guardar
-            </button>
-            <button type="button" onClick={() => { setAgregando(false); setNuevoTramo({ cantidadMinima: '', valorUnitario: '' }) }}
-              className="text-xs text-gray-400 whitespace-nowrap">Cancelar</button>
+            {tramos.map(t => (
+              editandoId === t.idTramo ? (
+                <Fragment key={t.idTramo}>
+                  <input type="number" min={2} value={edicion.cantidadMinima} autoFocus
+                    onChange={e => setEdicion(p => ({ ...p, cantidadMinima: e.target.value }))}
+                    placeholder="Cant. mín" className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm" />
+                  <input type="number" min={0} step="0.01" value={edicion.valorUnitario}
+                    onChange={e => setEdicion(p => ({ ...p, valorUnitario: e.target.value }))}
+                    placeholder="Valor unitario" className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm" />
+                  <div className="flex items-center gap-2 whitespace-nowrap">
+                    <button type="button" disabled={guardando} onClick={() => actualizar(t.idTramo)}
+                      className="text-xs font-medium text-primary-600 hover:text-primary-800">Guardar</button>
+                    <button type="button" onClick={() => setEditandoId(null)} className="text-xs text-gray-400">Cancelar</button>
+                  </div>
+                </Fragment>
+              ) : (
+                <Fragment key={t.idTramo}>
+                  <span className="text-sm text-gray-700 bg-gray-50 rounded-lg px-3 py-2">Desde <strong>{t.cantidadMinima}</strong> und.</span>
+                  <span className="text-sm font-semibold text-primary-700 bg-gray-50 rounded-lg px-3 py-2">{fmtValor(t.valorUnitario)} c/u</span>
+                  <div className="flex items-center gap-3 px-1 whitespace-nowrap">
+                    <button type="button"
+                      onClick={() => { setEditandoId(t.idTramo); setEdicion({ cantidadMinima: String(t.cantidadMinima), valorUnitario: String(t.valorUnitario) }) }}
+                      className="text-xs text-primary-600 hover:underline">Editar</button>
+                    <button type="button" onClick={() => eliminar(t.idTramo)} className="text-xs text-red-500 hover:underline">Eliminar</button>
+                  </div>
+                </Fragment>
+              )
+            ))}
+
+            {agregando && (
+              <Fragment>
+                <input type="number" min={2} value={nuevoTramo.cantidadMinima} autoFocus
+                  onChange={e => setNuevoTramo(p => ({ ...p, cantidadMinima: e.target.value }))}
+                  placeholder="Ej: 20" className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm" />
+                <input type="number" min={0} step="0.01" value={nuevoTramo.valorUnitario}
+                  onChange={e => setNuevoTramo(p => ({ ...p, valorUnitario: e.target.value }))}
+                  placeholder="Valor unitario" className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm" />
+                <div className="flex items-center gap-2 whitespace-nowrap">
+                  <button type="button" disabled={guardando || !nuevoTramo.cantidadMinima || !nuevoTramo.valorUnitario} onClick={crear}
+                    className="text-xs font-medium text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50 px-3 py-1.5 rounded-lg">
+                    Guardar
+                  </button>
+                  <button type="button" onClick={() => { setAgregando(false); setNuevoTramo({ cantidadMinima: '', valorUnitario: '' }) }}
+                    className="text-xs text-gray-400">Cancelar</button>
+                </div>
+              </Fragment>
+            )}
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+const NIVELES_CIUDAD = [
+  { valor: 'PRINCIPAL',            etiqueta: 'Principal' },
+  { valor: 'INTERMEDIA',           etiqueta: 'Intermedia / municipio principal' },
+  { valor: 'MUNICIPIO_SECUNDARIO', etiqueta: 'Municipio secundario' },
+]
+
+/* ─── Incremento por nivel de ciudad — inputs controlados por FormProceso, se guardan junto con el proceso ─── */
+function CamposPreciosCiudad({ valores, onChange }) {
+  return (
+    <div className="rounded-xl border border-gray-200 overflow-hidden">
+      <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Incremento por nivel de ciudad</p>
+        <p className="text-xs text-gray-400 mt-0.5">
+          Monto adicional (COP) que se suma al precio final según la ciudad del evaluado — independiente
+          del valor base y de los tramos por volumen. Deja en blanco o pon 0 si un nivel no tiene recargo.
+        </p>
+      </div>
+      <div className="p-4 space-y-2.5">
+        {NIVELES_CIUDAD.map(n => (
+          <div key={n.valor} className="flex items-center gap-3">
+            <span className="w-52 flex-shrink-0 text-xs text-gray-600">{n.etiqueta}</span>
+            <input type="number" min={0} step="0.01" value={valores[n.valor]}
+              onChange={e => onChange(n.valor, e.target.value)}
+              placeholder="Sin recargo"
+              className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+          </div>
+        ))}
       </div>
     </div>
   )
@@ -258,6 +301,12 @@ function FormProceso({ proceso, clasificaciones, clasificacionDefaultId, onClose
     idClasificacion:     proceso?.clasificacion?.idClasificacion ?? clasificacionDefaultId ?? '',
     valor:               proceso?.valor != null ? String(proceso.valor) : '',
     diasHabilesEntrega:  proceso?.diasHabilesEntrega != null ? String(proceso.diasHabilesEntrega) : '5',
+    aplicaPrecioCiudad:  proceso?.aplicaPrecioCiudad ?? false,
+    puntosClave:         (proceso?.puntosClave ?? []).join('\n'),
+    preciosCiudad:       Object.fromEntries(NIVELES_CIUDAD.map(n => {
+      const existente = proceso?.preciosCiudad?.find(p => p.nivelCiudad === n.valor)
+      return [n.valor, existente ? String(existente.valor) : '']
+    })),
   })
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState(null)
@@ -270,15 +319,22 @@ function FormProceso({ proceso, clasificaciones, clasificacionDefaultId, onClose
       idClasificacion:    Number(form.idClasificacion),
       valor:              form.valor !== '' ? Number(form.valor) : null,
       diasHabilesEntrega: form.diasHabilesEntrega !== '' ? Number(form.diasHabilesEntrega) : null,
+      aplicaPrecioCiudad: form.aplicaPrecioCiudad,
+      puntosClave:        form.puntosClave.split('\n').map(l => l.trim()).filter(Boolean),
     }
     try {
-      if (proceso) {
-        await api.put(`/catalogo/procesos/${proceso.idProceso}`, payload)
-        onGuardado('Proceso actualizado correctamente')
-      } else {
-        await api.post('/catalogo/procesos', payload)
-        onGuardado('Proceso creado correctamente')
+      const idProceso = proceso
+        ? (await api.put(`/catalogo/procesos/${proceso.idProceso}`, payload)).data.idProceso
+        : (await api.post('/catalogo/procesos', payload)).data.idProceso
+
+      if (form.aplicaPrecioCiudad) {
+        const items = NIVELES_CIUDAD
+          .filter(n => form.preciosCiudad[n.valor] !== '')
+          .map(n => ({ nivelCiudad: n.valor, valor: Number(form.preciosCiudad[n.valor]) }))
+        await api.put(`/catalogo/procesos/${idProceso}/precios-ciudad`, items)
       }
+
+      onGuardado(proceso ? 'Proceso actualizado correctamente' : 'Proceso creado correctamente')
       onClose()
     } catch (err) {
       setError(mensajeErrorValidacion(err))
@@ -288,25 +344,37 @@ function FormProceso({ proceso, clasificaciones, clasificacionDefaultId, onClose
   return (
     <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
       {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{error}</div>}
-      <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Nombre <span className="text-red-500">*</span></label>
-        <input value={form.nombreProceso} onChange={e => setForm(p => ({ ...p, nombreProceso: alCambiarTexto(e.target.value) }))} required
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
-      </div>
-      <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Clasificación <span className="text-red-500">*</span></label>
-        <select value={form.idClasificacion} onChange={e => setForm(p => ({ ...p, idClasificacion: e.target.value }))} required
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
-          <option value="">Seleccionar clasificación…</option>
-          {clasificaciones.filter(c => c.activo).map(c => (
-            <option key={c.idClasificacion} value={c.idClasificacion}>{c.codigo} — {c.nombre}</option>
-          ))}
-        </select>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Nombre <span className="text-red-500">*</span></label>
+          <input value={form.nombreProceso} onChange={e => setForm(p => ({ ...p, nombreProceso: alCambiarTexto(e.target.value) }))} required
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Clasificación <span className="text-red-500">*</span></label>
+          <select value={form.idClasificacion} onChange={e => setForm(p => ({ ...p, idClasificacion: e.target.value }))} required
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
+            <option value="">Seleccionar clasificación…</option>
+            {clasificaciones.filter(c => c.activo).map(c => (
+              <option key={c.idClasificacion} value={c.idClasificacion}>{c.codigo} — {c.nombre}</option>
+            ))}
+          </select>
+        </div>
       </div>
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-1">Descripción</label>
-        <textarea value={form.descripcion} rows={3} onChange={e => setForm(p => ({ ...p, descripcion: alCambiarTexto(e.target.value) }))}
+        <textarea value={form.descripcion} rows={2} onChange={e => setForm(p => ({ ...p, descripcion: alCambiarTexto(e.target.value) }))}
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-gray-600 mb-1">
+          Puntos clave
+          <span className="ml-1.5 text-gray-400 font-normal">— uno por línea, cortos, para la tarjeta de la tienda</span>
+        </label>
+        <textarea value={form.puntosClave} rows={4} onChange={e => setForm(p => ({ ...p, puntosClave: e.target.value }))}
+          placeholder={'Ej:\nRegistros penales\nMedidas correctivas de policía\nBoletines de contraloría\nProcuraduría'}
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none font-mono" />
+        <p className="text-xs text-gray-400 mt-1">Si lo dejas vacío, la tienda muestra la descripción en su lugar.</p>
       </div>
       {/* ── Sección de tiempos y valores ── */}
       <div className="rounded-xl border border-gray-200 overflow-hidden">
@@ -314,30 +382,46 @@ function FormProceso({ proceso, clasificaciones, clasificacionDefaultId, onClose
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Tiempos y valores</p>
         </div>
         <div className="p-4 space-y-4">
-          {/* Tiempo de entrega */}
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">
-              Días hábiles de entrega <span className="text-red-500">*</span>
-              <span className="ml-1.5 text-gray-400 font-normal">— tiempo estándar de respuesta</span>
-            </label>
-            <div className="flex items-center gap-3">
-              <input type="number" min={1} max={365} value={form.diasHabilesEntrega} required
-                onChange={e => setForm(p => ({ ...p, diasHabilesEntrega: e.target.value }))}
-                className="w-28 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
-              <span className="text-xs text-gray-400">días hábiles</span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Tiempo de entrega */}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Días hábiles de entrega <span className="text-red-500">*</span>
+              </label>
+              <div className="flex items-center gap-3">
+                <input type="number" min={1} max={365} value={form.diasHabilesEntrega} required
+                  onChange={e => setForm(p => ({ ...p, diasHabilesEntrega: e.target.value }))}
+                  className="w-24 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                <span className="text-xs text-gray-400">días hábiles</span>
+              </div>
+            </div>
+            {/* Valor base — editable */}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Valor base (COP)
+              </label>
+              <input type="number" min={0} step="0.01" value={form.valor}
+                onChange={e => setForm(p => ({ ...p, valor: e.target.value }))}
+                placeholder="Ej: 150000"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
             </div>
           </div>
-          {/* Valor base — editable */}
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">
-              Valor base (COP)
-              <span className="ml-1.5 text-gray-400 font-normal">— se ingresa manualmente</span>
-            </label>
-            <input type="number" min={0} step="0.01" value={form.valor}
-              onChange={e => setForm(p => ({ ...p, valor: e.target.value }))}
-              placeholder="Ej: 150000"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
-          </div>
+
+          {/* Aplica precio por ciudad */}
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <input type="checkbox" checked={form.aplicaPrecioCiudad}
+              onChange={e => setForm(p => ({ ...p, aplicaPrecioCiudad: e.target.checked }))}
+              className="mt-0.5 w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+            <span className="text-xs text-gray-600">
+              <span className="font-medium text-gray-800">Aplica precio por ciudad</span>
+              <span className="block text-gray-400 mt-0.5">
+                Para servicios con desplazamiento (ej. visitas). Suma un monto adicional al precio final
+                según el nivel logístico de la ciudad del evaluado — se configura abajo. Es independiente
+                del valor base y de los tramos por volumen: se aplica un solo incremento, sin importar la
+                cantidad comprada, porque no se sabe de antemano de qué ciudad será el evaluado.
+              </span>
+            </span>
+          </label>
 
           {/* Valor calculado — solo lectura */}
           {proceso ? (
@@ -380,6 +464,13 @@ function FormProceso({ proceso, clasificaciones, clasificacionDefaultId, onClose
           )}
         </div>
       </div>
+
+      {form.aplicaPrecioCiudad && (
+        <CamposPreciosCiudad
+          valores={form.preciosCiudad}
+          onChange={(nivel, valor) => setForm(p => ({ ...p, preciosCiudad: { ...p.preciosCiudad, [nivel]: valor } }))}
+        />
+      )}
 
       {proceso ? (
         <SeccionTramos proceso={proceso} onCambio={() => onGuardado()} />
@@ -557,16 +648,11 @@ function TarjetaProceso({ p, clasificaciones, onEditar, onPasos, onEstado }) {
     <div className={`bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col ${!p.activo ? 'opacity-60' : ''}`}>
       <div className={`h-1.5 w-full bg-gradient-to-r ${cfg.grad}`} />
       <div className="p-5 flex flex-col flex-1">
-        <div className="flex items-start justify-between gap-2 mb-2">
-          <h3 className="text-sm font-semibold text-gray-900 leading-snug flex-1">{p.nombreProceso}</h3>
+        <div className="flex items-start justify-between gap-2 pb-2.5 mb-2.5 border-b border-gray-100">
+          <h3 className="text-base font-semibold text-gray-900 leading-snug flex-1">{p.nombreProceso}</h3>
           <Badge activo={p.activo} />
         </div>
-        {p.clasificacion && (
-          <span className={`self-start inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full border mb-2 ${cfg.color}`}>
-            {p.clasificacion.codigo} — {p.clasificacion.nombre}
-          </span>
-        )}
-        <p className="text-xs text-gray-500 leading-relaxed flex-1 mb-3">
+        <p className="text-xs text-gray-500 leading-relaxed line-clamp-3 flex-1 mb-3" title={p.descripcion ?? ''}>
           {p.descripcion ?? <span className="italic text-gray-300">Sin descripción</span>}
         </p>
         <div className="flex items-center gap-2 mb-3 flex-wrap">
@@ -587,6 +673,15 @@ function TarjetaProceso({ p, clasificaciones, onEditar, onPasos, onEstado }) {
           {p.tramosPrecio?.length > 0 && (
             <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border bg-green-50 text-green-700 border-green-200">
               {p.tramosPrecio.length} tramo{p.tramosPrecio.length !== 1 ? 's' : ''} de precio
+            </span>
+          )}
+          {p.aplicaPrecioCiudad && (
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border bg-violet-50 text-violet-700 border-violet-200">
+              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0l-4.243-4.243a8 8 0 1111.314 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              + Recargo por ciudad
             </span>
           )}
         </div>
@@ -1306,14 +1401,14 @@ export default function Catalogo() {
 
       {/* ── Modales procesos ── */}
       {modalCrearProceso && (
-        <Modal titulo="Nuevo proceso" onClose={() => setModalCrearProceso(false)}>
+        <Modal titulo="Nuevo proceso" ancho="max-w-2xl" onClose={() => setModalCrearProceso(false)}>
           <FormProceso proceso={null} clasificaciones={clasificaciones}
             clasificacionDefaultId={clasificacionDefaultId}
             onClose={() => setModalCrearProceso(false)} onGuardado={cargarProcesos} />
         </Modal>
       )}
       {editandoProceso && (
-        <Modal titulo={`Editar — ${editandoProceso.nombreProceso}`} onClose={() => setEditandoProceso(null)}>
+        <Modal titulo={`Editar — ${editandoProceso.nombreProceso}`} ancho="max-w-2xl" onClose={() => setEditandoProceso(null)}>
           <FormProceso proceso={editandoProceso} clasificaciones={clasificaciones}
             clasificacionDefaultId={clasificacionDefaultId}
             onClose={() => setEditandoProceso(null)} onGuardado={cargarProcesos} />

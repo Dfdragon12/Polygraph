@@ -10,4 +10,6 @@ public interface CiudadRepository extends JpaRepository<Ciudad, Integer> {
     List<Ciudad> findAllByOrderByNombreCiudadAsc();
 
     Optional<Ciudad> findFirstByNombreCiudadIgnoreCaseAndDepartamentoIgnoreCase(String nombreCiudad, String departamento);
+
+    long countByPendienteConfirmacionTrue();
 }

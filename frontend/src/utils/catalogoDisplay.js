@@ -1,50 +1,30 @@
-/* Claves = valor real de `clasificacion` que devuelve el backend (clasificaciones_proceso.nombre,
- * ver V118__catalogo_real_negocio.sql) — están en MAYÚSCULAS sin tilde en la base de datos. */
-export const META_CATEGORIA = {
-  POLIGRAFIA: {
-    titulo: 'Poligrafía',
-    icono: '🎯',
-    borde: 'border-primary-200',
-    fondo: 'bg-primary-50',
-    badge: 'bg-primary-100 text-primary-700',
-  },
-  'PRUEBAS DE CONFIABILIDAD': {
-    titulo: 'Pruebas de Confiabilidad',
-    icono: '🔍',
-    borde: 'border-blue-200',
-    fondo: 'bg-blue-50',
-    badge: 'bg-blue-100 text-blue-700',
-  },
-  'ESTUDIOS DE SEGURIDAD': {
-    titulo: 'Estudios de Seguridad',
-    icono: '🛡️',
-    borde: 'border-amber-200',
-    fondo: 'bg-amber-50',
-    badge: 'bg-amber-100 text-amber-700',
-  },
-  SERVICIOS: {
-    titulo: 'Validaciones y Estudios',
-    icono: '📄',
-    borde: 'border-green-200',
-    fondo: 'bg-green-50',
-    badge: 'bg-green-100 text-green-700',
-  },
-  VERIFEYE: {
-    titulo: 'Verifeye',
-    icono: '👁️',
-    borde: 'border-purple-200',
-    fondo: 'bg-purple-50',
-    badge: 'bg-purple-100 text-purple-700',
-  },
+/* El ícono/color de cada clasificación se busca por `codigo` (estable, único en la BD) — nunca
+ * por `nombre`, porque el nombre lo puede renombrar el admin en cualquier momento desde
+ * Catálogo → Clasificaciones y dejaría de encontrar el estilo. El título mostrado siempre es el
+ * `nombre` real que llega del backend, así que nunca queda desactualizado. */
+const PALETA_CATEGORIA = [
+  { icono: '🎯', borde: 'border-primary-200', fondo: 'bg-primary-50', badge: 'bg-primary-100 text-primary-700' },
+  { icono: '🔍', borde: 'border-blue-200',    fondo: 'bg-blue-50',    badge: 'bg-blue-100 text-blue-700' },
+  { icono: '🛡️', borde: 'border-amber-200',   fondo: 'bg-amber-50',   badge: 'bg-amber-100 text-amber-700' },
+  { icono: '📄', borde: 'border-green-200',   fondo: 'bg-green-50',   badge: 'bg-green-100 text-green-700' },
+  { icono: '👁️', borde: 'border-purple-200',  fondo: 'bg-purple-50',  badge: 'bg-purple-100 text-purple-700' },
+  { icono: '📋', borde: 'border-rose-200',    fondo: 'bg-rose-50',    badge: 'bg-rose-100 text-rose-700' },
+  { icono: '🔒', borde: 'border-teal-200',    fondo: 'bg-teal-50',    badge: 'bg-teal-100 text-teal-700' },
+  { icono: '⚖️', borde: 'border-orange-200',  fondo: 'bg-orange-50',  badge: 'bg-orange-100 text-orange-700' },
+]
+
+function estiloPorCodigo(codigo) {
+  if (!codigo) return { borde: 'border-gray-200', fondo: 'bg-gray-50', badge: 'bg-gray-100 text-gray-700', icono: '📋' }
+  let hash = 0
+  for (const c of codigo) hash = (hash * 31 + c.charCodeAt(0)) % PALETA_CATEGORIA.length
+  return PALETA_CATEGORIA[Math.abs(hash)]
 }
 
 export const ORDEN_CATEGORIAS = ['POLIGRAFIA', 'PRUEBAS DE CONFIABILIDAD', 'ESTUDIOS DE SEGURIDAD', 'SERVICIOS', 'VERIFEYE']
 
-export function metaCategoria(cat) {
-  return META_CATEGORIA[cat] ?? {
-    titulo: cat, icono: '📋',
-    borde: 'border-gray-200', fondo: 'bg-gray-50', badge: 'bg-gray-100 text-gray-700',
-  }
+/** `nombre` es el título a mostrar (siempre el real/actual); `codigo` solo decide el color/ícono. */
+export function metaCategoria(nombre, codigo) {
+  return { titulo: nombre, ...estiloPorCodigo(codigo) }
 }
 
 export function ordenarCategorias(porCategoria) {

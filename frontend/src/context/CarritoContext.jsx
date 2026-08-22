@@ -1,21 +1,40 @@
-import { createContext, useState, useEffect } from 'react'
+import { createContext, useState, useEffect, useRef } from 'react'
 import { resolverPrecioUnitario } from '../utils/catalogoDisplay'
+import { useAuth } from '../hooks/useAuth'
 
 const CarritoContext = createContext(null)
-const CLAVE_STORAGE = 'carrito-cliente'
+
+const claveStorage = (idUsuario) => idUsuario ? `carrito-cliente-${idUsuario}` : null
 
 export function CarritoProvider({ children }) {
-  const [items, setItems] = useState(() => {
+  const { usuario } = useAuth()
+  const idUsuario = usuario?.idUsuario ?? null
+  const [items, setItems] = useState([])
+  // Evita que, justo al cambiar de usuario, el carrito que se acaba de cargar se sobreescriba
+  // con el del usuario anterior antes de que el nuevo estado termine de aplicarse.
+  const saltarProximaPersistencia = useRef(false)
+
+  // Carga el carrito propio de la sesión activa — nunca el de otro usuario del mismo navegador.
+  useEffect(() => {
+    saltarProximaPersistencia.current = true
+    const clave = claveStorage(idUsuario)
+    if (!clave) { setItems([]); return }
     try {
-      const guardado = localStorage.getItem(CLAVE_STORAGE)
-      return guardado ? JSON.parse(guardado) : []
+      const guardado = localStorage.getItem(clave)
+      setItems(guardado ? JSON.parse(guardado) : [])
     } catch {
-      return []
+      setItems([])
     }
-  })
+  }, [idUsuario])
 
   useEffect(() => {
-    localStorage.setItem(CLAVE_STORAGE, JSON.stringify(items))
+    if (saltarProximaPersistencia.current) {
+      saltarProximaPersistencia.current = false
+      return
+    }
+    const clave = claveStorage(idUsuario)
+    if (!clave) return
+    localStorage.setItem(clave, JSON.stringify(items))
   }, [items])
 
   const agregarItem = (proceso, cantidad = 1) => {
@@ -40,24 +59,19 @@ export function CarritoProvider({ children }) {
     setItems((prev) => prev.filter((i) => i.idProceso !== idProceso))
   }
 
-  const cambiarCantidad = (idProceso, cantidad) => {
-    if (cantidad < 1) {
-      quitarItem(idProceso)
-      return
-    }
-    setItems((prev) => prev.map((i) => (i.idProceso === idProceso ? { ...i, cantidad } : i)))
-  }
-
   const vaciarCarrito = () => setItems([])
 
-  /** Precio unitario vigente del ítem según su cantidad actual (aplica tramos de volumen si hay). */
+  /** Precio unitario vigente del ítem según su cantidad actual (aplica tramos de volumen si hay). Los descuentos dinámicos solo se ven reflejados al pagar — el backend siempre recalcula. */
   const precioUnitario = (item) => resolverPrecioUnitario(item.valorBase, item.tramosPrecio, item.cantidad)
 
   const totalItems = items.reduce((acc, i) => acc + i.cantidad, 0)
   const total = items.reduce((acc, i) => acc + precioUnitario(i) * i.cantidad, 0)
 
   return (
-    <CarritoContext.Provider value={{ items, agregarItem, quitarItem, cambiarCantidad, vaciarCarrito, precioUnitario, totalItems, total }}>
+    <CarritoContext.Provider value={{
+      items, agregarItem, quitarItem,
+      vaciarCarrito, precioUnitario, totalItems, total,
+    }}>
       {children}
     </CarritoContext.Provider>
   )

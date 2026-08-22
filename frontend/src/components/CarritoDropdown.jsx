@@ -21,7 +21,7 @@ function IconoBasura({ className = 'h-4 w-4' }) {
   )
 }
 
-function ModalConfirmarCompra({ onClose, onConfirmar, procesando }) {
+function ModalConfirmarCompra({ onClose, onConfirmar, procesando, codigoCupon, onCambiarCupon }) {
   const { items, total, precioUnitario } = useCarrito()
 
   return (
@@ -48,12 +48,21 @@ function ModalConfirmarCompra({ onClose, onConfirmar, procesando }) {
           })}
         </ul>
 
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Código de descuento</label>
+          <input value={codigoCupon} onChange={(e) => onCambiarCupon(e.target.value.toUpperCase())}
+            placeholder="Opcional"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono uppercase focus:outline-none focus:ring-2 focus:ring-primary-500" />
+        </div>
+
         <div className="flex items-center justify-between border-t border-gray-100 pt-3">
-          <span className="text-sm font-semibold text-gray-600">Total a pagar</span>
+          <span className="text-sm font-semibold text-gray-600">Total estimado</span>
           <span className="text-lg font-bold text-primary-700">{formatearPrecio(total)}</span>
         </div>
 
-        <p className="text-xs text-gray-400">Serás redirigido a Wompi para completar el pago de forma segura.</p>
+        <p className="text-xs text-gray-400">
+          El total final (con descuentos aplicados) se confirma al procesar el pago. Serás redirigido a Wompi para completarlo de forma segura.
+        </p>
 
         <div className="flex justify-end gap-3 pt-1">
           <button type="button" onClick={onClose} disabled={procesando}
@@ -72,10 +81,11 @@ function ModalConfirmarCompra({ onClose, onConfirmar, procesando }) {
 
 /** Ícono de carrito del header que despliega el resumen de compra — el carrito ya no vive fijo en la página. */
 export default function CarritoDropdown() {
-  const { items, cambiarCantidad, quitarItem, vaciarCarrito, total, totalItems, precioUnitario } = useCarrito()
+  const { items, quitarItem, vaciarCarrito, total, totalItems, precioUnitario } = useCarrito()
   const [abierto, setAbierto] = useState(false)
   const [modalConfirmar, setModalConfirmar] = useState(false)
   const [procesando, setProcesando] = useState(false)
+  const [codigoCupon, setCodigoCupon] = useState('')
   const [toast, setToast] = useState(null)
   const ref = useRef(null)
 
@@ -85,10 +95,13 @@ export default function CarritoDropdown() {
     return () => document.removeEventListener('mousedown', h)
   }, [])
 
+  const carritoVacio = items.length === 0
+
   const confirmarCompra = async () => {
     setProcesando(true)
     try {
-      const orden = await pagosService.crearOrden(items.map((i) => ({ idProceso: i.idProceso, cantidad: i.cantidad })))
+      const itemsReq = items.map((i) => ({ idProceso: i.idProceso, cantidad: i.cantidad }))
+      const orden = await pagosService.crearOrden(itemsReq, codigoCupon)
       const pago = await pagosService.iniciarPago(orden.idOrdenCompra)
       vaciarCarrito()
       window.location.href = pago.urlCheckout
@@ -120,7 +133,7 @@ export default function CarritoDropdown() {
                 {totalItems > 0 ? `${totalItems} unidad${totalItems !== 1 ? 'es' : ''}` : 'Sin servicios agregados'}
               </p>
             </div>
-            {items.length > 0 && (
+            {!carritoVacio && (
               <button onClick={vaciarCarrito}
                 className="flex-shrink-0 text-xs font-medium text-gray-400 hover:text-red-500 transition-colors">
                 Vaciar
@@ -128,13 +141,13 @@ export default function CarritoDropdown() {
             )}
           </div>
 
-          {items.length === 0 ? (
+          {carritoVacio ? (
             <div className="flex flex-col items-center justify-center py-10 px-6 text-center gap-2">
               <div className="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center text-gray-300">
                 <IconoCarrito className="h-6 w-6" />
               </div>
               <p className="text-sm font-semibold text-gray-600">Tu carrito está vacío</p>
-              <p className="text-xs text-gray-400">Agrega servicios desde el catálogo para comenzar tu compra.</p>
+              <p className="text-xs text-gray-400">Agrega servicios desde el catálogo.</p>
             </div>
           ) : (
             <>
@@ -151,13 +164,9 @@ export default function CarritoDropdown() {
                           {conDescuento && <span className="ml-1 text-green-600 font-medium">· precio por volumen</span>}
                         </p>
                         <div className="flex items-center gap-2 mt-2">
-                          <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
-                            <button onClick={() => cambiarCantidad(i.idProceso, i.cantidad - 1)}
-                              className="w-6 h-6 flex items-center justify-center text-gray-500 hover:text-gray-800 hover:bg-gray-50 transition-colors">−</button>
-                            <span className="w-7 text-center text-xs font-semibold text-gray-700">{i.cantidad}</span>
-                            <button onClick={() => cambiarCantidad(i.idProceso, i.cantidad + 1)}
-                              className="w-6 h-6 flex items-center justify-center text-gray-500 hover:text-gray-800 hover:bg-gray-50 transition-colors">+</button>
-                          </div>
+                          <span className="text-xs font-semibold text-gray-600 bg-gray-100 px-2 py-1 rounded-lg">
+                            {i.cantidad} unidad{i.cantidad !== 1 ? 'es' : ''}
+                          </span>
                           <button onClick={() => quitarItem(i.idProceso)} title="Quitar del carrito"
                             className="ml-auto text-gray-300 hover:text-red-500 transition-colors">
                             <IconoBasura className="h-4 w-4" />
@@ -195,6 +204,8 @@ export default function CarritoDropdown() {
           onClose={() => setModalConfirmar(false)}
           onConfirmar={confirmarCompra}
           procesando={procesando}
+          codigoCupon={codigoCupon}
+          onCambiarCupon={setCodigoCupon}
         />
       )}
 

@@ -8,8 +8,10 @@ import com.polygraph.erp.modules.catalogo.repository.ClasificacionProcesoReposit
 import com.polygraph.erp.modules.catalogo.repository.ProcesoTipoProgresoRepository;
 import com.polygraph.erp.modules.catalogo.repository.TipoProgresoRepository;
 import com.polygraph.erp.modules.notificaciones.service.NotificacionService;
+import com.polygraph.erp.modules.servicios.entity.PrecioCiudadProceso;
 import com.polygraph.erp.modules.servicios.entity.Proceso;
 import com.polygraph.erp.modules.servicios.entity.TramoPrecioProceso;
+import com.polygraph.erp.modules.servicios.repository.PrecioCiudadProcesoRepository;
 import com.polygraph.erp.modules.servicios.repository.ProcesoRepository;
 import com.polygraph.erp.modules.servicios.repository.TramoPrecioProcesoRepository;
 import com.polygraph.erp.shared.exceptions.ApiException;
@@ -21,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Arrays;
 
 @Slf4j
 @Service
@@ -33,6 +36,7 @@ public class ProcesoService {
     private final ProcesoTipoProgresoRepository pasoRepository;
     private final TipoProgresoRepository tipoProgresoRepository;
     private final TramoPrecioProcesoRepository tramoRepository;
+    private final PrecioCiudadProcesoRepository precioCiudadRepository;
     private final NotificacionService notificacionService;
 
     @Transactional(readOnly = true)
@@ -51,9 +55,13 @@ public class ProcesoService {
                         p.getNombreProceso(),
                         p.getDescripcion(),
                         p.getClasificacion() != null ? p.getClasificacion().getNombre() : null,
+                        p.getClasificacion() != null ? p.getClasificacion().getCodigo() : null,
                         p.getValor(),
                         p.getDiasHabilesEntrega(),
-                        listarTramos(p.getIdProceso())))
+                        listarTramos(p.getIdProceso()),
+                        separarPuntosClave(p.getPuntosClave()),
+                        p.getAplicaPrecioCiudad(),
+                        listarPreciosCiudad(p.getIdProceso())))
                 .toList();
     }
 
@@ -68,6 +76,8 @@ public class ProcesoService {
                 .clasificacion(clasificacion)
                 .valor(req.valor())
                 .diasHabilesEntrega(req.diasHabilesEntrega() != null ? req.diasHabilesEntrega() : 5)
+                .aplicaPrecioCiudad(Boolean.TRUE.equals(req.aplicaPrecioCiudad()))
+                .puntosClave(unirPuntosClave(req.puntosClave()))
                 .activo(true)
                 .build();
         procesoRepository.save(proceso);
@@ -88,6 +98,8 @@ public class ProcesoService {
         proceso.setClasificacion(clasificacion);
         proceso.setValor(req.valor());
         if (req.diasHabilesEntrega() != null) proceso.setDiasHabilesEntrega(req.diasHabilesEntrega());
+        proceso.setAplicaPrecioCiudad(Boolean.TRUE.equals(req.aplicaPrecioCiudad()));
+        proceso.setPuntosClave(unirPuntosClave(req.puntosClave()));
         log.info("Proceso actualizado: {}", proceso.getNombreProceso());
         notificacionService.crearParaAdmins("CATALOGO", "Proceso actualizado",
                 "Se actualizó el proceso \"" + proceso.getNombreProceso() + "\"");
@@ -181,8 +193,30 @@ public class ProcesoService {
         return new ProcesoResponse(
                 p.getIdProceso(), p.getNombreProceso(), p.getDescripcion(),
                 p.getActivo(), totalPasos, clsf, p.getValor(), valorCalculado,
-                p.getDiasHabilesEntrega(), listarTramos(p.getIdProceso())
+                p.getDiasHabilesEntrega(), listarTramos(p.getIdProceso()),
+                p.getAplicaPrecioCiudad(), listarPreciosCiudad(p.getIdProceso()),
+                separarPuntosClave(p.getPuntosClave())
         );
+    }
+
+    // ---------- Puntos clave (bullets cortos para la tarjeta de la tienda) ----------
+
+    private String unirPuntosClave(List<String> puntos) {
+        if (puntos == null || puntos.isEmpty()) return null;
+        String unido = puntos.stream()
+                .map(String::trim)
+                .filter(s -> !s.isBlank())
+                .reduce((a, b) -> a + "\n" + b)
+                .orElse(null);
+        return (unido == null || unido.isBlank()) ? null : unido;
+    }
+
+    private List<String> separarPuntosClave(String texto) {
+        if (texto == null || texto.isBlank()) return List.of();
+        return Arrays.stream(texto.split("\n"))
+                .map(String::trim)
+                .filter(s -> !s.isBlank())
+                .toList();
     }
 
     private Proceso findProceso(Integer id) {
@@ -255,6 +289,35 @@ public class ProcesoService {
 
     private TramoPrecioResponse toTramoResponse(TramoPrecioProceso t) {
         return new TramoPrecioResponse(t.getIdTramo(), t.getCantidadMinima(), t.getValorUnitario());
+    }
+
+    // ---------- Precios por nivel de ciudad ----------
+
+    @Transactional(readOnly = true)
+    public List<PrecioCiudadResponse> listarPreciosCiudad(Integer idProceso) {
+        return precioCiudadRepository.findByProceso_IdProcesoOrderByNivelCiudadAsc(idProceso).stream()
+                .map(pc -> new PrecioCiudadResponse(pc.getIdPrecioCiudad(), pc.getNivelCiudad(), pc.getValor()))
+                .toList();
+    }
+
+    // Reemplaza el set completo de precios por nivel de un proceso — pensado para guardarse junto
+    // (hasta 3 filas fijas: PRINCIPAL / INTERMEDIA / MUNICIPIO_SECUNDARIO), no como CRUD incremental.
+    public List<PrecioCiudadResponse> guardarPreciosCiudad(Integer idProceso, List<PrecioCiudadRequest> items) {
+        Proceso proceso = findProceso(idProceso);
+        if (!Boolean.TRUE.equals(proceso.getAplicaPrecioCiudad())) {
+            throw new ApiException("Este proceso no tiene habilitado \"aplica precio por ciudad\"", HttpStatus.BAD_REQUEST);
+        }
+        precioCiudadRepository.deleteByProceso_IdProceso(idProceso);
+        List<PrecioCiudadProceso> nuevos = items.stream()
+                .map(it -> PrecioCiudadProceso.builder()
+                        .proceso(proceso)
+                        .nivelCiudad(it.nivelCiudad())
+                        .valor(it.valor())
+                        .build())
+                .toList();
+        precioCiudadRepository.saveAll(nuevos);
+        log.info("Precios por ciudad actualizados: proceso={}, niveles={}", proceso.getNombreProceso(), items.size());
+        return listarPreciosCiudad(idProceso);
     }
 
     private ProcesoTipoProgreso findPaso(Integer id) {

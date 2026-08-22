@@ -17,7 +17,7 @@ public record SolicitudRequest(
 
         String celular,
         String email,
-        String ciudad,
+        Integer idCiudad,
         String cargo,
 
         @NotEmpty(message = "Debe seleccionar al menos un proceso")

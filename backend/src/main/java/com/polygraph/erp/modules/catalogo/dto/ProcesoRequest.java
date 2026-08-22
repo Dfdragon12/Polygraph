@@ -7,11 +7,14 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 public record ProcesoRequest(
         @NotBlank @Size(max = 100) String nombreProceso,
         String descripcion,
         @NotNull Integer idClasificacion,
         BigDecimal valor,
-        @Min(1) @Max(365) Integer diasHabilesEntrega
+        @Min(1) @Max(365) Integer diasHabilesEntrega,
+        Boolean aplicaPrecioCiudad,
+        List<@Size(max = 80) String> puntosClave
 ) {}

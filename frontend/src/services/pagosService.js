@@ -1,8 +1,8 @@
 import api from './api'
 
 const pagosService = {
-  async crearOrden(items) {
-    const { data } = await api.post('/client/ordenes', { items })
+  async crearOrden(items, codigoCupon = null) {
+    const { data } = await api.post('/client/ordenes', { items, codigoCupon: codigoCupon || null })
     return data
   },
 

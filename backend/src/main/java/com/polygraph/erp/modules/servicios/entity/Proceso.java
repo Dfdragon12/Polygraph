@@ -37,4 +37,11 @@ public class Proceso {
 
     @Column(name = "dias_habiles_entrega")
     private Integer diasHabilesEntrega;
+
+    @Column(name = "aplica_precio_ciudad", nullable = false)
+    private Boolean aplicaPrecioCiudad;
+
+    /** Puntos clave cortos para la tarjeta de la tienda — un punto por línea. */
+    @Column(name = "puntos_clave", columnDefinition = "TEXT")
+    private String puntosClave;
 }

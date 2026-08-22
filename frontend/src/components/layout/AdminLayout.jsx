@@ -5,6 +5,7 @@ import Campana from '../Campana'
 import PanelEnlaces from '../PanelEnlaces'
 import api from '../../services/api'
 import reversionService from '../../services/reversionService'
+import ciudadService from '../../services/ciudadService'
 
 const ETIQUETAS_ROL = {
   ADMIN_POLYGRAPH: 'Administrador',
@@ -42,6 +43,18 @@ const SECCIONES_ADMIN = [
       { ruta: '/admin/catalogo', etiqueta: 'Catálogo', icono: '📋' },
     ],
   },
+  {
+    titulo: 'Promociones',
+    items: [
+      { ruta: '/admin/descuentos', etiqueta: 'Descuentos', icono: '🏷️' },
+    ],
+  },
+  {
+    titulo: 'Ciudades',
+    items: [
+      { ruta: '/admin/ciudades', etiqueta: 'Ciudades', icono: '🗺️', badgeKey: 'ciudades' },
+    ],
+  },
 ]
 
 
@@ -56,6 +69,8 @@ const ETIQUETAS_RUTA = {
   semaforo:            'Semáforo de Servicios',
   candidatos:          'Candidatos',
   reversiones:         'Solicitudes de reversión',
+  descuentos:          'Descuentos',
+  ciudades:            'Ciudades',
 }
 
 function Breadcrumb() {
@@ -362,6 +377,9 @@ export default function AdminLayout() {
     const cargarBadges = () => {
       reversionService.contarPendientes()
         .then(n => setBadges(b => ({ ...b, reversiones: n })))
+        .catch(() => {})
+      ciudadService.contarPendientes()
+        .then(n => setBadges(b => ({ ...b, ciudades: n })))
         .catch(() => {})
     }
     cargarBadges()

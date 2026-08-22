@@ -13,6 +13,7 @@ import com.polygraph.erp.modules.pagos.entity.TransaccionPago;
 import com.polygraph.erp.modules.pagos.repository.OrdenCompraItemRepository;
 import com.polygraph.erp.modules.pagos.repository.OrdenCompraRepository;
 import com.polygraph.erp.modules.pagos.repository.TransaccionPagoRepository;
+import com.polygraph.erp.modules.catalogo.service.DescuentoService;
 import com.polygraph.erp.modules.servicios.entity.Proceso;
 import com.polygraph.erp.modules.servicios.entity.TramoPrecioProceso;
 import com.polygraph.erp.modules.servicios.repository.ProcesoRepository;
@@ -50,6 +51,7 @@ public class OrdenCompraService {
     private final UsuarioRepository usuarioRepository;
     private final WompiPasarelaPago pasarelaPago;
     private final SaldoServicioClienteService saldoServicioClienteService;
+    private final DescuentoService descuentoService;
     private final ObjectMapper objectMapper;
 
     public OrdenCompraResponse crearOrden(CrearOrdenRequest request, String emailUsuario) {
@@ -60,6 +62,11 @@ public class OrdenCompraService {
             throw new ApiException(
                     "Tu cuenta opera con crédito pospago. Usa 'Nueva Solicitud' para solicitar servicios; no necesitas comprarlos por adelantado.",
                     HttpStatus.BAD_REQUEST);
+        }
+
+        List<ItemCarritoRequest> itemsReq = request.items() != null ? request.items() : List.of();
+        if (itemsReq.isEmpty()) {
+            throw new ApiException("El carrito no puede estar vacío", HttpStatus.BAD_REQUEST);
         }
 
         LocalDateTime ahora = LocalDateTime.now();
@@ -79,7 +86,8 @@ public class OrdenCompraService {
 
         BigDecimal montoTotal = BigDecimal.ZERO;
         List<OrdenCompraItem> items = new java.util.ArrayList<>();
-        for (ItemCarritoRequest itemReq : request.items()) {
+
+        for (ItemCarritoRequest itemReq : itemsReq) {
             Proceso proceso = procesoRepository.findById(itemReq.idProceso())
                     .orElseThrow(() -> new ApiException("Proceso de catálogo no encontrado: " + itemReq.idProceso(), HttpStatus.BAD_REQUEST));
 
@@ -91,6 +99,7 @@ public class OrdenCompraService {
             }
 
             BigDecimal valorUnitario = resolverValorUnitario(proceso, itemReq.cantidad());
+            valorUnitario = descuentoService.aplicarMejorDescuento(proceso, valorUnitario, request.codigoCupon());
             BigDecimal subtotal = valorUnitario.multiply(BigDecimal.valueOf(itemReq.cantidad()));
             montoTotal = montoTotal.add(subtotal);
 
@@ -102,6 +111,7 @@ public class OrdenCompraService {
                     .subtotal(subtotal)
                     .build());
         }
+
         ordenCompraItemRepository.saveAll(items);
 
         orden.setMontoTotal(montoTotal);

@@ -1,5 +1,6 @@
 package com.polygraph.erp.modules.catalogo.entity;
 
+import com.polygraph.erp.shared.enums.NivelCiudad;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -27,4 +28,11 @@ public class Ciudad {
 
     @Column(name = "codigo_dane_depto", length = 2)
     private String codigoDaneDepto;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "nivel_ciudad", nullable = false, length = 30)
+    private NivelCiudad nivelCiudad;
+
+    @Column(name = "pendiente_confirmacion", nullable = false)
+    private Boolean pendienteConfirmacion;
 }

@@ -108,4 +108,16 @@ public class ProcesoController {
         service.eliminarTramo(tramoId);
         return ResponseEntity.noContent().build();
     }
+
+    @GetMapping("/{id}/precios-ciudad")
+    public ResponseEntity<List<PrecioCiudadResponse>> obtenerPreciosCiudad(@PathVariable Integer id) {
+        return ResponseEntity.ok(service.listarPreciosCiudad(id));
+    }
+
+    @PutMapping("/{id}/precios-ciudad")
+    public ResponseEntity<List<PrecioCiudadResponse>> guardarPreciosCiudad(
+            @PathVariable Integer id,
+            @Valid @RequestBody List<PrecioCiudadRequest> items) {
+        return ResponseEntity.ok(service.guardarPreciosCiudad(id, items));
+    }
 }

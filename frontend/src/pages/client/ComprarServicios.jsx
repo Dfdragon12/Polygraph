@@ -6,7 +6,7 @@ import dashboardService from '../../services/dashboardService'
 import { useCarrito } from '../../hooks/useCarrito'
 import { useAuth } from '../../hooks/useAuth'
 import { useFavoritos } from '../../hooks/useFavoritos'
-import { metaCategoria, ordenarCategorias, formatearPrecio, resolverPrecioUnitario } from '../../utils/catalogoDisplay'
+import { metaCategoria, ordenarCategorias, formatearPrecio } from '../../utils/catalogoDisplay'
 import { recomendarPorTexto, coincideTexto } from '../../utils/busquedaInteligente'
 import { Modal } from '../../components/ui/Modal'
 import Toast from '../../components/Toast'
@@ -66,16 +66,28 @@ function EstadoOrdenBadge({ estado }) {
   return <span className={`flex-shrink-0 text-xs font-medium px-2 py-0.5 rounded-full ${cfg.badge}`}>{cfg.label}</span>
 }
 
-/* ─── Tarjeta de servicio (catálogo, estilo tienda — sin imagen) ─── */
-function TarjetaServicioCompra({ servicio, meta, onAgregar, onVistaPrevia, favorito, onToggleFavorito }) {
-  const [cantidad, setCantidad] = useState(1)
+function IconoCheck({ className = 'h-3.5 w-3.5' }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+    </svg>
+  )
+}
+
+/* ─── Tarjeta de servicio, estilo "plan de precios" — título, desde + precio grande, CTA, puntos clave ─── */
+function TarjetaServicioCompra({ servicio, meta, onAgregar, onVistaPrevia, onVerOfertas, favorito, onToggleFavorito }) {
   const sinPrecio = !servicio.valor
-  const tramos = servicio.tramosPrecio ?? []
-  const precioVigente = resolverPrecioUnitario(servicio.valor, tramos, cantidad)
-  const conDescuento = !sinPrecio && precioVigente < servicio.valor
+  const tieneOferta = servicio.tramosPrecio?.length > 0
+  const puntos = servicio.puntosClave?.length ? servicio.puntosClave.slice(0, 4) : null
 
   return (
-    <div className="relative rounded-xl border border-gray-200 bg-white p-5 flex flex-col gap-3 transition-shadow hover:shadow-md">
+    <div className="relative rounded-2xl border bg-white pt-8 pb-5 px-5 flex flex-col items-center text-center gap-1 transition-shadow hover:shadow-lg border-gray-200">
+      {tieneOferta && (
+        <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary-600 text-white text-[10px] font-bold uppercase tracking-wide px-3 py-1 rounded-full shadow-sm z-10 whitespace-nowrap">
+          🏷️ Oferta
+        </span>
+      )}
+
       <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10">
         <button onClick={() => onVistaPrevia(servicio)} title="Vista rápida — qué incluye"
           className="w-7 h-7 rounded-full bg-white shadow-sm border border-gray-100 text-gray-500 hover:text-primary-600 hover:border-primary-200 flex items-center justify-center transition-colors">
@@ -90,76 +102,65 @@ function TarjetaServicioCompra({ servicio, meta, onAgregar, onVistaPrevia, favor
         </button>
       </div>
 
-      <div className="pr-16">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{meta.titulo}</span>
-        <h4 className="font-semibold text-gray-800 mt-0.5 mb-1">{servicio.nombreProceso}</h4>
-        {servicio.descripcion && (
-          <p className="text-sm text-gray-600 line-clamp-2">{servicio.descripcion}</p>
-        )}
-      </div>
-
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-baseline gap-2">
-          <p className="text-base font-bold text-gray-800">{formatearPrecio(precioVigente)}</p>
-          {conDescuento && (
-            <p className="text-xs text-gray-400 line-through">{formatearPrecio(servicio.valor)}</p>
-          )}
-        </div>
-        {servicio.diasHabilesEntrega != null && (
-          <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 border border-gray-200 text-gray-600">
-            {servicio.diasHabilesEntrega} día{servicio.diasHabilesEntrega !== 1 ? 's' : ''} hábil{servicio.diasHabilesEntrega !== 1 ? 'es' : ''}
-          </span>
-        )}
-      </div>
-
-      {tramos.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {[...tramos].sort((a, b) => a.cantidadMinima - b.cantidadMinima).map((t) => (
-            <span key={t.idTramo}
-              className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${
-                cantidad >= t.cantidadMinima
-                  ? 'bg-green-100 border-green-200 text-green-700'
-                  : 'bg-gray-50 border-gray-200 text-gray-500'
-              }`}>
-              {t.cantidadMinima}+ und: {formatearPrecio(t.valorUnitario)}
-            </span>
-          ))}
-        </div>
+      <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{meta.titulo}</span>
+      <h4 className="font-bold text-gray-900 text-lg leading-snug">{servicio.nombreProceso}</h4>
+      {!puntos && servicio.descripcion && (
+        <p className="text-xs text-gray-500 line-clamp-2">{servicio.descripcion}</p>
       )}
+      {servicio.diasHabilesEntrega != null && (
+        <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 border border-gray-200 text-gray-600 mt-1">
+          {servicio.diasHabilesEntrega} día{servicio.diasHabilesEntrega !== 1 ? 's' : ''} hábil{servicio.diasHabilesEntrega !== 1 ? 'es' : ''}
+        </span>
+      )}
+
+      {!sinPrecio && <p className="text-xs text-gray-400 mt-3">desde</p>}
+      <p className={`font-extrabold text-gray-900 leading-none ${sinPrecio ? 'text-base mt-3' : 'text-4xl'}`}>
+        {formatearPrecio(servicio.valor)}
+        {!sinPrecio && <span className="block text-xs font-normal text-gray-400 mt-1">por unidad</span>}
+      </p>
 
       {sinPrecio ? (
-        <p className="mt-auto text-xs text-gray-400 italic">No disponible para compra en línea</p>
+        <p className="mt-3 text-xs text-gray-400 italic">No disponible para compra en línea</p>
       ) : (
-        <div className="mt-auto pt-2 flex items-center gap-2">
-          <div className="flex items-center border border-gray-200 rounded-lg bg-white flex-shrink-0">
-            <button onClick={() => setCantidad((c) => Math.max(1, c - 1))}
-              className="px-2.5 py-1.5 text-gray-500 hover:text-gray-800 transition-colors">−</button>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={cantidad}
-              onChange={(e) => {
-                const valor = e.target.value.replace(/\D/g, '')
-                setCantidad(valor === '' ? '' : Number(valor))
-              }}
-              onBlur={() => setCantidad((c) => (c === '' || c < 1 ? 1 : c))}
-              className="w-10 text-center text-sm font-medium text-gray-700 bg-transparent outline-none [appearance:textfield]"
-            />
-            <button onClick={() => setCantidad((c) => (c === '' ? 1 : c + 1))}
-              className="px-2.5 py-1.5 text-gray-500 hover:text-gray-800 transition-colors">+</button>
-          </div>
-          <button onClick={() => onAgregar(servicio, cantidad === '' || cantidad < 1 ? 1 : cantidad)}
-            className="flex-1 text-xs font-semibold px-3 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 text-white transition-colors">
-            Agregar
-          </button>
-        </div>
+        <button onClick={() => tieneOferta ? onVerOfertas(servicio) : onAgregar(servicio, 1)}
+          className="w-full mt-4 text-sm font-semibold px-3 py-3 rounded-xl bg-primary-600 hover:bg-primary-700 text-white transition-colors">
+          Agregar
+        </button>
       )}
+
+      {puntos && (
+        <ul className="w-full text-left mt-4 space-y-2">
+          {puntos.map((punto, i) => (
+            <li key={i} className="flex items-start gap-2 text-sm text-gray-600">
+              <IconoCheck className="h-3.5 w-3.5 text-primary-500 flex-shrink-0 mt-0.5" />
+              <span className="line-clamp-2">{punto}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="w-full border-t border-gray-100 pt-2.5 mt-4">
+        {servicio.aplicaPrecioCiudad && servicio.preciosCiudad?.length > 0 ? (
+          <button onClick={() => onVistaPrevia(servicio)}
+            className="w-full flex items-center justify-center gap-1.5 text-[11px] text-gray-500 hover:text-primary-600 transition-colors">
+            📍 Precio varía según ciudad
+          </button>
+        ) : (
+          <p className="text-[11px] text-gray-300 text-center">No aplica precio por ciudad</p>
+        )}
+      </div>
     </div>
   )
 }
 
-/* ─── Modal de vista previa — qué incluye el servicio ─── */
-function ModalVistaPrevia({ servicio, subprocesos, cargando, onClose, favorito, onToggleFavorito }) {
+/* ─── Modal de vista previa — qué incluye el servicio, y desde aquí también las ofertas por volumen ─── */
+const ETIQUETA_NIVEL_CIUDAD = {
+  PRINCIPAL: 'Ciudad principal',
+  INTERMEDIA: 'Intermedia / municipio principal',
+  MUNICIPIO_SECUNDARIO: 'Municipio secundario',
+}
+
+function ModalVistaPrevia({ servicio, subprocesos, cargando, onClose, favorito, onToggleFavorito, onAgregar }) {
   return (
     <Modal titulo={servicio.nombreProceso} subtitulo="Vista previa del servicio" onClose={onClose} ancho="max-w-md">
       <div className="p-6 space-y-4">
@@ -176,17 +177,28 @@ function ModalVistaPrevia({ servicio, subprocesos, cargando, onClose, favorito, 
 
         <div className="flex items-center justify-between border-y border-gray-100 py-3">
           <span className="text-sm text-gray-500">Precio</span>
-          <span className="text-base font-bold text-primary-700">{formatearPrecio(servicio.valor)}</span>
+          <div className="flex items-center gap-3">
+            <span className="text-base font-bold text-primary-700">{formatearPrecio(servicio.valor)}</span>
+            {servicio.valor > 0 && (
+              <button onClick={() => onAgregar(servicio, 1)}
+                className="text-xs font-semibold text-white bg-primary-600 hover:bg-primary-700 px-3 py-1.5 rounded-lg transition-colors">
+                Agregar
+              </button>
+            )}
+          </div>
         </div>
 
-        {servicio.tramosPrecio?.length > 0 && (
+        {servicio.aplicaPrecioCiudad && servicio.preciosCiudad?.length > 0 && (
           <div>
-            <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide mb-2">Precio por volumen</p>
+            <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide mb-2">📍 Recargo por ciudad</p>
+            <p className="text-xs text-gray-400 mb-2">Se suma al precio según la ciudad del evaluado.</p>
             <ul className="space-y-1.5">
-              {[...servicio.tramosPrecio].sort((a, b) => a.cantidadMinima - b.cantidadMinima).map((t) => (
-                <li key={t.idTramo} className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">Desde {t.cantidadMinima} unidades</span>
-                  <span className="font-semibold text-green-700">{formatearPrecio(t.valorUnitario)} c/u</span>
+              {[...servicio.preciosCiudad].sort((a, b) => a.nivelCiudad.localeCompare(b.nivelCiudad)).map((pc) => (
+                <li key={pc.idPrecioCiudad} className="flex items-center justify-between text-sm gap-2">
+                  <span className="text-gray-600">{ETIQUETA_NIVEL_CIUDAD[pc.nivelCiudad] ?? pc.nivelCiudad}</span>
+                  <span className="font-semibold text-gray-700 flex-shrink-0">
+                    {pc.valor > 0 ? `+ ${formatearPrecio(pc.valor)}` : 'Sin recargo'}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -223,15 +235,134 @@ function ModalVistaPrevia({ servicio, subprocesos, cargando, onClose, favorito, 
   )
 }
 
+/* ─── Modal de ofertas actuales — una tarjetica por cada paquete de volumen disponible ─── */
+function ModalOfertas({ servicio, onClose, onAgregar }) {
+  const opciones = [
+    { cantidad: 1, precio: servicio.valor, esBase: true, key: 'base' },
+    ...[...(servicio.tramosPrecio ?? [])]
+      .sort((a, b) => a.cantidadMinima - b.cantidadMinima)
+      .map((t) => ({ cantidad: t.cantidadMinima, precio: t.valorUnitario, esBase: false, key: t.idTramo })),
+  ]
+
+  return (
+    <Modal titulo={`🏷️ Ofertas actuales`} subtitulo={servicio.nombreProceso} onClose={onClose} ancho="max-w-lg">
+      <div className="p-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {opciones.map((o) => {
+            const ahorro = !o.esBase && servicio.valor ? servicio.valor - o.precio : 0
+            return (
+              <div key={o.key} className={`rounded-xl border p-4 flex flex-col gap-1.5 ${
+                o.esBase ? 'border-gray-200' : 'border-primary-300 bg-primary-50/30'
+              }`}>
+                <p className="text-xs font-medium text-gray-500">
+                  {o.esBase ? 'Precio individual' : `Desde ${o.cantidad} unidades`}
+                </p>
+                <p className="text-xl font-extrabold text-gray-900 leading-none">
+                  {formatearPrecio(o.precio)}
+                  <span className="text-xs font-normal text-gray-400"> / und</span>
+                </p>
+                {ahorro > 0 && (
+                  <p className="text-xs font-medium text-green-600">Ahorras {formatearPrecio(ahorro)} por unidad</p>
+                )}
+                <button onClick={() => onAgregar(servicio, o.cantidad)}
+                  className="mt-auto pt-2 w-full text-xs font-semibold px-3 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 text-white transition-colors">
+                  {o.esBase ? 'Agregar' : `Agregar ${o.cantidad} unidades`}
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+/* ─── Grilla de clasificaciones — landing del catálogo, mismo patrón que el admin ─── */
+function GridClasificaciones({ categorias, porCategoria, totalFavoritos, onSeleccionar }) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+      {categorias.map((cat) => {
+        const total = porCategoria[cat]?.length ?? 0
+        const meta = metaCategoria(cat, porCategoria[cat]?.[0]?.codigoClasificacion)
+        return (
+          <button key={cat} onClick={() => onSeleccionar(cat)}
+            className="group text-left bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 overflow-hidden">
+            <div className={`h-2 w-full ${meta.fondo}`} />
+            <div className="p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0 ${meta.fondo}`}>
+                  {meta.icono}
+                </div>
+                <div className="text-right">
+                  <p className="text-3xl font-bold text-gray-900 leading-none">{total}</p>
+                  <p className="text-xs text-gray-400 mt-1">servicio{total !== 1 ? 's' : ''}</p>
+                </div>
+              </div>
+              <div className="mt-4">
+                <p className="text-sm font-semibold text-gray-800 leading-snug">{meta.titulo}</p>
+              </div>
+              <div className="mt-4 flex items-center justify-between">
+                <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${meta.badge}`}>
+                  {total} servicio{total !== 1 ? 's' : ''}
+                </span>
+                <span className="text-xs text-gray-400 group-hover:text-primary-600 transition-colors flex items-center gap-1">
+                  Ver servicios
+                  <svg className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                </span>
+              </div>
+            </div>
+          </button>
+        )
+      })}
+
+      {totalFavoritos > 0 && (
+        <button onClick={() => onSeleccionar('FAVORITOS')}
+          className="group text-left bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 overflow-hidden">
+          <div className="h-2 w-full bg-red-100" />
+          <div className="p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div className="w-14 h-14 rounded-2xl flex items-center justify-center bg-red-50 flex-shrink-0">
+                <IconoCorazon relleno className="h-6 w-6 text-red-500" />
+              </div>
+              <div className="text-right">
+                <p className="text-3xl font-bold text-gray-900 leading-none">{totalFavoritos}</p>
+                <p className="text-xs text-gray-400 mt-1">favorito{totalFavoritos !== 1 ? 's' : ''}</p>
+              </div>
+            </div>
+            <div className="mt-4">
+              <p className="text-sm font-semibold text-gray-800 leading-snug">Favoritos</p>
+            </div>
+            <div className="mt-4 flex items-center justify-between">
+              <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-red-100 text-red-700">
+                Guardados por ti
+              </span>
+              <span className="text-xs text-gray-400 group-hover:text-primary-600 transition-colors flex items-center gap-1">
+                Ver servicios
+                <svg className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </span>
+            </div>
+          </div>
+        </button>
+      )}
+    </div>
+  )
+}
+
 /* ─── Pestaña: catálogo ─── */
 function TabCatalogo({ onToast }) {
   const [servicios, setServicios] = useState([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
-  const [categoriaActiva, setCategoriaActiva] = useState('Todas')
+  // null = viendo la grilla de clasificaciones (landing); 'FAVORITOS' o un código de clasificación = viendo esa lista
+  const [categoriaSeleccionada, setCategoriaSeleccionada] = useState(null)
   const [busqueda, setBusqueda] = useState('')
   const [orden, setOrden] = useState('relevancia')
   const [vistaPrevia, setVistaPrevia] = useState(null)
+  const [ofertasAbiertas, setOfertasAbiertas] = useState(null)
   const [subprocesosCache, setSubprocesosCache] = useState({})
   const [cargandoPrevia, setCargandoPrevia] = useState(false)
   const { agregarItem } = useCarrito()
@@ -277,27 +408,39 @@ function TabCatalogo({ onToast }) {
     )
   }
 
-  const soloFavoritos = categoriaActiva === 'FAVORITOS'
+  const porCategoriaTotal = servicios.reduce((acc, s) => {
+    if (!acc[s.clasificacion]) acc[s.clasificacion] = []
+    acc[s.clasificacion].push(s)
+    return acc
+  }, {})
+  const categoriasOrdenadas = ordenarCategorias(porCategoriaTotal)
+  // nombre -> código: el ícono/color de la categoría se busca por código (estable), no por
+  // nombre (lo puede renombrar el admin en cualquier momento y dejaría de encontrar el estilo).
+  const codigoPorCategoria = servicios.reduce((acc, s) => {
+    if (s.codigoClasificacion) acc[s.clasificacion] = s.codigoClasificacion
+    return acc
+  }, {})
+  const totalFavoritos = servicios.filter((s) => esFavorito(s.idProceso)).length
+
+  const enBusqueda = busqueda.trim().length > 0
+  const soloFavoritos = categoriaSeleccionada === 'FAVORITOS'
+  const mostrarGrid = !enBusqueda && !categoriaSeleccionada
+
   const serviciosFiltrados = servicios
     .filter((s) => !soloFavoritos || esFavorito(s.idProceso))
+    .filter((s) => enBusqueda || soloFavoritos || !categoriaSeleccionada || s.clasificacion === categoriaSeleccionada)
     .filter((s) => coincideTexto(s, busqueda))
   const porCategoria = serviciosFiltrados.reduce((acc, s) => {
     if (!acc[s.clasificacion]) acc[s.clasificacion] = []
     acc[s.clasificacion].push(s)
     return acc
   }, {})
-  const categoriasOrdenadas = ordenarCategorias(
-    servicios.reduce((acc, s) => {
-      if (!acc[s.clasificacion]) acc[s.clasificacion] = []
-      acc[s.clasificacion].push(s)
-      return acc
-    }, {})
-  )
-  const categoriasVisibles = soloFavoritos || categoriaActiva === 'Todas'
-    ? categoriasOrdenadas
-    : categoriasOrdenadas.filter((c) => c === categoriaActiva)
-  const totalFavoritos = servicios.filter((s) => esFavorito(s.idProceso)).length
+  const categoriasVisibles = enBusqueda || soloFavoritos
+    ? categoriasOrdenadas.filter((c) => porCategoria[c]?.length)
+    : categoriaSeleccionada ? [categoriaSeleccionada] : []
   const totalResultados = serviciosFiltrados.length
+
+  const volverAGrid = () => { setCategoriaSeleccionada(null); setBusqueda('') }
 
   return (
     <div className="space-y-5">
@@ -311,12 +454,21 @@ function TabCatalogo({ onToast }) {
             placeholder='Busca por nombre o cuéntanos qué necesitas — ej. "validar un robo"'
             className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
         </div>
-        <select value={orden} onChange={(e) => setOrden(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none bg-white sm:w-56">
-          {OPCIONES_ORDEN.map((o) => (
-            <option key={o.valor} value={o.valor}>{o.etiqueta}</option>
-          ))}
-        </select>
+        {!mostrarGrid && (
+          <select value={orden} onChange={(e) => setOrden(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none bg-white sm:w-56">
+            {OPCIONES_ORDEN.map((o) => (
+              <option key={o.valor} value={o.valor}>{o.etiqueta}</option>
+            ))}
+          </select>
+        )}
+        {mostrarGrid && totalFavoritos > 0 && (
+          <button onClick={() => setCategoriaSeleccionada('FAVORITOS')}
+            className="flex-shrink-0 flex items-center justify-center gap-1.5 text-sm font-medium px-4 py-2.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">
+            <IconoCorazon relleno className="h-4 w-4 text-red-500" />
+            Favoritos ({totalFavoritos})
+          </button>
+        )}
       </div>
 
       {/* Recomendación inteligente según lo que escribió el cliente */}
@@ -326,95 +478,106 @@ function TabCatalogo({ onToast }) {
           <div className="flex-1 min-w-0">
             <p className="text-sm text-primary-900">{recomendacion.mensaje}</p>
           </div>
-          <button onClick={() => { setCategoriaActiva(recomendacion.clasificaciones[0]); setBusqueda('') }}
+          <button onClick={() => { setCategoriaSeleccionada(recomendacion.clasificaciones[0]); setBusqueda('') }}
             className="flex-shrink-0 text-xs font-semibold text-primary-700 hover:text-primary-900 whitespace-nowrap underline">
             Ver recomendados →
           </button>
         </div>
       )}
 
-      {/* Filtro de categorías */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          <button onClick={() => setCategoriaActiva('Todas')}
-            className={`flex-shrink-0 text-xs font-medium px-3 py-1.5 rounded-full border transition-colors ${
-              categoriaActiva === 'Todas'
-                ? 'bg-primary-600 border-primary-600 text-white'
-                : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
-            }`}>
-            Todas
-          </button>
-          {categoriasOrdenadas.map((cat) => {
-            const meta = metaCategoria(cat)
-            const activa = categoriaActiva === cat
-            return (
-              <button key={cat} onClick={() => setCategoriaActiva(cat)}
-                className={`flex-shrink-0 flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full border transition-colors ${
-                  activa ? 'bg-primary-600 border-primary-600 text-white' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
-                }`}>
-                <span>{meta.icono}</span>
-                {meta.titulo}
-              </button>
-            )
-          })}
-          <button onClick={() => setCategoriaActiva('FAVORITOS')}
-            className={`flex-shrink-0 flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full border transition-colors ${
-              soloFavoritos ? 'bg-red-500 border-red-500 text-white' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
-            }`}>
-            <IconoCorazon relleno={soloFavoritos} className="h-3.5 w-3.5" />
-            Favoritos{totalFavoritos > 0 ? ` (${totalFavoritos})` : ''}
-          </button>
-        </div>
-        {busqueda.trim() && (
-          <p className="text-xs text-gray-400 flex-shrink-0">
-            {totalResultados} resultado{totalResultados !== 1 ? 's' : ''}
-          </p>
-        )}
-      </div>
-
-      {/* Secciones por categoría */}
-      {soloFavoritos && totalFavoritos === 0 ? (
-        <div className="flex flex-col items-center justify-center h-48 gap-2 text-center">
-          <IconoCorazon relleno={false} className="h-6 w-6 text-gray-300" />
-          <p className="text-sm text-gray-400">Aún no tienes servicios favoritos. Marca el corazón en una tarjeta para guardarla aquí.</p>
-        </div>
-      ) : totalResultados === 0 ? (
-        <div className="flex flex-col items-center justify-center h-48 gap-2 text-center">
-          <svg className="h-8 w-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
-          </svg>
-          <p className="text-sm text-gray-400">No encontramos servicios que coincidan con "{busqueda}".</p>
-          <button onClick={() => setBusqueda('')} className="text-xs text-primary-600 hover:underline">Limpiar búsqueda</button>
-        </div>
+      {mostrarGrid ? (
+        /* ── Landing: elegir clasificación ── */
+        categoriasOrdenadas.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-48 gap-2 text-center">
+            <p className="text-sm text-gray-400">Todavía no hay servicios disponibles para comprar.</p>
+          </div>
+        ) : (
+          <div>
+            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Elige una categoría</h3>
+            <GridClasificaciones
+              categorias={categoriasOrdenadas}
+              porCategoria={porCategoriaTotal}
+              totalFavoritos={totalFavoritos}
+              onSeleccionar={setCategoriaSeleccionada}
+            />
+          </div>
+        )
       ) : (
-        <div className="space-y-8">
-          {categoriasVisibles.map((cat) => {
-            const itemsCat = ordenarServicios(porCategoria[cat] ?? [], orden)
-            if (!itemsCat.length) return null
-            const meta = metaCategoria(cat)
+        <>
+          {/* Encabezado de la vista de detalle */}
+          <div className="flex items-center gap-3">
+            {!enBusqueda && (
+              <button onClick={volverAGrid}
+                className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors flex-shrink-0">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                </svg>
+                Categorías
+              </button>
+            )}
+            <h3 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
+              {enBusqueda
+                ? 'Resultados de tu búsqueda'
+                : soloFavoritos
+                ? <><IconoCorazon relleno className="h-4 w-4 text-red-500" /> Favoritos</>
+                : <>{metaCategoria(categoriaSeleccionada, codigoPorCategoria[categoriaSeleccionada]).icono} {categoriaSeleccionada}</>}
+            </h3>
+            {enBusqueda && (
+              <p className="text-xs text-gray-400 flex-shrink-0">
+                {totalResultados} resultado{totalResultados !== 1 ? 's' : ''}
+              </p>
+            )}
+          </div>
 
-            return (
-              <section key={cat}>
-                <div className="flex items-center gap-2 mb-4">
-                  <span className="text-xl">{meta.icono}</span>
-                  <h3 className="text-lg font-semibold text-gray-700">{meta.titulo}</h3>
-                  <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-gray-100 text-gray-600">
-                    {itemsCat.length} {itemsCat.length === 1 ? 'servicio' : 'servicios'}
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {itemsCat.map((s) => (
-                    <TarjetaServicioCompra key={s.idProceso} servicio={s} meta={meta}
-                      onAgregar={agregarAlCarrito}
-                      onVistaPrevia={abrirVistaPrevia}
-                      favorito={esFavorito(s.idProceso)}
-                      onToggleFavorito={toggleFavorito} />
-                  ))}
-                </div>
-              </section>
-            )
-          })}
-        </div>
+          {/* Secciones */}
+          {soloFavoritos && totalFavoritos === 0 ? (
+            <div className="flex flex-col items-center justify-center h-48 gap-2 text-center">
+              <IconoCorazon relleno={false} className="h-6 w-6 text-gray-300" />
+              <p className="text-sm text-gray-400">Aún no tienes servicios favoritos. Marca el corazón en una tarjeta para guardarla aquí.</p>
+            </div>
+          ) : totalResultados === 0 ? (
+            <div className="flex flex-col items-center justify-center h-48 gap-2 text-center">
+              <svg className="h-8 w-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
+              </svg>
+              <p className="text-sm text-gray-400">No encontramos servicios que coincidan con "{busqueda}".</p>
+              <button onClick={() => setBusqueda('')} className="text-xs text-primary-600 hover:underline">Limpiar búsqueda</button>
+            </div>
+          ) : (
+            <div className="space-y-8">
+              {categoriasVisibles.map((cat) => {
+                const itemsCat = ordenarServicios(porCategoria[cat] ?? [], orden)
+                if (!itemsCat.length) return null
+                const meta = metaCategoria(cat, codigoPorCategoria[cat])
+                const mostrarEncabezadoSeccion = enBusqueda || soloFavoritos
+
+                return (
+                  <section key={cat}>
+                    {mostrarEncabezadoSeccion && (
+                      <div className="flex items-center gap-2 mb-4">
+                        <span className="text-xl">{meta.icono}</span>
+                        <h4 className="text-base font-semibold text-gray-700">{meta.titulo}</h4>
+                        <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-gray-100 text-gray-600">
+                          {itemsCat.length} {itemsCat.length === 1 ? 'servicio' : 'servicios'}
+                        </span>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {itemsCat.map((servicio) => (
+                        <TarjetaServicioCompra key={servicio.idProceso} servicio={servicio} meta={meta}
+                          onAgregar={agregarAlCarrito}
+                          onVistaPrevia={abrirVistaPrevia}
+                          onVerOfertas={setOfertasAbiertas}
+                          favorito={esFavorito(servicio.idProceso)}
+                          onToggleFavorito={toggleFavorito} />
+                      ))}
+                    </div>
+                  </section>
+                )
+              })}
+            </div>
+          )}
+        </>
       )}
 
       {vistaPrevia && (
@@ -425,6 +588,15 @@ function TabCatalogo({ onToast }) {
           onClose={() => setVistaPrevia(null)}
           favorito={esFavorito(vistaPrevia.idProceso)}
           onToggleFavorito={toggleFavorito}
+          onAgregar={agregarAlCarrito}
+        />
+      )}
+
+      {ofertasAbiertas && (
+        <ModalOfertas
+          servicio={ofertasAbiertas}
+          onClose={() => setOfertasAbiertas(null)}
+          onAgregar={agregarAlCarrito}
         />
       )}
     </div>

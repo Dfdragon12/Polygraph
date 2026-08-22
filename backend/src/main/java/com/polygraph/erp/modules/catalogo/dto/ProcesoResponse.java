@@ -13,5 +13,8 @@ public record ProcesoResponse(
         BigDecimal                    valor,
         BigDecimal                    valorCalculado,
         Integer                       diasHabilesEntrega,
-        List<TramoPrecioResponse>     tramosPrecio
+        List<TramoPrecioResponse>     tramosPrecio,
+        Boolean                       aplicaPrecioCiudad,
+        List<PrecioCiudadResponse>    preciosCiudad,
+        List<String>                  puntosClave
 ) {}

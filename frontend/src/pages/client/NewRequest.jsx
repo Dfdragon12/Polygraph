@@ -4,6 +4,7 @@ import catalogoService from '../../services/catalogoService'
 import solicitudService from '../../services/solicitudService'
 import dashboardService from '../../services/dashboardService'
 import { useAuth } from '../../hooks/useAuth'
+import CiudadSelect from '../../components/CiudadSelect'
 
 function formatearPrecio(valor) {
   if (!valor) return 'Precio a convenir'
@@ -65,8 +66,9 @@ function NewRequest() {
   const [cargandoCatalogo, setCargandoCatalogo] = useState(true)
 
   const [evaluado, setEvaluado] = useState({
-    cedula: '', nombres: '', apellidos: '', celular: '', email: '', ciudad: '', cargo: '',
+    cedula: '', nombres: '', apellidos: '', celular: '', email: '', idCiudad: null, cargo: '',
   })
+  const [ciudades, setCiudades] = useState([])
   const [serviciosSeleccionados, setServiciosSeleccionados] = useState([])
   const [notas, setNotas] = useState('')
   const [clasificacionActiva, setClasificacionActiva] = useState(null)
@@ -78,6 +80,7 @@ function NewRequest() {
     Promise.allSettled([
       catalogoService.listarServicios().then((data) => setCatalogo(data)),
       dashboardService.obtenerBolsaServicios().then((data) => setSaldos(data)),
+      catalogoService.listarCiudades().then((data) => setCiudades(data)),
     ]).finally(() => setCargandoCatalogo(false))
   }, [])
 
@@ -148,6 +151,7 @@ function NewRequest() {
     [serviciosSeleccionados, catalogo]
   )
   const solicitudDespuesde4pm = new Date().getHours() >= 16
+  const ciudadSeleccionada = ciudades.find((c) => c.idCiudad === evaluado.idCiudad)
 
   return (
     <div className="max-w-4xl mx-auto py-8 px-4">
@@ -220,8 +224,8 @@ function NewRequest() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Ciudad</label>
-              <input className={inputCls} value={evaluado.ciudad}
-                onChange={(e) => setEvaluado({ ...evaluado, ciudad: e.target.value })} />
+              <CiudadSelect value={evaluado.idCiudad}
+                onChange={(idCiudad) => setEvaluado({ ...evaluado, idCiudad })} className={inputCls} />
             </div>
             <div className="col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
@@ -402,10 +406,10 @@ function NewRequest() {
                     <span className="text-gray-800">{evaluado.cargo}</span>
                   </div>
                 )}
-                {evaluado.ciudad && (
+                {ciudadSeleccionada && (
                   <div>
                     <span className="text-gray-500">Ciudad: </span>
-                    <span className="text-gray-800">{evaluado.ciudad}</span>
+                    <span className="text-gray-800">{ciudadSeleccionada.nombreCiudad} — {ciudadSeleccionada.departamento}</span>
                   </div>
                 )}
                 {evaluado.celular && (

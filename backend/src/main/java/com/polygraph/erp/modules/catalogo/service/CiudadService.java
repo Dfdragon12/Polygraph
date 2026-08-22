@@ -2,10 +2,14 @@ package com.polygraph.erp.modules.catalogo.service;
 
 import com.polygraph.erp.modules.catalogo.dto.CiudadRequest;
 import com.polygraph.erp.modules.catalogo.dto.CiudadResponse;
+import com.polygraph.erp.modules.catalogo.dto.ClasificarCiudadRequest;
 import com.polygraph.erp.modules.catalogo.entity.Ciudad;
 import com.polygraph.erp.modules.catalogo.repository.CiudadRepository;
+import com.polygraph.erp.shared.enums.NivelCiudad;
+import com.polygraph.erp.shared.exceptions.ApiException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,15 +53,45 @@ public class CiudadService {
         String codigoDaneCiudad = limpiarCodigo(req.codigoDaneCiudad());
         String codigoDaneDepto = limpiarCodigo(req.codigoDaneDepto());
 
+        // Se auto-crea sin sesión (cliente/evaluado) — nunca se asume el nivel más barato: entra
+        // directo como MUNICIPIO_SECUNDARIO y queda pendiente de que un admin la confirme o cambie.
         Ciudad ciudad = Ciudad.builder()
                 .nombreCiudad(nombre)
                 .departamento(departamento)
                 .codigoDaneCiudad(codigoDaneCiudad)
                 .codigoDaneDepto(codigoDaneDepto)
+                .nivelCiudad(NivelCiudad.MUNICIPIO_SECUNDARIO)
+                .pendienteConfirmacion(true)
                 .build();
         repository.save(ciudad);
-        log.info("Ciudad agregada al catálogo: {} ({})", nombre, departamento);
+        log.info("Ciudad agregada al catálogo (pendiente de confirmación): {} ({})", nombre, departamento);
         return CiudadResponse.from(ciudad);
+    }
+
+    // Solo admin — asigna o cambia el nivel logístico de una ciudad; la deja confirmada.
+    @Transactional
+    public CiudadResponse clasificar(Integer id, ClasificarCiudadRequest req) {
+        Ciudad ciudad = repository.findById(id)
+                .orElseThrow(() -> new ApiException("Ciudad no encontrada", HttpStatus.NOT_FOUND));
+        ciudad.setNivelCiudad(req.nivelCiudad());
+        ciudad.setPendienteConfirmacion(false);
+        log.info("Ciudad clasificada: {} ({}) -> {}", ciudad.getNombreCiudad(), ciudad.getDepartamento(), req.nivelCiudad());
+        return CiudadResponse.from(ciudad);
+    }
+
+    // Solo admin — confirma que el nivel actual (típicamente el default MUNICIPIO_SECUNDARIO) es
+    // correcto, sin cambiarlo. Limpia la alerta de pendiente.
+    @Transactional
+    public CiudadResponse confirmar(Integer id) {
+        Ciudad ciudad = repository.findById(id)
+                .orElseThrow(() -> new ApiException("Ciudad no encontrada", HttpStatus.NOT_FOUND));
+        ciudad.setPendienteConfirmacion(false);
+        log.info("Ciudad confirmada: {} ({}) en nivel {}", ciudad.getNombreCiudad(), ciudad.getDepartamento(), ciudad.getNivelCiudad());
+        return CiudadResponse.from(ciudad);
+    }
+
+    public long contarPendientes() {
+        return repository.countByPendienteConfirmacionTrue();
     }
 
     private String limpiarCodigo(String codigo) {

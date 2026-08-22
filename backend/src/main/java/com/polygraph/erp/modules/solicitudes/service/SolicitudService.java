@@ -125,6 +125,7 @@ public class SolicitudService {
                         .apellidos(request.apellidos())
                         .celular(request.celular())
                         .emailPrincipal(request.email())
+                        .idCiudadResidencia(request.idCiudad())
                         .build()));
 
         // Calcular fecha de entrega (máximo de días hábiles de todos los procesos)
@@ -335,7 +336,6 @@ public class SolicitudService {
                     String nombres = obtenerCelda(fila, 3);
                     String apellidos = obtenerCelda(fila, 4);
                     String telefono = obtenerCelda(fila, 5);
-                    String ciudad = obtenerCelda(fila, 6);
                     String cargo = obtenerCelda(fila, 7);
                     String tipoServicio = obtenerCelda(fila, 8);
 
@@ -356,8 +356,10 @@ public class SolicitudService {
                         continue;
                     }
 
+                    // La ciudad de la plantilla de carga masiva llega como texto libre (columna 6);
+                    // no se resuelve a id_ciudad aquí — solo el formulario de Nueva Solicitud lo hace.
                     SolicitudRequest req = new SolicitudRequest(
-                            cedula, nombres, apellidos, telefono, null, ciudad, cargo,
+                            cedula, nombres, apellidos, telefono, null, null, cargo,
                             List.of(coincidencias.get(0).getIdProceso()), null);
                     crearSolicitud(req, emailUsuario);
                     exitosas++;

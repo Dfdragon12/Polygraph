@@ -45,7 +45,7 @@ export default function ServiceCatalog() {
       {categoriasOrdenadas.map((cat) => {
         const items = porCategoria[cat]
         if (!items?.length) return null
-        const meta = metaCategoria(cat)
+        const meta = metaCategoria(cat, items[0]?.codigoClasificacion)
 
         return (
           <section key={cat}>

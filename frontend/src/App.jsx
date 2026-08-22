@@ -40,6 +40,8 @@ import Clientes          from './pages/admin/Clientes'
 import SemaforoServicios from './pages/admin/SemaforoServicios'
 import Catalogo          from './pages/admin/catalogo/Catalogo'
 import AdminReversiones  from './pages/admin/AdminReversiones'
+import Descuentos        from './pages/admin/Descuentos'
+import Ciudades          from './pages/admin/Ciudades'
 
 // Portales de rol
 import GestorDashboard       from './pages/gestor/GestorDashboard'
@@ -143,6 +145,8 @@ function App() {
           <Route path="reversiones"       element={<AdminReversiones />} />
           <Route path="catalogo"                  element={<Catalogo key="grid" />} />
           <Route path="catalogo/:clasificacion"   element={<Catalogo key="detalle" />} />
+          <Route path="descuentos"                element={<Descuentos />} />
+          <Route path="ciudades"                  element={<Ciudades />} />
         </Route>
 
         {/* ── Portal GESTOR ── */}

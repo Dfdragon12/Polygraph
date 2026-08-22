@@ -8,7 +8,11 @@ public record ProcesoPublicoResponse(
         String     nombreProceso,
         String     descripcion,
         String     clasificacion,
+        String     codigoClasificacion,
         BigDecimal valor,
         Integer    diasHabilesEntrega,
-        List<TramoPrecioResponse> tramosPrecio
+        List<TramoPrecioResponse> tramosPrecio,
+        List<String> puntosClave,
+        Boolean aplicaPrecioCiudad,
+        List<PrecioCiudadResponse> preciosCiudad
 ) {}
