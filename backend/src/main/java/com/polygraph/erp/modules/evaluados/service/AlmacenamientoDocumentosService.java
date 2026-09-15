@@ -20,7 +20,7 @@ import java.util.UUID;
 @Service
 public class AlmacenamientoDocumentosService {
 
-    private static final Set<String> EXTENSIONES_PERMITIDAS = Set.of("pdf", "jpg", "jpeg", "png");
+    private static final Set<String> EXTENSIONES_PERMITIDAS = Set.of("pdf", "jpg", "jpeg", "png", "docx");
 
     private final Path directorioBase;
 

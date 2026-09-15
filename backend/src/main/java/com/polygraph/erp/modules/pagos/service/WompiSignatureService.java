@@ -7,12 +7,15 @@ import com.polygraph.erp.modules.pagos.dto.WompiEventSignatureDTO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
 /**
- * Firma y verificación de integridad de Wompi (Web Checkout y eventos de webhook).
+ * Firma, verificación de integridad y construcción de URLs del Web Checkout de Wompi. Único lugar
+ * que hace estas dos cosas — tanto el flujo de carrito prepago (OrdenCompra) como el genérico
+ * (PagoWompi, facturas pospago) pasan por aquí, para no duplicar la lógica de firma/URL entre los dos.
  * No registra integritySecret ni eventsSecret en logs.
  */
 @Service
@@ -25,6 +28,22 @@ public class WompiSignatureService {
     public String generarFirmaIntegridad(String referencia, Long montoEnCentavos, String moneda) {
         String cadena = referencia + montoEnCentavos + moneda + wompiProperties.getIntegritySecret();
         return sha256Hex(cadena);
+    }
+
+    /** URL completa y firmada del Web Checkout de Wompi — redirect de página completa (nunca se arma en el frontend). */
+    public String construirUrlCheckout(String referencia, long montoEnCentavos, String moneda, String redirectUrl) {
+        String firma = generarFirmaIntegridad(referencia, montoEnCentavos, moneda);
+        return wompiProperties.getCheckoutUrl()
+                + "?public-key=" + encode(wompiProperties.getPublicKey())
+                + "&currency=" + moneda
+                + "&amount-in-cents=" + montoEnCentavos
+                + "&reference=" + encode(referencia)
+                + "&signature:integrity=" + encode(firma)
+                + "&redirect-url=" + encode(redirectUrl);
+    }
+
+    private String encode(String valor) {
+        return URLEncoder.encode(valor, StandardCharsets.UTF_8);
     }
 
     /** Valida el checksum de un evento de webhook resolviendo dinámicamente signature.properties sobre data. */

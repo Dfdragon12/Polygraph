@@ -15,5 +15,7 @@ public record SolicitudGestorResponse(
         String proceso,
         List<SubprocesoResumen> subprocesos
 ) {
-    public record SubprocesoResumen(String nombre, String estado) {}
+    // programadorAsignado: solo relevante para subprocesos de poligrafía/visita — si el gestor ya
+    // le encargó a un PROGRAMADOR coordinarlo (ver ServicioSubproceso.programadorResponsable).
+    public record SubprocesoResumen(String nombre, String estado, boolean programadorAsignado) {}
 }

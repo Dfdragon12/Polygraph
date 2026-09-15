@@ -58,6 +58,13 @@ spring:
 app:
   storage:
     uploads-dir: ${UPLOADS_DIR:./uploads}
+  # Conversión de plantillas Word a PDF (ver DocumentoPdfConverter) — "soffice" a secas asume que
+  # LibreOffice quedó en el PATH del sistema, que es como queda en producción (backend/Dockerfile
+  # ya lo instala así). En Windows local normalmente NO queda en el PATH — application-dev.yml
+  # sobreescribe esto con la ruta completa al ejecutable.
+  libreoffice:
+    binario: ${LIBREOFFICE_BINARIO:soffice}
+    timeout-segundos: ${LIBREOFFICE_TIMEOUT_SEGUNDOS:60}
   jwt:
     secret: ${JWT_SECRET}
     expiration-ms: ${JWT_EXPIRATION_MS:86400000}
@@ -71,16 +78,15 @@ app:
   frontend:
     url: ${FRONTEND_URL:http://localhost:5173}
 
-  wompi:
-    public-key: ${WOMPI_PUBLIC_KEY:}
-    integrity-secret: ${WOMPI_INTEGRITY_SECRET:}
-    events-secret: ${WOMPI_EVENTS_SECRET:}
-    checkout-url: ${WOMPI_CHECKOUT_URL:https://checkout.wompi.co/p/}
-
   admin:
       email: ${ADMIN_EMAIL:admin@polygraph.com}                                                                    
       password: ${ADMIN_PASSWORD:Admin1234!}                                                                       
       nombre: ${ADMIN_NOMBRE:Administrador} 
+google:
+  oauth:
+    # Client ID de la app OAuth en Google Cloud Console — vacío hasta que se configure una.
+    client-id: ${GOOGLE_OAUTH_CLIENT_ID:}
+
 wompi:
   public-key: ${WOMPI_PUBLIC_KEY}
   private-key: ${WOMPI_PRIVATE_KEY}
@@ -88,10 +94,16 @@ wompi:
   events-secret: ${WOMPI_EVENTS_SECRET}
   base-url: ${WOMPI_BASE_URL}
   redirect-url: ${WOMPI_REDIRECT_URL}
+  checkout-url: ${WOMPI_CHECKOUT_URL:https://checkout.wompi.co/p/}
 
 springdoc:
+  # Apagado por defecto — sin esto, cualquiera sin login veía toda la estructura de la API
+  # (rutas, DTOs) en producción, porque SecurityConfig deja estas rutas en permitAll() para que
+  # Swagger UI funcione en desarrollo sin pedir token. application-dev.yml lo prende localmente;
+  # en producción hay que setear SWAGGER_ENABLED=true a propósito si de verdad se necesita.
   api-docs:
     path: /api/v1/api-docs
+    enabled: ${SWAGGER_ENABLED:false}
   swagger-ui:
     path: /api/v1/swagger-ui.html
-    enabled: true
+    enabled: ${SWAGGER_ENABLED:false}

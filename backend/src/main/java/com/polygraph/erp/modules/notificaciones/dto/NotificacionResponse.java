@@ -12,7 +12,9 @@ public record NotificacionResponse(
         String mensaje,
         Boolean leida,
         LocalDateTime fechaCreacion,
-        String realizadoPorNombre
+        String realizadoPorNombre,
+        String referenciaTipo,
+        Long referenciaId
 ) {
     public static NotificacionResponse from(Notificacion n) {
         String actor = null;
@@ -23,7 +25,7 @@ public record NotificacionResponse(
         return new NotificacionResponse(
                 n.getId(), n.getTipo(), n.getTitulo(),
                 n.getMensaje(), n.getLeida(), n.getFechaCreacion(),
-                actor
+                actor, n.getReferenciaTipo(), n.getReferenciaId()
         );
     }
 }

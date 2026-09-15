@@ -10,5 +10,7 @@ public record AsignarMasivoRequest(
         @NotEmpty List<Long> ids,
         @NotNull Long idUsuarioAsignado,
         LocalDateTime fechaProgramada,
-        String observaciones
+        String observaciones,
+        // Si viene null, se usa el estimado del catálogo (tipoProgreso.minutosEstimados).
+        Integer duracionMinutos
 ) {}

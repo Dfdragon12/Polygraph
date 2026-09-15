@@ -52,4 +52,11 @@ public class CiudadController {
     public ResponseEntity<Map<String, Long>> contarPendientes() {
         return ResponseEntity.ok(Map.of("pendientes", service.contarPendientes()));
     }
+
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN_POLYGRAPH')")
+    public ResponseEntity<Void> eliminar(@PathVariable Integer id) {
+        service.eliminar(id);
+        return ResponseEntity.noContent().build();
+    }
 }

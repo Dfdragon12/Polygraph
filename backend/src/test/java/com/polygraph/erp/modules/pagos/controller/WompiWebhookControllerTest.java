@@ -1,11 +1,13 @@
 package com.polygraph.erp.modules.pagos.controller;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.polygraph.erp.modules.clientes.entity.Cliente;
 import com.polygraph.erp.modules.pagos.config.WompiProperties;
 import com.polygraph.erp.modules.pagos.entity.PagoWompi;
 import com.polygraph.erp.modules.pagos.repository.PagoWompiRepository;
 import com.polygraph.erp.modules.pagos.service.AuditoriaPagoService;
+import com.polygraph.erp.modules.pagos.service.OrdenCompraService;
 import com.polygraph.erp.modules.pagos.service.PagoWompiWebhookService;
 import com.polygraph.erp.modules.pagos.service.WompiSignatureService;
 import com.polygraph.erp.shared.enums.EstadoPago;
@@ -26,19 +28,24 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * MockMvc standalone (sin ApplicationContext ni filtros de seguridad): la ruta permitAll ya
- * se declara en SecurityConfig, así que aquí se prueba el controller + PagoWompiWebhookService
- * + WompiSignatureService reales, con el repositorio mockeado. El checksum de cada request se
+ * MockMvc standalone (sin ApplicationContext ni filtros de seguridad): la ruta permitAll ya se
+ * declara en SecurityConfig, así que aquí se prueba el controller + PagoWompiWebhookService +
+ * WompiSignatureService reales, con los repositorios mockeados. El checksum de cada request se
  * calcula con el mismo algoritmo de Wompi, de forma independiente al código de producción.
+ *
+ * Esta es la ÚNICA URL de webhook de Wompi en el sistema (/api/v1/pagos/wompi/webhook, la
+ * registrada en el panel de Wompi) — procesa tanto pagos del flujo genérico (PagoWompi, facturas
+ * pospago) como del carrito prepago (OrdenCompra), ver los casos de "fallback" más abajo.
  */
 @ExtendWith(MockitoExtension.class)
-@DisplayName("PagoWompiWebhookController — Webhook de pagos Wompi")
-class PagoWompiWebhookControllerTest {
+@DisplayName("WompiWebhookController — único webhook de Wompi (PagoWompi + OrdenCompra)")
+class WompiWebhookControllerTest {
 
     private static final String EVENTS_SECRET = "test_events_secret_webhook";
     private static final String REFERENCIA = "PS-TEST-REF-001";
@@ -51,6 +58,9 @@ class PagoWompiWebhookControllerTest {
     @Mock
     private AuditoriaPagoService auditoriaPagoService;
 
+    @Mock
+    private OrdenCompraService ordenCompraService;
+
     private MockMvc mockMvc;
     private PagoWompi pago;
     private String ultimoChecksumGenerado;
@@ -62,9 +72,9 @@ class PagoWompiWebhookControllerTest {
         WompiSignatureService signatureService = new WompiSignatureService(wompiProperties);
 
         PagoWompiWebhookService webhookService = new PagoWompiWebhookService(
-                new ObjectMapper(), signatureService, pagoWompiRepository, event -> { }, auditoriaPagoService);
+                new ObjectMapper(), signatureService, pagoWompiRepository, event -> { }, auditoriaPagoService, ordenCompraService);
 
-        mockMvc = MockMvcBuilders.standaloneSetup(new PagoWompiWebhookController(webhookService)).build();
+        mockMvc = MockMvcBuilders.standaloneSetup(new WompiWebhookController(webhookService)).build();
 
         Cliente cliente = Cliente.builder().idCliente(7).build();
         pago = PagoWompi.builder()
@@ -85,27 +95,29 @@ class PagoWompiWebhookControllerTest {
 
         String body = construirEventoJson("APPROVED", MONTO_REGISTRADO, TRANSACCION_ID, REFERENCIA);
 
-        mockMvc.perform(post("/api/v1/webhooks/wompi")
+        mockMvc.perform(post("/api/v1/pagos/wompi/webhook")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isOk());
 
         assertThat(pago.getEstado()).isEqualTo(EstadoPago.APROBADO);
         verify(pagoWompiRepository).save(pago);
+        verifyNoInteractions(ordenCompraService);
     }
 
     @Test
-    @DisplayName("Checksum inválido: responde 401 y no toca el repositorio (no procesa nada)")
+    @DisplayName("Checksum inválido: responde 401 y no toca ningún repositorio (no procesa nada)")
     void checksum_invalido_responde_401_y_no_procesa() throws Exception {
         String body = construirEventoJson("APPROVED", MONTO_REGISTRADO, TRANSACCION_ID, REFERENCIA)
                 .replace("\"checksum\": \"" + ultimoChecksumGenerado + "\"", "\"checksum\": \"" + "0".repeat(64) + "\"");
 
-        mockMvc.perform(post("/api/v1/webhooks/wompi")
+        mockMvc.perform(post("/api/v1/pagos/wompi/webhook")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isUnauthorized());
 
         verifyNoInteractions(pagoWompiRepository);
+        verifyNoInteractions(ordenCompraService);
     }
 
     @Test
@@ -117,13 +129,14 @@ class PagoWompiWebhookControllerTest {
 
         String body = construirEventoJson("APPROVED", MONTO_REGISTRADO, TRANSACCION_ID, REFERENCIA);
 
-        mockMvc.perform(post("/api/v1/webhooks/wompi")
+        mockMvc.perform(post("/api/v1/pagos/wompi/webhook")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isOk());
 
         verify(pagoWompiRepository, never()).findByReferencia(any());
         verify(pagoWompiRepository, never()).save(any());
+        verifyNoInteractions(ordenCompraService);
     }
 
     @Test
@@ -135,13 +148,33 @@ class PagoWompiWebhookControllerTest {
         long montoAlterado = MONTO_REGISTRADO + 1; // no coincide con lo registrado en la BD
         String body = construirEventoJson("APPROVED", montoAlterado, TRANSACCION_ID, REFERENCIA);
 
-        mockMvc.perform(post("/api/v1/webhooks/wompi")
+        mockMvc.perform(post("/api/v1/pagos/wompi/webhook")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isOk());
 
         assertThat(pago.getEstado()).isEqualTo(EstadoPago.ERROR);
         verify(pagoWompiRepository).save(pago);
+    }
+
+    @Test
+    @DisplayName("Referencia no es de PagoWompi (es una orden de compra del carrito prepago): cae al flujo de OrdenCompraService")
+    void referencia_de_orden_compra_delega_en_ordenCompraService() throws Exception {
+        String referenciaOrden = "ORD-000123";
+        when(pagoWompiRepository.findByTransaccionWompiId(TRANSACCION_ID)).thenReturn(Optional.empty());
+        when(pagoWompiRepository.findByReferencia(referenciaOrden)).thenReturn(Optional.empty());
+        when(ordenCompraService.aplicarEventoTransaccion(any(JsonNode.class), eq(TRANSACCION_ID), eq(referenciaOrden), eq("APPROVED"), any()))
+                .thenReturn(true);
+
+        String body = construirEventoJson("APPROVED", MONTO_REGISTRADO, TRANSACCION_ID, referenciaOrden);
+
+        mockMvc.perform(post("/api/v1/pagos/wompi/webhook")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk());
+
+        verify(ordenCompraService).aplicarEventoTransaccion(any(JsonNode.class), eq(TRANSACCION_ID), eq(referenciaOrden), eq("APPROVED"), any());
+        verify(pagoWompiRepository, never()).save(any());
     }
 
     // ── Helper de firma (cálculo independiente del código de producción) ──────────

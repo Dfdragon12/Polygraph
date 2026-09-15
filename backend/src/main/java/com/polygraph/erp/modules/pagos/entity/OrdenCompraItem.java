@@ -31,9 +31,17 @@ public class OrdenCompraItem {
     @Column(name = "cantidad", nullable = false)
     private Integer cantidad;
 
+    /** Precio unitario antes de aplicar descuentos (base o por tramo de volumen) — para mostrar el desglose. */
+    @Column(name = "valor_original", precision = 15, scale = 2, nullable = false)
+    private BigDecimal valorOriginal;
+
     @Column(name = "valor_unitario", precision = 15, scale = 2, nullable = false)
     private BigDecimal valorUnitario;
 
     @Column(name = "subtotal", precision = 15, scale = 2, nullable = false)
     private BigDecimal subtotal;
+
+    /** Nombre del descuento (automático o cupón) que ganó el mejor precio para este ítem — snapshot, null si no aplicó ninguno. */
+    @Column(name = "nombre_descuento_aplicado", length = 150)
+    private String nombreDescuentoAplicado;
 }

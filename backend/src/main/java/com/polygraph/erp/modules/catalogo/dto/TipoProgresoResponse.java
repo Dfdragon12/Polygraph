@@ -10,5 +10,6 @@ public record TipoProgresoResponse(
         Boolean    activo,
         BigDecimal valor,
         Integer    minutosEstimados,
-        String     rolResponsable
+        String     rolResponsable,
+        Boolean    requiereDocumento
 ) {}

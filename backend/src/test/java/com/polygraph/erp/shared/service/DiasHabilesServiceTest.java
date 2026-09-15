@@ -24,7 +24,16 @@ class DiasHabilesServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new DiasHabilesService();
+        // Sin festivos reales acá a propósito — estos tests fijan fechas relativas a "hoy" para no
+        // ser frágiles (ver comentario original más abajo), y un festivo colombiano real cayendo
+        // sobre una de esas fechas los volvería flaky. El cálculo de festivos en sí se prueba
+        // aparte en FestivosColombiaServiceTest.
+        service = new DiasHabilesService(new FestivosColombiaService() {
+            @Override
+            public boolean esFestivo(LocalDate fecha) {
+                return false;
+            }
+        });
         // Usar un lunes conocido relativo a la fecha actual para evitar tests frágiles
         proximoLunes = LocalDate.now().with(TemporalAdjusters.nextOrSame(DayOfWeek.MONDAY));
         proximoJueves = proximoLunes.plusDays(3);

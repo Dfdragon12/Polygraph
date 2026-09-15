@@ -3,9 +3,11 @@ package com.polygraph.erp.modules.usuarios.service;
 import com.polygraph.erp.modules.auth.entity.Usuario;
 import com.polygraph.erp.modules.auth.repository.UsuarioRepository;
 import com.polygraph.erp.modules.usuarios.dto.ActualizarUsuarioInternoRequest;
+import com.polygraph.erp.modules.usuarios.dto.CiudadAsignadaRequest;
 import com.polygraph.erp.modules.usuarios.dto.CrearUsuarioInternoRequest;
 import com.polygraph.erp.modules.usuarios.dto.UsuarioClienteResponse;
 import com.polygraph.erp.modules.usuarios.dto.UsuarioInternoResponse;
+import com.polygraph.erp.modules.usuarios.entity.EmpleadoCiudad;
 import com.polygraph.erp.modules.usuarios.entity.UsuariosInternos;
 import com.polygraph.erp.modules.notificaciones.service.NotificacionService;
 import com.polygraph.erp.modules.catalogo.entity.Ciudad;
@@ -23,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -87,12 +90,11 @@ public class UsuariosInternosService {
                 .tipoDocumento(req.tipoDocumento())
                 .documento(req.documento())
                 .idCiudadResidencia(req.idCiudadResidencia())
-                .salaEncargada(req.salaEncargada())
                 .novedadesSala(req.novedadesSala())
-                .zonasVisita(req.zonasVisita())
                 .activo(true)
                 .fechaIngreso(LocalDate.now())
                 .build();
+        empleado.getCiudadesAsignadas().addAll(construirCiudadesAsignadas(req.rol(), req.ciudadesAsignadas(), empleado));
         if (req.idsSubprocesos() != null) {
             empleado.setSubprocesosAsignados(validarCapacidades(req.rol(), req.idsSubprocesos()));
         }
@@ -167,10 +169,10 @@ public class UsuariosInternosService {
                 emp.setTipoDocumento(req.tipoDocumento());
                 emp.setDocumento(req.documento());
                 emp.setIdCiudadResidencia(req.idCiudadResidencia());
-                emp.setSalaEncargada(req.salaEncargada());
                 emp.setNovedadesSala(req.novedadesSala());
-                emp.setZonasVisita(req.zonasVisita());
                 emp.setTipoEmpleado(req.rol().name());
+                emp.getCiudadesAsignadas().clear();
+                emp.getCiudadesAsignadas().addAll(construirCiudadesAsignadas(req.rol(), req.ciudadesAsignadas(), emp));
                 if (req.idsSubprocesos() != null) {
                     emp.setSubprocesosAsignados(validarCapacidades(req.rol(), req.idsSubprocesos()));
                 }
@@ -181,6 +183,26 @@ public class UsuariosInternosService {
         notificacionService.crearParaAdmins("USUARIO", "Usuario interno actualizado",
                 "Se editó el usuario " + req.nombre() + " " + (req.apellido() != null ? req.apellido() : "")
                 + " — Rol: " + req.rol().name());
+        return toResponse(usuario, emp);
+    }
+
+    /** Aparte de actualizar() a propósito: cambiar la contraseña de un empleado no debería
+     *  depender de que el resto del formulario (ciudades/salas del poligrafista o visitador,
+     *  subprocesos) también pase su validación — si esas quedaron incompletas por cualquier
+     *  motivo, el administrador debe poder resetear la contraseña igual, sin que un campo sin
+     *  relación se lo bloquee. */
+    public UsuarioInternoResponse cambiarPassword(Long idUsuario, String nuevaPassword) {
+        Usuario usuario = usuarioRepository.findById(idUsuario)
+                .orElseThrow(() -> new ApiException("Usuario no encontrado", HttpStatus.NOT_FOUND));
+        if (!ROLES_INTERNOS.contains(usuario.getRol())) {
+            throw new ApiException("No es un usuario interno", HttpStatus.BAD_REQUEST);
+        }
+        usuario.setPassword(passwordEncoder.encode(nuevaPassword));
+        usuario.setRequiereCambioPassword(true);
+        log.info("Contraseña reseteada por un administrador para: {}", usuario.getEmail());
+        UsuariosInternos emp = usuario.getIdEmpleado() != null
+                ? empleadoRepository.findById(usuario.getIdEmpleado()).orElse(null)
+                : null;
         return toResponse(usuario, emp);
     }
 
@@ -224,6 +246,39 @@ public class UsuariosInternosService {
                     HttpStatus.BAD_REQUEST);
         }
         return tipos;
+    }
+
+    /** POLIGRAFISTA y VISITADOR deben quedar con al menos una ciudad real del catálogo — para
+     *  POLIGRAFISTA cada una lleva número de sala; para VISITADOR es solo la ciudad de cobertura.
+     *  Esta relación (no texto libre) es la que permitirá más adelante filtrar "quién cubre la
+     *  ciudad X" al asignar un servicio. */
+    private List<EmpleadoCiudad> construirCiudadesAsignadas(Rol rol, List<CiudadAsignadaRequest> ciudadesReq, UsuariosInternos empleado) {
+        boolean requiereCiudades = rol == Rol.POLIGRAFISTA || rol == Rol.VISITADOR;
+        List<CiudadAsignadaRequest> lista = ciudadesReq != null ? ciudadesReq : List.of();
+
+        if (requiereCiudades && lista.isEmpty()) {
+            throw new ApiException(
+                    rol == Rol.POLIGRAFISTA
+                            ? "Debes asignar al menos una ciudad y sala para el rol Poligrafista"
+                            : "Debes asignar al menos una ciudad de cobertura para el rol Visitador",
+                    HttpStatus.BAD_REQUEST);
+        }
+
+        List<EmpleadoCiudad> resultado = new ArrayList<>();
+        for (CiudadAsignadaRequest item : lista) {
+            Ciudad ciudad = ciudadRepository.findById(item.idCiudad())
+                    .orElseThrow(() -> new ApiException("Ciudad no encontrada", HttpStatus.BAD_REQUEST));
+            Integer numeroSala = rol == Rol.POLIGRAFISTA ? item.numeroSala() : null;
+            if (rol == Rol.POLIGRAFISTA && (numeroSala == null || numeroSala < 1)) {
+                throw new ApiException("Cada ciudad del poligrafista debe tener un número de sala válido", HttpStatus.BAD_REQUEST);
+            }
+            resultado.add(EmpleadoCiudad.builder()
+                    .empleado(empleado)
+                    .ciudad(ciudad)
+                    .numeroSala(numeroSala)
+                    .build());
+        }
+        return resultado;
     }
 
     private UsuarioInternoResponse toResponse(Usuario u, UsuariosInternos emp) {

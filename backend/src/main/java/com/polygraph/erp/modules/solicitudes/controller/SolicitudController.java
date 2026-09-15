@@ -55,10 +55,21 @@ public class SolicitudController {
         return ResponseEntity.ok(solicitudService.listarSolicitudes(clienteId, estado, pageable));
     }
 
+    @GetMapping("/conteo")
+    @PreAuthorize("hasAnyRole('ADMIN_CLIENTE', 'ANALISTA_CLIENTE', 'GESTOR', 'ADMIN_POLYGRAPH', 'ANALISTA_INTERNO')")
+    public ResponseEntity<ConteoEstadosResponse> conteo(
+            @RequestParam(required = false) Integer idCliente,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        Integer clienteId = resolverIdCliente(idCliente, userDetails);
+        return ResponseEntity.ok(solicitudService.conteoPorEstado(clienteId));
+    }
+
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN_CLIENTE', 'ANALISTA_CLIENTE', 'GESTOR', 'ADMIN_POLYGRAPH', 'ANALISTA_INTERNO')")
-    public ResponseEntity<SolicitudDetalleResponse> detalle(@PathVariable Integer id) {
-        return ResponseEntity.ok(solicitudService.obtenerDetalle(id));
+    public ResponseEntity<SolicitudDetalleResponse> detalle(
+            @PathVariable Integer id,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        return ResponseEntity.ok(solicitudService.obtenerDetalle(id, userDetails));
     }
 
     @PatchMapping("/{id}/status")
@@ -80,6 +91,7 @@ public class SolicitudController {
     }
 
     @GetMapping("/bulk/template")
+    @PreAuthorize("hasAnyRole('ADMIN_CLIENTE', 'GESTOR', 'ADMIN_POLYGRAPH')")
     public ResponseEntity<byte[]> descargarPlantilla() throws IOException {
         byte[] plantilla = generarPlantillaExcel();
         return ResponseEntity.ok()

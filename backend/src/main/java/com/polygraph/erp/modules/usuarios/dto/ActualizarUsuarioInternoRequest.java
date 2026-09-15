@@ -1,6 +1,7 @@
 package com.polygraph.erp.modules.usuarios.dto;
 
 import com.polygraph.erp.shared.enums.Rol;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -19,9 +20,10 @@ public record ActualizarUsuarioInternoRequest(
         @Size(max = 20) String tipoDocumento,
         @Size(max = 20) String documento,
         Integer idCiudadResidencia,
-        @Size(max = 100) String salaEncargada,
         String novedadesSala,
-        @Size(max = 200) String zonasVisita,
+        // Ciudades reales del catálogo que cubre este empleado — con numeroSala para POLIGRAFISTA,
+        // sin sala para VISITADOR. Null/vacío = sin ciudades (el servicio valida obligatoriedad por rol).
+        @Valid List<CiudadAsignadaRequest> ciudadesAsignadas,
         // Subprocesos del catálogo asignados (uso principal: ANALISTA_INTERNO)
         List<Integer> idsSubprocesos
 ) {}

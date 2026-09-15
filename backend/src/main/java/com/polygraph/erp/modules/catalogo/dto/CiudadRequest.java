@@ -1,6 +1,7 @@
 package com.polygraph.erp.modules.catalogo.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public record CiudadRequest(
@@ -12,9 +13,9 @@ public record CiudadRequest(
         @Size(max = 100)
         String departamento,
 
-        @Size(max = 10)
+        @Pattern(regexp = "\\d{1,10}|", message = "El código DANE de la ciudad debe ser numérico")
         String codigoDaneCiudad,
 
-        @Size(max = 2)
+        @Pattern(regexp = "\\d{1,2}|", message = "El código DANE del departamento debe ser numérico")
         String codigoDaneDepto
 ) {}

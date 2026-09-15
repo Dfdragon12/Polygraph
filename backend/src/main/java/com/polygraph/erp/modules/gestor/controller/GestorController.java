@@ -1,9 +1,11 @@
 package com.polygraph.erp.modules.gestor.controller;
 
 import com.polygraph.erp.modules.auth.repository.UsuarioRepository;
+import com.polygraph.erp.modules.gestor.dto.ConteoEstadosResponse;
 import com.polygraph.erp.modules.gestor.dto.GestorDashboardResponse;
 import com.polygraph.erp.modules.gestor.service.GestorService;
 import com.polygraph.erp.modules.solicitudes.dto.CambioEstadoRequest;
+import com.polygraph.erp.modules.solicitudes.dto.CorregirCiudadRequest;
 import com.polygraph.erp.modules.solicitudes.dto.ReversionSolicitudResponse;
 import com.polygraph.erp.modules.solicitudes.dto.SolicitudDetalleResponse;
 import com.polygraph.erp.modules.solicitudes.dto.SolicitudGestorResponse;
@@ -46,6 +48,11 @@ public class GestorController {
         return ResponseEntity.ok(gestorService.listarSolicitudes(resolverIdGestor(auth), estado, pageable));
     }
 
+    @GetMapping("/solicitudes/conteo")
+    public ResponseEntity<ConteoEstadosResponse> conteoPorEstado(Authentication auth) {
+        return ResponseEntity.ok(gestorService.contarPorEstado(resolverIdGestor(auth)));
+    }
+
     private Long resolverIdGestor(Authentication auth) {
         return usuarioRepository.findByEmail(auth.getName())
                 .orElseThrow(() -> new ApiException("Usuario no encontrado", HttpStatus.NOT_FOUND))
@@ -53,8 +60,8 @@ public class GestorController {
     }
 
     @GetMapping("/solicitudes/{id}")
-    public ResponseEntity<SolicitudDetalleResponse> detalle(@PathVariable Integer id) {
-        return ResponseEntity.ok(solicitudService.obtenerDetalle(id));
+    public ResponseEntity<SolicitudDetalleResponse> detalle(@PathVariable Integer id, Authentication auth) {
+        return ResponseEntity.ok(solicitudService.obtenerDetalle(id, (UserDetails) auth.getPrincipal()));
     }
 
     @PatchMapping("/solicitudes/{id}/estado")
@@ -64,6 +71,13 @@ public class GestorController {
             Authentication auth) {
         solicitudService.cambiarEstado(id, request, (UserDetails) auth.getPrincipal());
         return ResponseEntity.noContent().build();
+    }
+
+    @PatchMapping("/solicitudes/{id}/ciudad")
+    public ResponseEntity<SolicitudDetalleResponse> corregirCiudad(
+            @PathVariable Integer id,
+            @Valid @RequestBody CorregirCiudadRequest request) {
+        return ResponseEntity.ok(solicitudService.corregirCiudadCandidato(id, request.idCiudad()));
     }
 
     @PostMapping("/solicitudes/{id}/solicitar-reversion")

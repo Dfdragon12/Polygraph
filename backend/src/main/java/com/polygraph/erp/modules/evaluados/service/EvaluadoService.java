@@ -1,18 +1,26 @@
 package com.polygraph.erp.modules.evaluados.service;
 
+import com.polygraph.erp.modules.auth.entity.Usuario;
 import com.polygraph.erp.modules.auth.repository.UsuarioRepository;
+import com.polygraph.erp.modules.clientes.entity.Cliente;
 import com.polygraph.erp.modules.evaluados.dto.*;
 import com.polygraph.erp.modules.evaluados.entity.*;
 import com.polygraph.erp.modules.evaluados.repository.CandidatoRepository;
 import com.polygraph.erp.modules.evaluados.repository.DocumentoEvaluadoRepository;
 import com.polygraph.erp.modules.evaluados.repository.HojaVidaEvaluadoRepository;
+import com.polygraph.erp.modules.pagos.service.RecargoPendienteService;
+import com.polygraph.erp.modules.servicios.entity.HistorialEstadoServicio;
 import com.polygraph.erp.modules.servicios.entity.LinkCandidato;
 import com.polygraph.erp.modules.servicios.entity.Servicio;
+import com.polygraph.erp.modules.servicios.repository.HistorialEstadoServicioRepository;
 import com.polygraph.erp.modules.servicios.repository.LinkCandidatoRepository;
 import com.polygraph.erp.shared.entity.Notificacion;
+import com.polygraph.erp.shared.enums.EstadoServicio;
 import com.polygraph.erp.shared.enums.Rol;
+import com.polygraph.erp.shared.enums.TipoCliente;
 import com.polygraph.erp.shared.exceptions.ApiException;
 import com.polygraph.erp.shared.repository.NotificacionRepository;
+import com.polygraph.erp.shared.service.DiasHabilesService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -20,6 +28,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +47,9 @@ public class EvaluadoService {
     private final NotificacionRepository notificacionRepository;
     private final DocumentoEvaluadoRepository documentoRepository;
     private final AlmacenamientoDocumentosService almacenamientoService;
+    private final RecargoPendienteService recargoPendienteService;
+    private final HistorialEstadoServicioRepository historialEstadoServicioRepository;
+    private final DiasHabilesService diasHabilesService;
 
     @Transactional
     public LinkValidacionResponse validarLink(String token) {
@@ -152,7 +164,54 @@ public class EvaluadoService {
                 servicio.getIdServicio(),
                 servicio.getCandidato() != null ? servicio.getCandidato().getCedula() : null);
 
+        avanzarAProgramandoSiPendiente(servicio);
         notificarFormularioCompletado(servicio);
+    }
+
+    /** Si el candidato termina de diligenciar su hoja de vida mientras el servicio sigue
+     *  PENDIENTE, pasa automáticamente a PROGRAMANDO — el gestor ya no tiene que hacerlo a mano
+     *  apenas hay información con la que empezar a programar. Se registra en el historial de
+     *  estados igual que un cambio manual (mismo mecanismo que SolicitudService.cambiarEstado),
+     *  atribuido al gestor asignado al cliente porque el esquema no tiene un usuario "sistema".
+     *  También recalcula la fecha de entrega estimada desde AHORA (cuando de verdad hay datos
+     *  con qué trabajar) en vez de dejarla contada desde la fecha de solicitud original — antes
+     *  el reloj de entrega corría mientras el candidato todavía no llenaba nada. */
+    private void avanzarAProgramandoSiPendiente(Servicio servicio) {
+        if (servicio.getEstado() != EstadoServicio.PENDIENTE) return;
+
+        Cliente cliente = servicio.getCliente();
+        Long idGestor = cliente != null ? cliente.getIdGestor() : null;
+        Usuario gestor = idGestor != null ? usuarioRepository.findById(idGestor).orElse(null) : null;
+        if (gestor == null) {
+            log.warn("Servicio {} completó hoja de vida pero no tiene gestor asignado — no se puede " +
+                    "registrar el cambio automático a PROGRAMANDO (queda en PENDIENTE).", servicio.getIdServicio());
+            return;
+        }
+
+        EstadoServicio anterior = servicio.getEstado();
+        servicio.setEstado(EstadoServicio.PROGRAMANDO);
+
+        LocalDate fechaEntregaAnterior = servicio.getFechaEntregaEstimada();
+        if (servicio.getProceso() != null) {
+            int diasHabiles = servicio.getProceso().getDiasHabilesEntrega() != null
+                    ? servicio.getProceso().getDiasHabilesEntrega() : 5;
+            servicio.setFechaEntregaEstimada(diasHabilesService.calcularFechaEntrega(LocalDateTime.now(), diasHabiles));
+        }
+
+        historialEstadoServicioRepository.save(HistorialEstadoServicio.builder()
+                .servicio(servicio)
+                .estadoAnterior(anterior)
+                .estadoNuevo(EstadoServicio.PROGRAMANDO)
+                .usuario(gestor)
+                .fechaCambio(LocalDateTime.now())
+                .observacion("Cambio automático: el candidato completó su hoja de vida."
+                        + (fechaEntregaAnterior != null && !fechaEntregaAnterior.equals(servicio.getFechaEntregaEstimada())
+                            ? " Fecha de entrega recalculada de " + fechaEntregaAnterior + " a " + servicio.getFechaEntregaEstimada() + "."
+                            : ""))
+                .build());
+
+        log.info("Servicio {} pasó automáticamente de PENDIENTE a PROGRAMANDO (candidato completó hoja de vida) — entrega estimada: {}",
+                servicio.getIdServicio(), servicio.getFechaEntregaEstimada());
     }
 
     private void notificarFormularioCompletado(Servicio servicio) {
@@ -186,9 +245,20 @@ public class EvaluadoService {
         HojaVidaEvaluado hojaVida = obtenerOCrearHojaVida(candidato);
 
         if (request.idCiudadNacimiento() != null || request.idCiudadResidencia() != null) {
+            Integer idCiudadAnterior = candidato.getIdCiudadResidencia();
             candidato.setIdCiudadNacimiento(request.idCiudadNacimiento());
             candidato.setIdCiudadResidencia(request.idCiudadResidencia());
             candidatoRepository.save(candidato);
+
+            // El evaluado también puede cambiar su ciudad al llenar su hoja de vida (no solo el
+            // gestor) — si eso afecta un recargo por ciudad ya calculado o cobrado, se reconcilia igual.
+            boolean cambioCiudad = request.idCiudadResidencia() != null
+                    && !request.idCiudadResidencia().equals(idCiudadAnterior);
+            if (cambioCiudad && servicio.getCliente() != null && servicio.getProceso() != null
+                    && servicio.getCliente().getTipoCliente() == TipoCliente.PREPAGO) {
+                recargoPendienteService.reconciliarPorCambioCiudad(
+                        servicio.getCliente(), candidato, servicio.getProceso(), request.idCiudadResidencia());
+            }
         }
 
         if (request.pasoActual() != null) {

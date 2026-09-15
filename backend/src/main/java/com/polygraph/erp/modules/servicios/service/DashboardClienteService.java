@@ -69,8 +69,15 @@ public class DashboardClienteService {
                 .map(this::toResumen)
                 .toList();
 
+        // Suma de cantidadDisponible de todos los procesos de la bolsa prepago — antes esto
+        // quedaba hardcodeado en 0, así que la tarjeta "Disponibles en bolsa" del dashboard nunca
+        // reflejaba el saldo real (solo se veía correcto en Comprar Servicios / Mi Crédito).
+        long serviciosDisponibles = saldoServicioClienteService.obtenerSaldos(idCliente).stream()
+                .mapToLong(s -> s.cantidadDisponible() != null ? s.cantidadDisponible() : 0)
+                .sum();
+
         return new DashboardClienteResponse(
-                serviciosActivos, serviciosPendientes, finalizadosMes, 0, ultimasSolicitudes);
+                serviciosActivos, serviciosPendientes, finalizadosMes, serviciosDisponibles, ultimasSolicitudes);
     }
 
     @Transactional(readOnly = true)

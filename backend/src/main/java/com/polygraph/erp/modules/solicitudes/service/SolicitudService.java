@@ -1,19 +1,25 @@
 package com.polygraph.erp.modules.solicitudes.service;
 
+import java.math.BigDecimal;
+import com.polygraph.erp.modules.auth.entity.Usuario;
 import com.polygraph.erp.modules.auth.repository.UsuarioRepository;
 import com.polygraph.erp.modules.clientes.entity.Cliente;
 import com.polygraph.erp.modules.clientes.entity.ClientePospago;
 import com.polygraph.erp.modules.clientes.repository.ClienteRepository;
 import com.polygraph.erp.modules.clientes.repository.ClientePospagoRepository;
+import com.polygraph.erp.modules.pagos.service.ClientePospagoService;
+import com.polygraph.erp.modules.pagos.service.RecargoPendienteService;
 import com.polygraph.erp.modules.pagos.service.SaldoServicioClienteService;
 import com.polygraph.erp.shared.enums.EstadoMora;
 import com.polygraph.erp.shared.enums.TipoCliente;
 import com.polygraph.erp.shared.enums.TipoPersona;
+import com.polygraph.erp.modules.catalogo.entity.Ciudad;
 import com.polygraph.erp.modules.catalogo.entity.ProcesoTipoProgreso;
+import com.polygraph.erp.modules.catalogo.repository.CiudadRepository;
 import com.polygraph.erp.modules.catalogo.repository.ProcesoTipoProgresoRepository;
+import com.polygraph.erp.modules.pagos.entity.RecargoPendiente;
 import com.polygraph.erp.modules.evaluados.entity.Candidato;
 import com.polygraph.erp.modules.evaluados.repository.CandidatoRepository;
-import com.polygraph.erp.modules.gestor.service.AsignacionService;
 import com.polygraph.erp.modules.servicios.entity.HistorialEstadoServicio;
 import com.polygraph.erp.modules.servicios.entity.LinkCandidato;
 import com.polygraph.erp.modules.servicios.entity.Proceso;
@@ -73,9 +79,11 @@ public class SolicitudService {
     private final ReversionSolicitudRepository reversionSolicitudRepository;
     private final DiasHabilesService diasHabilesService;
     private final ProcesoTipoProgresoRepository procesoTipoProgresoRepository;
+    private final CiudadRepository ciudadRepository;
     private final ServicioSubprocesoRepository servicioSubprocesoRepository;
-    private final AsignacionService asignacionService;
     private final SaldoServicioClienteService saldoServicioClienteService;
+    private final RecargoPendienteService recargoPendienteService;
+    private final ClientePospagoService clientePospagoService;
 
     public List<SolicitudDetalleResponse> crearSolicitud(SolicitudRequest request, String emailUsuario) {
         var usuario = usuarioRepository.findByEmail(emailUsuario)
@@ -111,6 +119,8 @@ public class SolicitudService {
 
             if (cliente.getTipoCliente() == TipoCliente.PREPAGO) {
                 saldoServicioClienteService.validarDisponibilidad(cliente.getIdCliente(), proceso);
+            } else if (cliente.getTipoCliente() == TipoCliente.POSPAGO) {
+                clientePospagoService.validarCreditoDisponible(cliente, proceso, request.idCiudad());
             }
 
             procesos.add(proceso);
@@ -153,6 +163,13 @@ public class SolicitudService {
             Servicio guardado = servicioRepository.save(servicio);
             if (cliente.getTipoCliente() == TipoCliente.PREPAGO) {
                 saldoServicioClienteService.descontar(cliente.getIdCliente(), proceso);
+                // El recargo por ciudad no se cobra aquí — queda pendiente y se suma a la siguiente
+                // compra en Comprar Servicios.
+                recargoPendienteService.registrarSiAplica(cliente, candidato, proceso, request.idCiudad());
+            } else if (cliente.getTipoCliente() == TipoCliente.POSPAGO) {
+                // Pospago sí se cobra de inmediato (proceso + recargo por ciudad si aplica), pero
+                // contra el cupo de crédito — se suma a la siguiente factura de corte, no a un pago inmediato.
+                clientePospagoService.descontarCredito(cliente, guardado, proceso, request.idCiudad());
             }
             serviciosCreados.add(guardado);
             generarSubprocesos(guardado);
@@ -223,10 +240,76 @@ public class SolicitudService {
         return pagina.map(this::construirResumen);
     }
 
+    /** Alimenta las tarjetas de resumen por estado de "Mis Solicitudes" en el portal del cliente
+     *  — mismo cálculo que GestorService.contarPorEstado, pero acotado por idCliente en vez de
+     *  idGestor. */
     @Transactional(readOnly = true)
-    public SolicitudDetalleResponse obtenerDetalle(Integer idServicio) {
+    public ConteoEstadosResponse conteoPorEstado(Integer idCliente) {
+        long pendientes    = servicioRepository.countByCliente_IdClienteAndEstado(idCliente, EstadoServicio.PENDIENTE);
+        long programando   = servicioRepository.countByCliente_IdClienteAndEstado(idCliente, EstadoServicio.PROGRAMANDO);
+        long enEjecucion   = servicioRepository.countByCliente_IdClienteAndEstado(idCliente, EstadoServicio.EN_EJECUCION);
+        long finalizados   = servicioRepository.countByCliente_IdClienteAndEstado(idCliente, EstadoServicio.FINALIZADO);
+        long publicados    = servicioRepository.countByCliente_IdClienteAndEstado(idCliente, EstadoServicio.PUBLICADO);
+        long cancelados    = servicioRepository.countByCliente_IdClienteAndEstado(idCliente, EstadoServicio.CANCELADO);
+        long reprogramados = servicioRepository.countByCliente_IdClienteAndEstado(idCliente, EstadoServicio.REPROGRAMADO);
+        long total = pendientes + programando + enEjecucion + finalizados + publicados + cancelados + reprogramados;
+        return new ConteoEstadosResponse(pendientes, programando, enEjecucion, finalizados, publicados, cancelados, reprogramados, total);
+    }
+
+    @Transactional(readOnly = true)
+    public SolicitudDetalleResponse obtenerDetalle(Integer idServicio, UserDetails userDetails) {
         Servicio servicio = servicioRepository.findById(idServicio)
                 .orElseThrow(() -> new ApiException("Servicio no encontrado", HttpStatus.NOT_FOUND));
+        Usuario usuario = usuarioRepository.findByEmail(userDetails.getUsername())
+                .orElseThrow(() -> new ApiException("Usuario no encontrado", HttpStatus.NOT_FOUND));
+        validarPropiedad(servicio, usuario);
+        return construirDetalle(servicio, null);
+    }
+
+    /**
+     * Un ADMIN_CLIENTE/ANALISTA_CLIENTE solo puede ver o cambiar el estado de solicitudes de su
+     * propio cliente — sin esto, cualquiera de esos roles podía leer o cancelar solicitudes de
+     * otros clientes con solo cambiar el id en la URL (GET /requests/{id} y PATCH
+     * /requests/{id}/status no validaban propiedad). Los roles internos (GESTOR,
+     * ADMIN_POLYGRAPH, ANALISTA_INTERNO) no tienen esta restricción.
+     */
+    private void validarPropiedad(Servicio servicio, Usuario usuario) {
+        boolean esClienteExterno = usuario.getRol() == Rol.ADMIN_CLIENTE || usuario.getRol() == Rol.ANALISTA_CLIENTE;
+        if (esClienteExterno && !usuario.getIdCliente().equals(servicio.getCliente().getIdCliente())) {
+            throw new ApiException("Esta solicitud no pertenece a tu cuenta.", HttpStatus.FORBIDDEN);
+        }
+    }
+
+    /**
+     * El gestor corrige la ciudad del candidato de esta solicitud (ej. el candidato en realidad
+     * está en otra ciudad). Si ya había un recargo por ciudad calculado para la ciudad anterior,
+     * se reconcilia: si no se había cobrado, se descarta; si ya se cobró, se genera un crédito
+     * pendiente en vez de un reembolso real. Luego se evalúa el recargo de la ciudad nueva.
+     */
+    public SolicitudDetalleResponse corregirCiudadCandidato(Integer idServicio, Integer idCiudadNueva) {
+        Servicio servicio = servicioRepository.findById(idServicio)
+                .orElseThrow(() -> new ApiException("Servicio no encontrado", HttpStatus.NOT_FOUND));
+
+        Candidato candidato = servicio.getCandidato();
+        if (candidato == null) {
+            throw new ApiException("Esta solicitud no tiene candidato asociado", HttpStatus.BAD_REQUEST);
+        }
+
+        Integer idCiudadAnterior = candidato.getIdCiudadResidencia();
+        if (idCiudadAnterior != null && idCiudadAnterior.equals(idCiudadNueva)) {
+            return construirDetalle(servicio, null);
+        }
+
+        candidato.setIdCiudadResidencia(idCiudadNueva);
+        candidatoRepository.save(candidato);
+
+        if (servicio.getCliente().getTipoCliente() == TipoCliente.PREPAGO && servicio.getProceso() != null) {
+            recargoPendienteService.reconciliarPorCambioCiudad(servicio.getCliente(), candidato, servicio.getProceso(), idCiudadNueva);
+        }
+
+        log.info("Ciudad de candidato corregida: servicio={}, candidato={}, ciudad anterior={}, ciudad nueva={}",
+                idServicio, candidato.getIdCandidato(), idCiudadAnterior, idCiudadNueva);
+
         return construirDetalle(servicio, null);
     }
 
@@ -236,6 +319,7 @@ public class SolicitudService {
 
         var usuario = usuarioRepository.findByEmail(userDetails.getUsername())
                 .orElseThrow(() -> new ApiException("Usuario no encontrado", HttpStatus.NOT_FOUND));
+        validarPropiedad(servicio, usuario);
 
         EstadoServicio nuevoEstado = EstadoServicio.valueOf(request.estado().toUpperCase());
         EstadoServicio estadoAnterior = servicio.getEstado();
@@ -422,14 +506,46 @@ public class SolicitudService {
                 .toList();
 
         Cliente cliente = s.getCliente();
+        Candidato candidato = s.getCandidato();
+
+        Ciudad ciudad = candidato != null && candidato.getIdCiudadResidencia() != null
+                ? ciudadRepository.findById(candidato.getIdCiudadResidencia()).orElse(null)
+                : null;
+
+        RecargoPendiente recargo = candidato != null && s.getProceso() != null
+                ? recargoPendienteService.buscarPara(candidato.getIdCandidato(), s.getProceso().getIdProceso())
+                : null;
+
+        List<RecargoPendiente> historialRecargo = candidato != null && s.getProceso() != null
+                ? recargoPendienteService.historial(candidato.getIdCandidato(), s.getProceso().getIdProceso())
+                : List.of();
+        List<SolicitudDetalleResponse.RecargoCiudadMovimientoResponse> historialRecargoResp = historialRecargo.stream()
+                .map(r -> new SolicitudDetalleResponse.RecargoCiudadMovimientoResponse(
+                        r.getCiudad() != null ? r.getCiudad().getNombreCiudad() : null,
+                        r.getMonto(), r.getMotivo(), r.getEstado().name(), r.getFechaGenerado(), r.getFechaPagado()))
+                .toList();
+        BigDecimal totalPagadoRecargo = historialRecargo.stream()
+                .filter(r -> r.getEstado() == com.polygraph.erp.shared.enums.EstadoRecargoPendiente.PAGADO)
+                .map(RecargoPendiente::getMonto).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalPendienteRecargo = historialRecargo.stream()
+                .filter(r -> r.getEstado() == com.polygraph.erp.shared.enums.EstadoRecargoPendiente.PENDIENTE)
+                .map(RecargoPendiente::getMonto).reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        List<SolicitudDetalleResponse.SubprocesoResponse> subprocesosResp = servicioSubprocesoRepository
+                .findByServicio_IdServicioOrderByTipoProgreso_OrdenAsc(s.getIdServicio()).stream()
+                .map(sp -> new SolicitudDetalleResponse.SubprocesoResponse(
+                        sp.getTipoProgreso().getNombreProgreso(),
+                        sp.getEstado().name(),
+                        sp.getFechaProgramada()))
+                .toList();
 
         return new SolicitudDetalleResponse(
                 s.getIdServicio(),
-                s.getCandidato() != null ? s.getCandidato().getCedula()      : null,
-                s.getCandidato() != null ? s.getCandidato().getNombres()     : null,
-                s.getCandidato() != null ? s.getCandidato().getApellidos()  : null,
-                s.getCandidato() != null ? s.getCandidato().getCelular()    : null,
-                s.getCandidato() != null ? s.getCandidato().getEmailPrincipal() : null,
+                candidato != null ? candidato.getCedula()      : null,
+                candidato != null ? candidato.getNombres()     : null,
+                candidato != null ? candidato.getApellidos()  : null,
+                candidato != null ? candidato.getCelular()    : null,
+                candidato != null ? candidato.getEmailPrincipal() : null,
                 s.getCargo(), s.getNotas(),
                 s.getProceso() != null ? s.getProceso().getIdProceso() : null,
                 s.getProceso() != null ? s.getProceso().getNombreProceso() : null,
@@ -441,14 +557,35 @@ public class SolicitudService {
                 cliente != null ? nombreCliente(cliente)      : null,
                 cliente != null ? cliente.getNit()            : null,
                 cliente != null ? cliente.getTelefono()       : null,
-                cliente != null ? cliente.getEmailPrincipal() : null);
+                cliente != null ? cliente.getEmailPrincipal() : null,
+                ciudad != null ? ciudad.getIdCiudad() : null,
+                ciudad != null ? ciudad.getNombreCiudad() : null,
+                recargo != null ? recargo.getMonto() : null,
+                recargo != null ? recargo.getEstado().name() : null,
+                totalPagadoRecargo,
+                totalPendienteRecargo,
+                historialRecargoResp,
+                subprocesosResp);
     }
 
     /** Genera una fila de asignación (PENDIENTE) por cada subproceso habilitado del proceso del servicio. */
     /** Regla de negocio: "Cliente con mora no puede solicitar servicios" — solo aplica a pospago (prepago se limita por saldo). */
     private void validarMoraPospago(Cliente cliente) {
         ClientePospago pospago = clientePospagoRepository.findByIdCliente(cliente.getIdCliente()).orElse(null);
-        if (pospago == null || pospago.getEstadoMora() == null || pospago.getEstadoMora() == EstadoMora.NORMAL) {
+        if (pospago == null) return; // sin fila de pospago: ClientePospagoService.validarCreditoDisponible ya lo bloquea más abajo.
+
+        // Regla de negocio: "Cliente pospago requiere estudio de crédito previo" — admin marca
+        // requiereAprobacion=true mientras el estudio de crédito sigue pendiente; hasta que lo
+        // apruebe (lo pone en false desde ClienteAdminService.actualizarPospago), el cliente no
+        // puede pedir servicios aunque ya tenga un límite de crédito asignado.
+        if (Boolean.TRUE.equals(pospago.getRequiereAprobacion())) {
+            throw new ApiException(
+                    "No puedes solicitar servicios todavía: tu cuenta pospago está pendiente de aprobación "
+                    + "(estudio de crédito). Contacta a tu gestor.",
+                    HttpStatus.FORBIDDEN);
+        }
+
+        if (pospago.getEstadoMora() == null || pospago.getEstadoMora() == EstadoMora.NORMAL) {
             return;
         }
         String motivo = pospago.getEstadoMora() == EstadoMora.SUSPENDIDO
@@ -472,12 +609,41 @@ public class SolicitudService {
                     .tipoProgreso(paso.getTipoProgreso())
                     .estado(EstadoAsignacion.PENDIENTE)
                     .fechaCreacion(ahora)
+                    // Estampa la versión de plantilla vigente en este momento — ver
+                    // TipoProgreso.versionPlantilla y FormularioPlantillaService.guardar().
+                    .versionPlantilla(paso.getTipoProgreso().getVersionPlantilla())
                     .build();
-            // Si ya hay alguien calificado (capacidad marcada en Equipo Polygraph), se asigna
-            // solo — el gestor/programador solo interviene para casos puntuales o reasignar.
-            asignacionService.autoAsignar(subproceso);
             servicioSubprocesoRepository.save(subproceso);
+
+            // Poligrafía y visita domiciliaria no se asignan solas ni las programa el gestor: el
+            // PROGRAMADOR recibe la notificación y hace la asignación manual (elige poligrafista/
+            // visitador según la ciudad del servicio) desde su propio módulo de asignaciones.
+            Rol rolResponsable = paso.getTipoProgreso().getRolResponsable();
+            if (rolResponsable == Rol.POLIGRAFISTA || rolResponsable == Rol.VISITADOR) {
+                notificarProgramadorParaAsignar(servicio, paso.getTipoProgreso().getNombreProgreso(), ahora);
+            }
         }
+    }
+
+    private void notificarProgramadorParaAsignar(Servicio servicio, String nombreSubproceso, LocalDateTime ahora) {
+        var candidato = servicio.getCandidato();
+        String nombreEvaluado = candidato != null
+                ? (candidato.getNombres() + " " + (candidato.getApellidos() != null ? candidato.getApellidos() : "")).trim()
+                : "el evaluado";
+        Integer idServicio = servicio.getIdServicio();
+
+        usuarioRepository.findAll().stream()
+                .filter(u -> Rol.PROGRAMADOR.equals(u.getRol()) && Boolean.TRUE.equals(u.getActivo()))
+                .forEach(programador -> notificacionRepository.save(Notificacion.builder()
+                        .usuario(programador)
+                        .tipo("PROGRAMAR_ASIGNACION")
+                        .titulo(nombreSubproceso + " por programar")
+                        .mensaje("El servicio de " + nombreEvaluado + " requiere programar " + nombreSubproceso + ".")
+                        .leida(false)
+                        .fechaCreacion(ahora)
+                        .referenciaTipo("SERVICIO")
+                        .referenciaId(idServicio.longValue())
+                        .build()));
     }
 
     private String nombreCliente(Cliente c) {

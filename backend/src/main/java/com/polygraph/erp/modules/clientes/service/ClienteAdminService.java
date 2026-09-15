@@ -110,10 +110,22 @@ public class ClienteAdminService {
         }
 
         ClientePospago pospago = clientePospagoRepository.findByIdCliente(id)
-                .orElseGet(() -> ClientePospago.builder().cliente(cliente).build());
+                .orElseGet(() -> ClientePospago.builder().cliente(cliente)
+                        .limiteCredito(java.math.BigDecimal.ZERO)
+                        .creditoDisponible(java.math.BigDecimal.ZERO)
+                        .build());
 
-        if (req.limiteCredito() != null) pospago.setLimiteCredito(req.limiteCredito());
-        if (req.creditoDisponible() != null) pospago.setCreditoDisponible(req.creditoDisponible());
+        // creditoDisponible ya no lo edita el admin directamente (se descuenta/restituye solo con
+        // el consumo y el pago de facturas) — al cambiar el límite, se ajusta por el delta para no
+        // alterar el consumo ya registrado (ej. límite 1M, disponible 700k = 300k consumidos; si
+        // sube el límite a 1.5M, el disponible pasa a 1.2M, sigue reflejando esos 300k consumidos).
+        if (req.limiteCredito() != null) {
+            java.math.BigDecimal limiteAnterior = pospago.getLimiteCredito() != null ? pospago.getLimiteCredito() : java.math.BigDecimal.ZERO;
+            java.math.BigDecimal disponibleAnterior = pospago.getCreditoDisponible() != null ? pospago.getCreditoDisponible() : java.math.BigDecimal.ZERO;
+            java.math.BigDecimal delta = req.limiteCredito().subtract(limiteAnterior);
+            pospago.setLimiteCredito(req.limiteCredito());
+            pospago.setCreditoDisponible(disponibleAnterior.add(delta));
+        }
         if (req.estadoMora() != null) pospago.setEstadoMora(req.estadoMora());
         if (req.requiereAprobacion() != null) pospago.setRequiereAprobacion(req.requiereAprobacion());
         pospago.setUltimaRevisionCredito(LocalDate.now());

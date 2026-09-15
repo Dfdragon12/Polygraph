@@ -121,7 +121,29 @@
             <version>5.3.0</version>
         </dependency>
 
+        <!-- office-stamper: plantillas Word (.docx) con marcadores ${...} — modo alternativo al
+             constructor web para generar el documento final (ver FormularioPlantillaWordService).
+             OJO: la línea de releases más nueva (pro.verron.office-stamper:engine, 3.x) está
+             compilada para Java 25 (class file version 69) y NO carga en este proyecto (Java 17).
+             1.6.9 es la última versión de la línea anterior (pro.verron:docx-stamper) compilada
+             para Java 17 — expone exactamente el mismo paquete pro.verron.officestamper.preset.*. -->
+        <dependency>
+            <groupId>pro.verron</groupId>
+            <artifactId>docx-stamper</artifactId>
+            <version>1.6.9</version>
+        </dependency>
+
         <!-- Test -->
+        <!-- Extrae texto de un PDF ya generado para poder afirmar en una prueba que cierto
+             contenido sí sobrevivió la conversión de DocumentoPdfConverter (LibreOffice headless,
+             ver esa clase) — sin esto no hay forma de verificar el PDF final, solo el .docx
+             intermedio. -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>3.0.3</version>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

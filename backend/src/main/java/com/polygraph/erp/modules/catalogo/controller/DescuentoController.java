@@ -1,5 +1,6 @@
 package com.polygraph.erp.modules.catalogo.controller;
 
+import com.polygraph.erp.modules.catalogo.dto.DescuentoDetalleResponse;
 import com.polygraph.erp.modules.catalogo.dto.DescuentoRequest;
 import com.polygraph.erp.modules.catalogo.dto.DescuentoResponse;
 import com.polygraph.erp.modules.catalogo.service.DescuentoService;
@@ -23,6 +24,11 @@ public class DescuentoController {
     @GetMapping
     public ResponseEntity<List<DescuentoResponse>> listar() {
         return ResponseEntity.ok(descuentoService.listar());
+    }
+
+    @GetMapping("/{id}/detalle")
+    public ResponseEntity<DescuentoDetalleResponse> detalle(@PathVariable Long id) {
+        return ResponseEntity.ok(descuentoService.obtenerDetalle(id));
     }
 
     @PostMapping

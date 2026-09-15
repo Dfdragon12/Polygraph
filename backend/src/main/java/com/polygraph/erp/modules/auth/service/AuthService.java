@@ -1,5 +1,8 @@
 package com.polygraph.erp.modules.auth.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.polygraph.erp.modules.auth.config.GoogleOAuthProperties;
 import com.polygraph.erp.modules.auth.dto.*;
 import com.polygraph.erp.modules.auth.entity.TokenRefresh;
 import com.polygraph.erp.modules.auth.entity.Usuario;
@@ -23,6 +26,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -40,6 +47,8 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final EmailService emailService;
     private final NotificacionService notificacionService;
+    private final GoogleOAuthProperties googleOAuthProperties;
+    private final ObjectMapper objectMapper;
 
     @Value("${app.jwt.refresh-expiration-ms}")
     private long refreshExpiracionMs;
@@ -91,6 +100,106 @@ public class AuthService {
                         usuario.getIdUsuario(), usuario.getEmail(),
                         usuario.getRol().name(), usuario.getNombre(), cambioRequerido,
                         resolverTipoCliente(usuario)));
+    }
+
+    /** "Continuar con Google" — sirve tanto para registrar (si el email no existe, crea un
+     *  cliente natural PREPAGO, igual que registrarNatural pero sin contraseña ni activación por
+     *  correo, porque Google ya verificó el email) como para iniciar sesión (si ya existe). */
+    public LoginResponse continuarConGoogle(GoogleAuthRequest request) {
+        GoogleTokenInfo info = verificarTokenGoogle(request.idToken());
+
+        Usuario usuario = usuarioRepository.findByEmail(info.email()).orElse(null);
+        boolean esNuevo = usuario == null;
+
+        if (esNuevo) {
+            String nombre = !info.givenName().isBlank() ? info.givenName() : info.email();
+            Cliente cliente = Cliente.builder()
+                    .tipoCliente(TipoCliente.PREPAGO)
+                    .tipoPersona(TipoPersona.NATURAL)
+                    .nombre(nombre)
+                    .apellido(info.familyName())
+                    .emailPrincipal(info.email())
+                    .estado("ACTIVO")
+                    .fechaRegistro(LocalDateTime.now())
+                    .build();
+            clienteRepository.save(cliente);
+
+            usuario = Usuario.builder()
+                    .nombre(nombre)
+                    .apellido(info.familyName())
+                    .email(info.email())
+                    // Nunca se usa para iniciar sesión (solo Google) — password NOT NULL en BD,
+                    // se puede definir una real después desde "Olvidé mi contraseña" si se quiere.
+                    .password(passwordEncoder.encode(UUID.randomUUID().toString()))
+                    .rol(Rol.ADMIN_CLIENTE)
+                    .activo(true)
+                    .requiere2fa(false)
+                    .emailVerificado(true)
+                    .idCliente(cliente.getIdCliente())
+                    .fechaCreacion(LocalDateTime.now())
+                    .build();
+            usuarioRepository.save(usuario);
+
+            notificacionService.crearParaAdmins("CLIENTE", "Nuevo cliente registrado",
+                    "El cliente " + nombre + " " + (info.familyName() != null ? info.familyName() : "")
+                    + " se registró con Google (PREPAGO)", usuario.getIdUsuario());
+            log.info("Registro con Google completado: {}", info.email());
+        } else if (!Boolean.TRUE.equals(usuario.getActivo())) {
+            // Google ya verificó el email, así que no tiene sentido dejarlo esperando el correo
+            // de activación que se mandó al registrarse manualmente.
+            usuario.setActivo(true);
+            usuario.setEmailVerificado(true);
+        }
+
+        String token = jwtUtil.generarToken(usuario);
+        String refreshToken = crearRefreshToken(usuario);
+        usuario.setUltimoAcceso(LocalDateTime.now());
+        log.info("Inicio de sesión con Google: {} (nuevo={})", usuario.getEmail(), esNuevo);
+
+        return new LoginResponse(token, refreshToken,
+                new LoginResponse.UsuarioInfo(
+                        usuario.getIdUsuario(), usuario.getEmail(),
+                        usuario.getRol().name(), usuario.getNombre(), false,
+                        resolverTipoCliente(usuario)));
+    }
+
+    private record GoogleTokenInfo(String email, String givenName, String familyName) {}
+
+    /** Verifica el id_token de Google Identity Services contra el endpoint público de Google
+     *  (tokeninfo) — evita sumar una librería nueva solo para esto. Confirma que el token es
+     *  auténtico, que es para ESTA app (aud) y que el correo está verificado. */
+    private GoogleTokenInfo verificarTokenGoogle(String idToken) {
+        String clientId = googleOAuthProperties.getClientId();
+        if (clientId == null || clientId.isBlank()) {
+            throw new ApiException("El inicio de sesión con Google no está configurado todavía.", HttpStatus.SERVICE_UNAVAILABLE);
+        }
+        try {
+            HttpClient cliente = HttpClient.newHttpClient();
+            HttpRequest peticion = HttpRequest.newBuilder()
+                    .uri(URI.create("https://oauth2.googleapis.com/tokeninfo?id_token=" + idToken))
+                    .GET().build();
+            HttpResponse<String> respuesta = cliente.send(peticion, HttpResponse.BodyHandlers.ofString());
+            if (respuesta.statusCode() != 200) {
+                throw new ApiException("Tu sesión de Google no es válida o expiró. Intenta de nuevo.", HttpStatus.UNAUTHORIZED);
+            }
+            JsonNode nodo = objectMapper.readTree(respuesta.body());
+            if (!clientId.equals(nodo.path("aud").asText())) {
+                throw new ApiException("Ese token de Google no corresponde a esta aplicación.", HttpStatus.UNAUTHORIZED);
+            }
+            if (!"true".equals(nodo.path("email_verified").asText())) {
+                throw new ApiException("Tu cuenta de Google no tiene el correo verificado.", HttpStatus.UNAUTHORIZED);
+            }
+            String email = nodo.path("email").asText();
+            if (email.isBlank()) {
+                throw new ApiException("No se pudo obtener el correo de tu cuenta de Google.", HttpStatus.UNAUTHORIZED);
+            }
+            return new GoogleTokenInfo(email, nodo.path("given_name").asText(""), nodo.path("family_name").asText(""));
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("Error verificando token de Google: {}", e.getMessage());
+            throw new ApiException("No se pudo verificar tu cuenta de Google. Intenta de nuevo.", HttpStatus.UNAUTHORIZED);
+        }
     }
 
     /** Solo aplica a roles del portal cliente (ADMIN_CLIENTE/ANALISTA_CLIENTE); null para roles internos. */

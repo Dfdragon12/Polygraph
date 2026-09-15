@@ -1,6 +1,7 @@
 package com.polygraph.erp.modules.pagos.entity;
 
 import com.polygraph.erp.modules.auth.entity.Usuario;
+import com.polygraph.erp.modules.catalogo.entity.Descuento;
 import com.polygraph.erp.modules.clientes.entity.Cliente;
 import com.polygraph.erp.shared.enums.EstadoOrdenCompra;
 import jakarta.persistence.*;
@@ -50,6 +51,18 @@ public class OrdenCompra {
     @Column(name = "metodo_pago", length = 50)
     private String metodoPago;
 
+    @Column(name = "nombre_pagador", length = 150)
+    private String nombrePagador;
+
+    @Column(name = "telefono_pagador", length = 30)
+    private String telefonoPagador;
+
+    @Column(name = "email_pagador", length = 150)
+    private String emailPagador;
+
+    @Column(name = "numero_aprobacion", length = 50)
+    private String numeroAprobacion;
+
     @Column(name = "url_checkout", columnDefinition = "TEXT")
     private String urlCheckout;
 
@@ -61,4 +74,14 @@ public class OrdenCompra {
 
     @Column(name = "fecha_expiracion")
     private LocalDateTime fechaExpiracion;
+
+    /** Cupón validado y reservado para esta orden al crearla — el uso se confirma solo si la orden se aprueba. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "id_descuento_cupon")
+    private Descuento descuentoCupon;
+
+    /** Recargos por ciudad de solicitudes anteriores, todavía sin cobrar, que se suman al total de esta compra. */
+    @Builder.Default
+    @Column(name = "monto_recargos_pendientes", precision = 15, scale = 2, nullable = false)
+    private BigDecimal montoRecargosPendientes = BigDecimal.ZERO;
 }

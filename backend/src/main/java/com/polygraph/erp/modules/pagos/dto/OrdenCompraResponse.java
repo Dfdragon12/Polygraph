@@ -12,5 +12,18 @@ public record OrdenCompraResponse(
         Boolean modoSimulado,
         String urlCheckout,
         List<ItemOrdenResponse> items,
-        LocalDateTime fechaCreacion
+        LocalDateTime fechaCreacion,
+        String metodoPago,
+        String numeroAprobacion,
+        String idTransaccionPasarela,
+        String nombrePagador,
+        String telefonoPagador,
+        String emailPagador,
+        String nombreCliente,
+        Integer idComprobante,
+        String numeroComprobante,
+        String codigoCuponAplicado,
+        String nombreDescuentoAplicado,
+        BigDecimal montoDescuentoTotal,
+        BigDecimal montoRecargosPendientes
 ) {}

@@ -33,6 +33,9 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthFilter;
     private final CustomUserDetailsService customUserDetailsService;
+    private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
+    private final JwtAccessDeniedHandler jwtAccessDeniedHandler;
+    private final RateLimitFilter rateLimitFilter;
 
     @Value("${app.cors.allowed-origins}")
     private String origenesPermitidos;
@@ -53,13 +56,17 @@ public class SecurityConfig {
                     "/api/v1/swagger-ui.html"
                 ).permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/services", "/api/v1/services/**").permitAll()
-                .requestMatchers(HttpMethod.POST, "/api/v1/pagos/wompi/webhook").permitAll()
-                .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/wompi").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/v1/pagos/wompi/webhook", "/api/v1/webhooks/wompi").permitAll()
                 .anyRequest().authenticated()
+            )
+            .exceptionHandling(exceptions -> exceptions
+                .authenticationEntryPoint(jwtAuthenticationEntryPoint)
+                .accessDeniedHandler(jwtAccessDeniedHandler)
             )
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authenticationProvider(authenticationProvider())
-            .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+            .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+            .addFilterBefore(rateLimitFilter, JwtAuthenticationFilter.class);
 
         return http.build();
     }

@@ -10,10 +10,11 @@ public record CiudadResponse(
         String codigoDaneCiudad,
         String codigoDaneDepto,
         NivelCiudad nivelCiudad,
-        Boolean pendienteConfirmacion
+        Boolean pendienteConfirmacion,
+        Boolean enUso
 ) {
-    public static CiudadResponse from(Ciudad c) {
+    public static CiudadResponse from(Ciudad c, boolean enUso) {
         return new CiudadResponse(c.getIdCiudad(), c.getNombreCiudad(), c.getDepartamento(),
-                c.getCodigoDaneCiudad(), c.getCodigoDaneDepto(), c.getNivelCiudad(), c.getPendienteConfirmacion());
+                c.getCodigoDaneCiudad(), c.getCodigoDaneDepto(), c.getNivelCiudad(), c.getPendienteConfirmacion(), enUso);
     }
 }

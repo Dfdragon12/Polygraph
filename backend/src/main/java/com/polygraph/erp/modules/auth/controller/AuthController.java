@@ -21,6 +21,11 @@ public class AuthController {
         return ResponseEntity.ok(authService.login(request));
     }
 
+    @PostMapping("/google")
+    public ResponseEntity<LoginResponse> continuarConGoogle(@Valid @RequestBody GoogleAuthRequest request) {
+        return ResponseEntity.ok(authService.continuarConGoogle(request));
+    }
+
     @PostMapping("/register/natural")
     public ResponseEntity<Void> registrarNatural(@Valid @RequestBody RegistroNaturalRequest request) {
         authService.registrarNatural(request);

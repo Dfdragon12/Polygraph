@@ -1,6 +1,7 @@
 package com.polygraph.erp.modules.gestor.service;
 
 import com.polygraph.erp.modules.clientes.entity.Cliente;
+import com.polygraph.erp.modules.gestor.dto.ConteoEstadosResponse;
 import com.polygraph.erp.modules.gestor.dto.GestorDashboardResponse;
 import com.polygraph.erp.modules.gestor.dto.LinkCandidatoResponse;
 import com.polygraph.erp.modules.servicios.entity.Servicio;
@@ -66,6 +67,18 @@ public class GestorService {
                 recientes, pendientesPorEntrega, linksPorAtender);
     }
 
+    public ConteoEstadosResponse contarPorEstado(Long idGestor) {
+        long pendientes  = servicioRepository.countByCliente_IdGestorAndEstado(idGestor, EstadoServicio.PENDIENTE);
+        long programando = servicioRepository.countByCliente_IdGestorAndEstado(idGestor, EstadoServicio.PROGRAMANDO);
+        long enEjecucion = servicioRepository.countByCliente_IdGestorAndEstado(idGestor, EstadoServicio.EN_EJECUCION);
+        long finalizados = servicioRepository.countByCliente_IdGestorAndEstado(idGestor, EstadoServicio.FINALIZADO);
+        long publicados  = servicioRepository.countByCliente_IdGestorAndEstado(idGestor, EstadoServicio.PUBLICADO);
+        long cancelados  = servicioRepository.countByCliente_IdGestorAndEstado(idGestor, EstadoServicio.CANCELADO);
+        long reprogramados = servicioRepository.countByCliente_IdGestorAndEstado(idGestor, EstadoServicio.REPROGRAMADO);
+        long total = pendientes + programando + enEjecucion + finalizados + publicados + cancelados + reprogramados;
+        return new ConteoEstadosResponse(pendientes, programando, enEjecucion, finalizados, publicados, cancelados, reprogramados, total);
+    }
+
     public Page<SolicitudGestorResponse> listarSolicitudes(Long idGestor, String estado, Pageable pageable) {
         Page<Servicio> pagina;
         if (estado != null && !estado.isBlank()) {
@@ -86,7 +99,8 @@ public class GestorService {
             List<SolicitudGestorResponse.SubprocesoResumen> subprocesos = subprocesosPorServicio
                     .getOrDefault(s.getIdServicio(), List.of()).stream()
                     .map(sp -> new SolicitudGestorResponse.SubprocesoResumen(
-                            sp.getTipoProgreso().getNombreProgreso(), sp.getEstado().name()))
+                            sp.getTipoProgreso().getNombreProgreso(), sp.getEstado().name(),
+                            sp.getProgramadorResponsable() != null))
                     .toList();
 
             return new SolicitudGestorResponse(

@@ -34,6 +34,15 @@ public final class ServicioSubprocesoSpecifications {
     public static Specification<ServicioSubproceso> conFiltros(
             EstadoAsignacion estado, Integer idTipoProgreso, Long idUsuarioAsignado,
             LocalDateTime desde, LocalDateTime hasta, Integer idServicio, Long idGestor, Set<Rol> rolesPermitidos) {
+        return conFiltros(estado, idTipoProgreso, idUsuarioAsignado, desde, hasta, idServicio, idGestor, rolesPermitidos, null);
+    }
+
+    /** @param idProgramadorResponsable filtro "solo lo mío" de PROGRAMADOR — a qué programador le
+     *  encargó el gestor coordinar el subproceso (ver ServicioSubproceso.programadorResponsable). */
+    public static Specification<ServicioSubproceso> conFiltros(
+            EstadoAsignacion estado, Integer idTipoProgreso, Long idUsuarioAsignado,
+            LocalDateTime desde, LocalDateTime hasta, Integer idServicio, Long idGestor, Set<Rol> rolesPermitidos,
+            Long idProgramadorResponsable) {
         return (root, query, cb) -> {
             List<Predicate> condiciones = new ArrayList<>();
 
@@ -60,6 +69,9 @@ public final class ServicioSubprocesoSpecifications {
             }
             if (rolesPermitidos != null && !rolesPermitidos.isEmpty()) {
                 condiciones.add(root.get("tipoProgreso").get("rolResponsable").in(rolesPermitidos));
+            }
+            if (idProgramadorResponsable != null) {
+                condiciones.add(cb.equal(root.get("programadorResponsable").get("idUsuario"), idProgramadorResponsable));
             }
 
             if (query != null) {

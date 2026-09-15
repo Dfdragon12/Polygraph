@@ -1,6 +1,7 @@
 package com.polygraph.erp.modules.usuarios.controller;
 
 import com.polygraph.erp.modules.usuarios.dto.ActualizarUsuarioInternoRequest;
+import com.polygraph.erp.modules.usuarios.dto.CambiarPasswordUsuarioInternoRequest;
 import com.polygraph.erp.modules.usuarios.dto.CrearUsuarioInternoRequest;
 import com.polygraph.erp.modules.usuarios.dto.UsuarioClienteResponse;
 import com.polygraph.erp.modules.usuarios.dto.UsuarioInternoResponse;
@@ -42,6 +43,15 @@ public class UsuariosInternosController {
             @PathVariable Long id,
             @Valid @RequestBody ActualizarUsuarioInternoRequest request) {
         return ResponseEntity.ok(service.actualizar(id, request));
+    }
+
+    /** Resetea la contraseña sin pasar por el resto de validaciones de actualizar() (ciudades y
+     *  sala del poligrafista/visitador, subprocesos) — esos no deberían bloquear un simple
+     *  cambio de contraseña. */
+    @PatchMapping("/{id}/password")
+    public ResponseEntity<UsuarioInternoResponse> cambiarPassword(
+            @PathVariable Long id, @Valid @RequestBody CambiarPasswordUsuarioInternoRequest request) {
+        return ResponseEntity.ok(service.cambiarPassword(id, request.password()));
     }
 
     @PatchMapping("/{id}/activar")

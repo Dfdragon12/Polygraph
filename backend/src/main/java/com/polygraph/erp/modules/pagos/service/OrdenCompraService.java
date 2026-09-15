@@ -1,18 +1,22 @@
 package com.polygraph.erp.modules.pagos.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.polygraph.erp.modules.auth.entity.Usuario;
 import com.polygraph.erp.modules.auth.repository.UsuarioRepository;
 import com.polygraph.erp.modules.clientes.entity.Cliente;
 import com.polygraph.erp.modules.clientes.repository.ClienteRepository;
 import com.polygraph.erp.modules.pagos.dto.*;
+import com.polygraph.erp.modules.pagos.entity.ComprobanteCompra;
 import com.polygraph.erp.modules.pagos.entity.OrdenCompra;
 import com.polygraph.erp.modules.pagos.entity.OrdenCompraItem;
 import com.polygraph.erp.modules.pagos.entity.TransaccionPago;
+import com.polygraph.erp.modules.pagos.repository.ComprobanteCompraRepository;
 import com.polygraph.erp.modules.pagos.repository.OrdenCompraItemRepository;
 import com.polygraph.erp.modules.pagos.repository.OrdenCompraRepository;
 import com.polygraph.erp.modules.pagos.repository.TransaccionPagoRepository;
+import com.polygraph.erp.modules.catalogo.entity.Ciudad;
+import com.polygraph.erp.modules.catalogo.entity.Descuento;
+import com.polygraph.erp.modules.catalogo.repository.CiudadRepository;
 import com.polygraph.erp.modules.catalogo.service.DescuentoService;
 import com.polygraph.erp.modules.servicios.entity.Proceso;
 import com.polygraph.erp.modules.servicios.entity.TramoPrecioProceso;
@@ -30,7 +34,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -45,14 +48,16 @@ public class OrdenCompraService {
     private final OrdenCompraRepository ordenCompraRepository;
     private final OrdenCompraItemRepository ordenCompraItemRepository;
     private final TransaccionPagoRepository transaccionPagoRepository;
+    private final ComprobanteCompraRepository comprobanteCompraRepository;
     private final ProcesoRepository procesoRepository;
     private final TramoPrecioProcesoRepository tramoRepository;
     private final ClienteRepository clienteRepository;
+    private final CiudadRepository ciudadRepository;
     private final UsuarioRepository usuarioRepository;
     private final WompiPasarelaPago pasarelaPago;
     private final SaldoServicioClienteService saldoServicioClienteService;
     private final DescuentoService descuentoService;
-    private final ObjectMapper objectMapper;
+    private final RecargoPendienteService recargoPendienteService;
 
     public OrdenCompraResponse crearOrden(CrearOrdenRequest request, String emailUsuario) {
         Usuario usuario = resolverUsuario(emailUsuario);
@@ -72,6 +77,8 @@ public class OrdenCompraService {
         LocalDateTime ahora = LocalDateTime.now();
         String referencia = "PYG-" + UUID.randomUUID().toString().replace("-", "").substring(0, 20).toUpperCase();
 
+        Descuento cupon = descuentoService.validarCupon(request.codigoCupon(), cliente.getIdCliente());
+
         OrdenCompra orden = OrdenCompra.builder()
                 .cliente(cliente)
                 .usuario(usuario)
@@ -79,6 +86,7 @@ public class OrdenCompraService {
                 .montoTotal(BigDecimal.ZERO)
                 .estado(EstadoOrdenCompra.PENDIENTE)
                 .modoSimulado(pasarelaPago.esModoSimulado())
+                .descuentoCupon(cupon)
                 .fechaCreacion(ahora)
                 .fechaActualizacion(ahora)
                 .build();
@@ -98,8 +106,9 @@ public class OrdenCompraService {
                 throw new ApiException("El proceso '" + proceso.getNombreProceso() + "' no tiene un precio definido para compra en línea", HttpStatus.BAD_REQUEST);
             }
 
-            BigDecimal valorUnitario = resolverValorUnitario(proceso, itemReq.cantidad());
-            valorUnitario = descuentoService.aplicarMejorDescuento(proceso, valorUnitario, request.codigoCupon());
+            BigDecimal valorOriginal = resolverValorUnitario(proceso, itemReq.cantidad());
+            DescuentoService.MejorPrecioResult mejorPrecio = descuentoService.mejorPrecioConDescuento(proceso, valorOriginal, cliente.getIdCliente(), cupon);
+            BigDecimal valorUnitario = mejorPrecio.precio();
             BigDecimal subtotal = valorUnitario.multiply(BigDecimal.valueOf(itemReq.cantidad()));
             montoTotal = montoTotal.add(subtotal);
 
@@ -107,18 +116,78 @@ public class OrdenCompraService {
                     .ordenCompra(orden)
                     .proceso(proceso)
                     .cantidad(itemReq.cantidad())
+                    .valorOriginal(valorOriginal)
                     .valorUnitario(valorUnitario)
                     .subtotal(subtotal)
+                    .nombreDescuentoAplicado(mejorPrecio.descuento() != null ? mejorPrecio.descuento().getNombre() : null)
                     .build());
         }
 
         ordenCompraItemRepository.saveAll(items);
 
+        // Cualquier recargo por ciudad pendiente de solicitudes anteriores se cobra ahora, junto con esta compra.
+        BigDecimal recargosPendientes = recargoPendienteService.totalPendiente(cliente.getIdCliente());
+        montoTotal = montoTotal.add(recargosPendientes);
+
         orden.setMontoTotal(montoTotal);
+        orden.setMontoRecargosPendientes(recargosPendientes);
         orden = ordenCompraRepository.save(orden);
 
         log.info("Orden de compra creada: id={}, cliente={}, monto={}", orden.getIdOrdenCompra(), cliente.getIdCliente(), montoTotal);
         return construirRespuesta(orden, items);
+    }
+
+    /** Recargos por ciudad acumulados de solicitudes anteriores, todavía sin cobrar. */
+    @Transactional(readOnly = true)
+    public RecargosPendientesResponse obtenerRecargosPendientes(String emailUsuario) {
+        Usuario usuario = resolverUsuario(emailUsuario);
+        Cliente cliente = resolverCliente(usuario);
+        return recargoPendienteService.obtenerPendientes(cliente.getIdCliente());
+    }
+
+    /**
+     * Valida un código de cupón contra el carrito actual SIN crear ninguna orden — usado por el
+     * modal de checkout para avisar de una vez si el código no existe, ya lo usó el cliente, no le
+     * pertenece, o no aplica a ninguno de los servicios que tiene en el carrito.
+     */
+    @Transactional(readOnly = true)
+    public ValidarCuponResponse validarCupon(CrearOrdenRequest request, String emailUsuario) {
+        Usuario usuario = resolverUsuario(emailUsuario);
+        Cliente cliente = resolverCliente(usuario);
+
+        if (request.codigoCupon() == null || request.codigoCupon().isBlank()) {
+            throw new ApiException("Ingresa un código de descuento", HttpStatus.BAD_REQUEST);
+        }
+        List<ItemCarritoRequest> itemsReq = request.items() != null ? request.items() : List.of();
+        if (itemsReq.isEmpty()) {
+            throw new ApiException("El carrito está vacío", HttpStatus.BAD_REQUEST);
+        }
+
+        Descuento cupon = descuentoService.validarCupon(request.codigoCupon(), cliente.getIdCliente());
+
+        BigDecimal totalSinCupon = BigDecimal.ZERO;
+        BigDecimal totalConCupon = BigDecimal.ZERO;
+        for (ItemCarritoRequest itemReq : itemsReq) {
+            Proceso proceso = procesoRepository.findById(itemReq.idProceso())
+                    .orElseThrow(() -> new ApiException("Proceso de catálogo no encontrado: " + itemReq.idProceso(), HttpStatus.BAD_REQUEST));
+            BigDecimal valorBase = resolverValorUnitario(proceso, itemReq.cantidad());
+            BigDecimal cantidad = BigDecimal.valueOf(itemReq.cantidad());
+            totalSinCupon = totalSinCupon.add(descuentoService.aplicarMejorPrecio(proceso, valorBase, cliente.getIdCliente(), null).multiply(cantidad));
+            totalConCupon = totalConCupon.add(descuentoService.aplicarMejorPrecio(proceso, valorBase, cliente.getIdCliente(), cupon).multiply(cantidad));
+        }
+
+        // Los recargos pendientes se cobran junto con esta compra sin importar el cupón — se suman
+        // por igual a ambos lados para que la comparación del descuento siga siendo justa.
+        BigDecimal recargosPendientes = recargoPendienteService.totalPendiente(cliente.getIdCliente());
+        totalSinCupon = totalSinCupon.add(recargosPendientes);
+        totalConCupon = totalConCupon.add(recargosPendientes);
+
+        BigDecimal montoDescuento = totalSinCupon.subtract(totalConCupon);
+        if (montoDescuento.signum() <= 0) {
+            throw new ApiException("Este código no aplica a los servicios de tu carrito", HttpStatus.BAD_REQUEST);
+        }
+
+        return new ValidarCuponResponse("Código válido", totalSinCupon, totalConCupon, montoDescuento);
     }
 
     public IniciarPagoResponse iniciarPago(Long idOrden, String emailUsuario) {
@@ -153,6 +222,88 @@ public class OrdenCompraService {
                 .map(orden -> construirRespuesta(orden, ordenCompraItemRepository.findByOrdenCompra_IdOrdenCompra(orden.getIdOrdenCompra())));
     }
 
+    // ---------- Comprobantes de compra (no son factura electrónica DIAN — ver ComprobanteCompra) ----------
+
+    @Transactional(readOnly = true)
+    public List<ComprobanteResponse> listarComprobantes(String emailUsuario) {
+        Usuario usuario = resolverUsuario(emailUsuario);
+        Cliente cliente = resolverCliente(usuario);
+        return comprobanteCompraRepository.findByOrdenCompra_Cliente_IdClienteOrderByFechaEmisionDesc(cliente.getIdCliente()).stream()
+                .map(this::construirComprobanteRespuesta)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public ComprobanteResponse obtenerComprobante(Integer idComprobante, String emailUsuario) {
+        Usuario usuario = resolverUsuario(emailUsuario);
+        Cliente cliente = resolverCliente(usuario);
+        ComprobanteCompra comprobante = comprobanteCompraRepository.findById(idComprobante)
+                .orElseThrow(() -> new ApiException("Comprobante no encontrado", HttpStatus.NOT_FOUND));
+        if (!comprobante.getOrdenCompra().getCliente().getIdCliente().equals(cliente.getIdCliente())) {
+            throw new ApiException("Comprobante no encontrado", HttpStatus.NOT_FOUND);
+        }
+        return construirComprobanteRespuesta(comprobante);
+    }
+
+    /** Sin validar dueño — para el admin, que puede ver el comprobante de cualquier cliente. */
+    @Transactional(readOnly = true)
+    public ComprobanteResponse obtenerComprobanteAdmin(Integer idComprobante) {
+        ComprobanteCompra comprobante = comprobanteCompraRepository.findById(idComprobante)
+                .orElseThrow(() -> new ApiException("Comprobante no encontrado", HttpStatus.NOT_FOUND));
+        return construirComprobanteRespuesta(comprobante);
+    }
+
+    private ComprobanteResponse construirComprobanteRespuesta(ComprobanteCompra comprobante) {
+        OrdenCompra orden = comprobante.getOrdenCompra();
+        List<OrdenCompraItem> itemsEntidad = ordenCompraItemRepository.findByOrdenCompra_IdOrdenCompra(orden.getIdOrdenCompra());
+        List<ItemOrdenResponse> items = itemsEntidad.stream()
+                .map(i -> new ItemOrdenResponse(
+                        i.getProceso().getIdProceso(),
+                        i.getProceso().getNombreProceso(),
+                        i.getCantidad(),
+                        i.getValorOriginal(),
+                        i.getValorUnitario(),
+                        i.getSubtotal(),
+                        i.getNombreDescuentoAplicado()))
+                .toList();
+
+        Cliente cliente = orden.getCliente();
+        Ciudad ciudadCliente = cliente.getIdCiudad() != null ? ciudadRepository.findById(cliente.getIdCiudad()).orElse(null) : null;
+        String nitCliente = cliente.getNit() != null
+                ? cliente.getNit() + (cliente.getDv() != null ? "-" + cliente.getDv() : "")
+                : null;
+
+        return new ComprobanteResponse(
+                comprobante.getIdComprobante(),
+                "CP-" + String.format("%06d", comprobante.getIdComprobante()),
+                comprobante.getFechaEmision(),
+                orden.getIdOrdenCompra(),
+                orden.getReferencia(),
+                orden.getMontoTotal(),
+                items,
+                orden.getNombrePagador(),
+                orden.getTelefonoPagador(),
+                orden.getEmailPagador(),
+                true,
+                orden.getDescuentoCupon() != null ? orden.getDescuentoCupon().getCodigo() : null,
+                orden.getDescuentoCupon() != null ? orden.getDescuentoCupon().getNombre() : null,
+                montoDescuentoTotal(itemsEntidad),
+                orden.getMontoRecargosPendientes(),
+                nombreClienteDisplay(cliente),
+                nitCliente,
+                cliente.getTelefono(),
+                cliente.getDireccion(),
+                ciudadCliente != null ? ciudadCliente.getNombreCiudad() : null,
+                cliente.getEmailPrincipal());
+    }
+
+    /** Suma, a través de todos los ítems, cuánto se redujo el precio (base vs. lo que se hubiera cobrado sin descuento). */
+    private BigDecimal montoDescuentoTotal(List<OrdenCompraItem> items) {
+        return items.stream()
+                .map(i -> i.getValorOriginal().subtract(i.getValorUnitario()).multiply(BigDecimal.valueOf(i.getCantidad())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
     public OrdenCompraResponse simularPago(Long idOrden, SimulacionPagoRequest request, String emailUsuario) {
         if (!pasarelaPago.esModoSimulado()) {
             throw new ApiException("El simulador de pagos está deshabilitado", HttpStatus.FORBIDDEN);
@@ -179,54 +330,25 @@ public class OrdenCompraService {
         return construirRespuesta(orden, ordenCompraItemRepository.findByOrdenCompra_IdOrdenCompra(orden.getIdOrdenCompra()));
     }
 
-    public void procesarEventoWompi(String rawBody) {
-        if (!pasarelaPago.eventsSecretConfigurado()) {
-            log.warn("Webhook de Wompi recibido pero no hay events-secret configurado — se descarta");
-            throw new ApiException("Webhook no configurado", HttpStatus.BAD_REQUEST);
-        }
-
-        JsonNode root;
-        try {
-            root = objectMapper.readTree(rawBody);
-        } catch (IOException e) {
-            throw new ApiException("Cuerpo de webhook inválido", HttpStatus.BAD_REQUEST);
-        }
-
-        JsonNode dataNode = root.path("data");
-        JsonNode signatureNode = root.path("signature");
-        String timestamp = root.path("timestamp").asText("");
-        String checksumEsperado = signatureNode.path("checksum").asText(null);
-
-        StringBuilder cadena = new StringBuilder();
-        for (JsonNode propiedad : signatureNode.path("properties")) {
-            cadena.append(valorPropiedad(dataNode, propiedad.asText()));
-        }
-        cadena.append(timestamp);
-
-        if (!pasarelaPago.validarFirmaEvento(cadena.toString(), checksumEsperado)) {
-            log.warn("Webhook de Wompi con firma inválida — se rechaza");
-            throw new ApiException("Firma inválida", HttpStatus.UNAUTHORIZED);
-        }
-
-        JsonNode transaccion = dataNode.path("transaction");
-        String idTransaccionWompi = transaccion.path("id").asText(null);
-        String referencia = transaccion.path("reference").asText(null);
-        String estadoWompi = transaccion.path("status").asText(null);
-
-        if (idTransaccionWompi == null || referencia == null) {
-            log.warn("Webhook de Wompi sin id/referencia de transacción — se ignora");
-            return;
-        }
-
+    /**
+     * Aplica un evento de Wompi YA VALIDADO (checksum verificado por el caller — ver
+     * {@link PagoWompiWebhookService}, único punto de entrada de webhooks de Wompi en todo el
+     * sistema) a la orden de compra que referencia. Se usa como fallback cuando la referencia no
+     * es de un pago del flujo genérico (PagoWompi) — así ambos flujos comparten un solo webhook
+     * sin duplicar el parseo ni la verificación de firma.
+     *
+     * @return false si la referencia no corresponde a ninguna orden de compra (ninguno de los dos flujos la reconoce).
+     */
+    @Transactional
+    public boolean aplicarEventoTransaccion(JsonNode transaccion, String idTransaccionWompi, String referencia, String estadoWompi, String rawBody) {
         if (transaccionPagoRepository.existsByIdTransaccionWompi(idTransaccionWompi)) {
             log.info("Evento de Wompi duplicado ignorado: idTransaccion={}", idTransaccionWompi);
-            return;
+            return true;
         }
 
         OrdenCompra orden = ordenCompraRepository.findByReferencia(referencia).orElse(null);
         if (orden == null) {
-            log.error("Webhook de Wompi referencia orden inexistente: {}", referencia);
-            return;
+            return false;
         }
 
         EstadoTransaccionPago estadoTransaccion = switch (estadoWompi == null ? "" : estadoWompi) {
@@ -246,12 +368,17 @@ public class OrdenCompraService {
 
         orden.setIdTransaccionPasarela(idTransaccionWompi);
         orden.setMetodoPago(transaccion.path("payment_method_type").asText(null));
+        orden.setEmailPagador(transaccion.path("customer_email").asText(null));
+        orden.setNombrePagador(transaccion.path("customer_data").path("full_name").asText(null));
+        orden.setTelefonoPagador(transaccion.path("customer_data").path("phone_number").asText(null));
+        orden.setNumeroAprobacion(transaccion.path("payment_method").path("extra").path("external_identifier").asText(null));
 
         if (estadoTransaccion == EstadoTransaccionPago.APROBADA) {
             aprobarOrden(orden);
         } else if (estadoTransaccion == EstadoTransaccionPago.DECLINADA) {
             rechazarOrden(orden);
         }
+        return true;
     }
 
     /** Idempotente: si la orden ya no está PENDIENTE, no vuelve a acreditar saldo. */
@@ -269,6 +396,12 @@ public class OrdenCompraService {
             saldoServicioClienteService.acreditar(orden.getCliente(), item.getProceso(), item.getCantidad());
         }
 
+        if (orden.getDescuentoCupon() != null) {
+            descuentoService.registrarUso(orden.getDescuentoCupon(), orden.getCliente(), orden);
+        }
+
+        recargoPendienteService.saldarPendientes(orden.getCliente(), orden);
+
         log.info("Orden aprobada: id={}, cliente={}, saldo acreditado", orden.getIdOrdenCompra(), orden.getCliente().getIdCliente());
     }
 
@@ -281,14 +414,6 @@ public class OrdenCompraService {
         orden.setFechaActualizacion(LocalDateTime.now());
         ordenCompraRepository.save(orden);
         log.info("Orden rechazada: id={}", orden.getIdOrdenCompra());
-    }
-
-    private String valorPropiedad(JsonNode dataNode, String path) {
-        JsonNode actual = dataNode;
-        for (String segmento : path.split("\\.")) {
-            actual = actual.path(segmento);
-        }
-        return actual.asText("");
     }
 
     /** Precio por unidad según el tramo de volumen aplicable (el de mayor cantidadMinima que la cantidad alcance); si ninguno aplica, usa el precio base del proceso. */
@@ -326,9 +451,16 @@ public class OrdenCompraService {
                         i.getProceso().getIdProceso(),
                         i.getProceso().getNombreProceso(),
                         i.getCantidad(),
+                        i.getValorOriginal(),
                         i.getValorUnitario(),
-                        i.getSubtotal()))
+                        i.getSubtotal(),
+                        i.getNombreDescuentoAplicado()))
                 .toList();
+
+        Integer idComprobante = comprobanteCompraRepository.findByOrdenCompra_IdOrdenCompra(orden.getIdOrdenCompra())
+                .map(ComprobanteCompra::getIdComprobante)
+                .orElse(null);
+        String numeroComprobante = idComprobante != null ? "CP-" + String.format("%06d", idComprobante) : null;
 
         return new OrdenCompraResponse(
                 orden.getIdOrdenCompra(),
@@ -338,6 +470,82 @@ public class OrdenCompraService {
                 orden.getModoSimulado(),
                 orden.getUrlCheckout(),
                 itemsResp,
-                orden.getFechaCreacion());
+                orden.getFechaCreacion(),
+                orden.getMetodoPago(),
+                orden.getNumeroAprobacion(),
+                orden.getIdTransaccionPasarela(),
+                orden.getNombrePagador(),
+                orden.getTelefonoPagador(),
+                orden.getEmailPagador(),
+                nombreClienteDisplay(orden.getCliente()),
+                idComprobante,
+                numeroComprobante,
+                orden.getDescuentoCupon() != null ? orden.getDescuentoCupon().getCodigo() : null,
+                orden.getDescuentoCupon() != null ? orden.getDescuentoCupon().getNombre() : null,
+                montoDescuentoTotal(items),
+                orden.getMontoRecargosPendientes());
+    }
+
+    private String nombreClienteDisplay(Cliente c) {
+        if (c.getTipoPersona() != null && "NATURAL".equals(c.getTipoPersona().name())) {
+            String nombre = (c.getNombre() != null ? c.getNombre() : "") + (c.getApellido() != null ? " " + c.getApellido() : "");
+            return nombre.isBlank() ? c.getEmailPrincipal() : nombre.trim();
+        }
+        return c.getRazonSocial() != null ? c.getRazonSocial() : c.getNombreComercial();
+    }
+
+    // ---------- Administración (ADMIN_POLYGRAPH / GESTOR) ----------
+
+    @Transactional(readOnly = true)
+    public Page<OrdenCompraResponse> listarTodasLasOrdenes(String estado, Integer idCliente, Pageable pageable) {
+        boolean conEstado = estado != null && !estado.isBlank();
+        EstadoOrdenCompra estadoEnum = conEstado ? EstadoOrdenCompra.valueOf(estado) : null;
+
+        Page<OrdenCompra> ordenes;
+        if (idCliente != null && conEstado) {
+            ordenes = ordenCompraRepository.findByCliente_IdClienteAndEstadoOrderByFechaCreacionDesc(idCliente, estadoEnum, pageable);
+        } else if (idCliente != null) {
+            ordenes = ordenCompraRepository.findByCliente_IdClienteOrderByFechaCreacionDesc(idCliente, pageable);
+        } else if (conEstado) {
+            ordenes = ordenCompraRepository.findByEstadoOrderByFechaCreacionDesc(estadoEnum, pageable);
+        } else {
+            ordenes = ordenCompraRepository.findAllByOrderByFechaCreacionDesc(pageable);
+        }
+        return ordenes.map(orden -> construirRespuesta(orden, ordenCompraItemRepository.findByOrdenCompra_IdOrdenCompra(orden.getIdOrdenCompra())));
+    }
+
+    /** Solo se puede borrar una orden mientras siga PENDIENTE — para limpiar pruebas o intentos
+     * abandonados, nunca una que ya tuvo movimiento de pago real (aprobada/rechazada). */
+    @Transactional
+    public void eliminarOrdenPendiente(Long idOrden) {
+        OrdenCompra orden = ordenCompraRepository.findById(idOrden)
+                .orElseThrow(() -> new ApiException("Orden no encontrada", HttpStatus.NOT_FOUND));
+        if (orden.getEstado() != EstadoOrdenCompra.PENDIENTE) {
+            throw new ApiException("Solo se pueden eliminar órdenes en estado Pendiente", HttpStatus.CONFLICT);
+        }
+        ordenCompraItemRepository.deleteAll(ordenCompraItemRepository.findByOrdenCompra_IdOrdenCompra(idOrden));
+        ordenCompraRepository.delete(orden);
+        log.info("Orden de compra pendiente eliminada: id={}, referencia={}", idOrden, orden.getReferencia());
+    }
+
+    /** Genera el comprobante de una orden aprobada — a mano, por un admin. No es automático. */
+    public ComprobanteResponse generarComprobante(Long idOrden) {
+        OrdenCompra orden = ordenCompraRepository.findById(idOrden)
+                .orElseThrow(() -> new ApiException("Orden no encontrada", HttpStatus.NOT_FOUND));
+
+        if (orden.getEstado() != EstadoOrdenCompra.APROBADA) {
+            throw new ApiException("Solo se puede generar comprobante de una orden aprobada", HttpStatus.BAD_REQUEST);
+        }
+        if (comprobanteCompraRepository.existsByOrdenCompra_IdOrdenCompra(idOrden)) {
+            throw new ApiException("Esta orden ya tiene un comprobante generado", HttpStatus.CONFLICT);
+        }
+
+        ComprobanteCompra comprobante = comprobanteCompraRepository.save(ComprobanteCompra.builder()
+                .ordenCompra(orden)
+                .fechaEmision(LocalDateTime.now())
+                .build());
+
+        log.info("Comprobante generado manualmente: orden={}, comprobante={}", idOrden, comprobante.getIdComprobante());
+        return construirComprobanteRespuesta(comprobante);
     }
 }

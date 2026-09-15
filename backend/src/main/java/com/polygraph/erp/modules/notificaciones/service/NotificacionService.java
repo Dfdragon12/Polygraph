@@ -40,11 +40,14 @@ public class NotificacionService {
             Rol.ANALISTA_INTERNO, Rol.POLIGRAFISTA, Rol.PROGRAMADOR, Rol.VISITADOR
     );
     private static final Map<String, List<Rol>> ROLES_POR_TIPO = Map.of(
-            "CATALOGO", TODOS_INTERNOS,
-            "CLIENTE",  TODOS_INTERNOS,
-            "USUARIO",  List.of(Rol.ADMIN_POLYGRAPH, Rol.GESTOR),
-            "SESION",   List.of(Rol.ADMIN_POLYGRAPH),
-            "ENLACES",  TODOS_INTERNOS
+            "CATALOGO",     TODOS_INTERNOS,
+            "CLIENTE",      TODOS_INTERNOS,
+            "USUARIO",      List.of(Rol.ADMIN_POLYGRAPH, Rol.GESTOR),
+            "SESION",       List.of(Rol.ADMIN_POLYGRAPH),
+            "ENLACES",      TODOS_INTERNOS,
+            // Cartera/mora — solo administración, no es información operativa para
+            // gestor/analista/poligrafista/visitador/programador (ver FacturaPospagoVencimientoJob).
+            "FACTURACION",  List.of(Rol.ADMIN_POLYGRAPH)
     );
     private static final List<Rol> ROLES_DEFAULT = List.of(Rol.ADMIN_POLYGRAPH);
 
@@ -166,6 +169,15 @@ public class NotificacionService {
      *  documento, o el gestor asignado a un cliente específico. */
     @Transactional
     public void crearParaUsuario(Long idUsuario, String tipo, String titulo, String mensaje) {
+        crearParaUsuario(idUsuario, tipo, titulo, mensaje, null, null);
+    }
+
+    /** Igual que crearParaUsuario(), agregando a qué registro apunta la notificación
+     *  (referenciaTipo/referenciaId) — para que el frontend pueda llevar al usuario directo a
+     *  esa pantalla al hacer clic (ver Campana.jsx). */
+    @Transactional
+    public void crearParaUsuario(Long idUsuario, String tipo, String titulo, String mensaje,
+                                  String referenciaTipo, Long referenciaId) {
         if (idUsuario == null) return;
         usuarioRepository.findById(idUsuario)
                 .filter(u -> Boolean.TRUE.equals(u.getActivo()))
@@ -177,8 +189,39 @@ public class NotificacionService {
                                 .mensaje(mensaje)
                                 .leida(false)
                                 .fechaCreacion(LocalDateTime.now())
+                                .referenciaTipo(referenciaTipo)
+                                .referenciaId(referenciaId)
                                 .build()
                 ));
+    }
+
+    /** Notifica a TODOS los usuarios de un cliente puntual (ADMIN_CLIENTE y ANALISTA_CLIENTE que
+     *  tenga) — p.ej. avisarle a ese cliente que su propia factura venció, sin que le llegue a
+     *  ningún otro cliente ni a roles internos que no manejan cartera (ver FacturaPospagoVencimientoJob). */
+    @Async
+    @Transactional
+    public void crearParaCliente(Integer idCliente, String tipo, String titulo, String mensaje) {
+        if (idCliente == null) return;
+        try {
+            List<Usuario> destinatarios = usuarioRepository.findByIdCliente(idCliente).stream()
+                    .filter(u -> Boolean.TRUE.equals(u.getActivo()))
+                    .toList();
+
+            destinatarios.forEach(dest -> notificacionRepository.save(
+                    Notificacion.builder()
+                            .usuario(dest)
+                            .tipo(tipo)
+                            .titulo(titulo)
+                            .mensaje(mensaje)
+                            .leida(false)
+                            .fechaCreacion(LocalDateTime.now())
+                            .build()
+            ));
+            log.info("Notificación '{}' enviada a {} usuario(s) del cliente idCliente={}",
+                    titulo, destinatarios.size(), idCliente);
+        } catch (Exception e) {
+            log.error("Error al crear notificación de cliente idCliente={} tipo='{}': {}", idCliente, tipo, e.getMessage(), e);
+        }
     }
 
     private Long resolverActorIdActual() {

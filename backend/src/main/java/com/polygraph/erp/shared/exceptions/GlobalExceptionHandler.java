@@ -1,6 +1,7 @@
 package com.polygraph.erp.shared.exceptions;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -59,6 +60,21 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> manejarCuentaBloqueada(LockedException ex) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(construirRespuesta("Cuenta bloqueada. Contacta al administrador.", HttpStatus.FORBIDDEN));
+    }
+
+    // Respaldo genérico ante CUALQUIER violación de integridad en BD (unique, not-null, check,
+    // foreign key...) — cubre, por ejemplo, el caso raro de dos solicitudes simultáneas que pasan
+    // la validación de "email disponible" antes de que cualquiera de las dos inserte. El mensaje
+    // al usuario se queda neutral a propósito: este handler dispara para CUALQUIER tabla del
+    // sistema, no solo usuarios/email, así que un texto fijo tipo "el correo ya está en uso"
+    // confunde en cualquier otro contexto (ej. admin/catálogo → Plantilla). La causa real sí se
+    // deja completa en el log (getMostSpecificCause trae el mensaje nativo del driver de
+    // Postgres — qué constraint/columna exactamente) para poder diagnosticar sin adivinar.
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, Object>> manejarViolacionIntegridad(DataIntegrityViolationException ex) {
+        log.warn("Violación de integridad de datos: {}", ex.getMostSpecificCause().getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(construirRespuesta("Ya existe un registro con esos datos, o falta completar un campo obligatorio.", HttpStatus.CONFLICT));
     }
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)

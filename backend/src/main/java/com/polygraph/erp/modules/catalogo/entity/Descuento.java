@@ -2,6 +2,7 @@ package com.polygraph.erp.modules.catalogo.entity;
 
 import com.polygraph.erp.modules.servicios.entity.Proceso;
 import com.polygraph.erp.shared.enums.AlcanceDescuento;
+import com.polygraph.erp.shared.enums.PublicoDescuento;
 import com.polygraph.erp.shared.enums.TipoDescuento;
 import jakarta.persistence.*;
 import lombok.*;
@@ -53,6 +54,12 @@ public class Descuento {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "id_proceso")
     private Proceso proceso;
+
+    /** A quién aplica: TODOS los clientes, o solo los listados en descuentos_clientes. */
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(name = "publico_objetivo", nullable = false, length = 30)
+    private PublicoDescuento publicoObjetivo = PublicoDescuento.TODOS;
 
     /** Solo relevante para tipo PORCENTAJE — límite en pesos de cuánto puede reducir. */
     @Column(name = "monto_maximo_descuento", precision = 15, scale = 2)

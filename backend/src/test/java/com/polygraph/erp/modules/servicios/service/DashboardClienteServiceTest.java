@@ -3,6 +3,7 @@ package com.polygraph.erp.modules.servicios.service;
 import com.polygraph.erp.modules.auth.entity.Usuario;
 import com.polygraph.erp.modules.auth.repository.UsuarioRepository;
 import com.polygraph.erp.modules.evaluados.entity.Candidato;
+import com.polygraph.erp.modules.pagos.service.SaldoServicioClienteService;
 import com.polygraph.erp.modules.servicios.dto.DashboardClienteResponse;
 import com.polygraph.erp.modules.servicios.entity.Proceso;
 import com.polygraph.erp.modules.servicios.entity.Servicio;
@@ -39,6 +40,7 @@ class DashboardClienteServiceTest {
 
     @Mock private ServicioRepository servicioRepository;
     @Mock private UsuarioRepository usuarioRepository;
+    @Mock private SaldoServicioClienteService saldoServicioClienteService;
 
     @InjectMocks
     private DashboardClienteService dashboardService;
@@ -61,6 +63,12 @@ class DashboardClienteServiceTest {
                 .activo(true)
                 .idCliente(ID_CLIENTE)
                 .build();
+
+        // lenient(): no todas las pruebas de esta clase llegan a leer la bolsa prepago (ej. la de
+        // "sin cliente asociado" revienta antes) — con un stub estricto en @BeforeEach, Mockito
+        // marcaría ese stub como "unnecessary" en esas pruebas y fallaría igual.
+        org.mockito.Mockito.lenient().when(saldoServicioClienteService.obtenerSaldos(anyInt()))
+                .thenReturn(List.of());
     }
 
     @AfterEach

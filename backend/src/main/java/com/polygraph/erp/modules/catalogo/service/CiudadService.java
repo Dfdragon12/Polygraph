@@ -9,12 +9,15 @@ import com.polygraph.erp.shared.enums.NivelCiudad;
 import com.polygraph.erp.shared.exceptions.ApiException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.text.Normalizer;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -27,8 +30,9 @@ public class CiudadService {
     private final CiudadRepository repository;
 
     public List<CiudadResponse> listar() {
+        Set<Integer> idsEnUso = Set.copyOf(repository.idsEnUso());
         List<CiudadResponse> ciudades = repository.findAllByOrderByNombreCiudadAsc().stream()
-                .map(CiudadResponse::from)
+                .map(c -> CiudadResponse.from(c, idsEnUso.contains(c.getIdCiudad())))
                 .toList();
         log.debug("Catálogo de ciudades consultado: {} registros", ciudades.size());
         return ciudades;
@@ -42,12 +46,18 @@ public class CiudadService {
         String nombre = normalizar(req.nombreCiudad());
         String departamento = normalizar(req.departamento());
 
-        Ciudad existente = repository
-                .findFirstByNombreCiudadIgnoreCaseAndDepartamentoIgnoreCase(nombre, departamento)
+        // Comparación insensible a tildes y mayúsculas: "Bogotá"/"Bogota" o "BOGOTÁ" deben
+        // considerarse la misma ciudad y no crear un duplicado en el catálogo.
+        String claveNombre = quitarTildes(nombre);
+        String claveDepartamento = quitarTildes(departamento);
+        Ciudad existente = repository.findAllByOrderByNombreCiudadAsc().stream()
+                .filter(c -> quitarTildes(c.getNombreCiudad()).equals(claveNombre)
+                        && quitarTildes(c.getDepartamento()).equals(claveDepartamento))
+                .findFirst()
                 .orElse(null);
         if (existente != null) {
             log.debug("Ciudad ya existía en el catálogo, se reutiliza: {} ({})", nombre, departamento);
-            return CiudadResponse.from(existente);
+            return CiudadResponse.from(existente, repository.estaEnUso(existente.getIdCiudad()));
         }
 
         String codigoDaneCiudad = limpiarCodigo(req.codigoDaneCiudad());
@@ -65,7 +75,7 @@ public class CiudadService {
                 .build();
         repository.save(ciudad);
         log.info("Ciudad agregada al catálogo (pendiente de confirmación): {} ({})", nombre, departamento);
-        return CiudadResponse.from(ciudad);
+        return CiudadResponse.from(ciudad, false);
     }
 
     // Solo admin — asigna o cambia el nivel logístico de una ciudad; la deja confirmada.
@@ -76,7 +86,7 @@ public class CiudadService {
         ciudad.setNivelCiudad(req.nivelCiudad());
         ciudad.setPendienteConfirmacion(false);
         log.info("Ciudad clasificada: {} ({}) -> {}", ciudad.getNombreCiudad(), ciudad.getDepartamento(), req.nivelCiudad());
-        return CiudadResponse.from(ciudad);
+        return CiudadResponse.from(ciudad, repository.estaEnUso(id));
     }
 
     // Solo admin — confirma que el nivel actual (típicamente el default MUNICIPIO_SECUNDARIO) es
@@ -87,11 +97,36 @@ public class CiudadService {
                 .orElseThrow(() -> new ApiException("Ciudad no encontrada", HttpStatus.NOT_FOUND));
         ciudad.setPendienteConfirmacion(false);
         log.info("Ciudad confirmada: {} ({}) en nivel {}", ciudad.getNombreCiudad(), ciudad.getDepartamento(), ciudad.getNivelCiudad());
-        return CiudadResponse.from(ciudad);
+        return CiudadResponse.from(ciudad, repository.estaEnUso(id));
     }
 
     public long contarPendientes() {
         return repository.countByPendienteConfirmacionTrue();
+    }
+
+    // Solo admin — se bloquea el borrado ANTES de intentarlo si la ciudad está referenciada por
+    // clientes/candidatos/visitas/empleados/recargos (FK real en la base de datos): en ese caso
+    // solo queda disponible reclasificar su nivel logístico, nunca eliminarla. El catch de
+    // DataIntegrityViolationException queda como red de seguridad ante una condición de carrera
+    // (alguien la usa justo entre el chequeo y el borrado).
+    @Transactional
+    public void eliminar(Integer id) {
+        Ciudad ciudad = repository.findById(id)
+                .orElseThrow(() -> new ApiException("Ciudad no encontrada", HttpStatus.NOT_FOUND));
+        if (repository.estaEnUso(id)) {
+            throw new ApiException(
+                    "No se puede eliminar \"" + ciudad.getNombreCiudad() + "\": hay clientes, candidatos u otros registros que la usan. Solo puedes editar su nivel logístico.",
+                    HttpStatus.CONFLICT);
+        }
+        try {
+            repository.delete(ciudad);
+            repository.flush();
+        } catch (DataIntegrityViolationException ex) {
+            throw new ApiException(
+                    "No se puede eliminar \"" + ciudad.getNombreCiudad() + "\": hay clientes, candidatos u otros registros que la usan.",
+                    HttpStatus.CONFLICT);
+        }
+        log.info("Ciudad eliminada del catálogo: {} ({})", ciudad.getNombreCiudad(), ciudad.getDepartamento());
     }
 
     private String limpiarCodigo(String codigo) {
@@ -109,5 +144,10 @@ public class CiudadService {
                     .append(palabra.substring(1).toLowerCase(ES_CO));
         }
         return resultado.toString();
+    }
+
+    private String quitarTildes(String texto) {
+        String descompuesto = Normalizer.normalize(texto, Normalizer.Form.NFD);
+        return descompuesto.replaceAll("\\p{M}", "").toUpperCase(ES_CO);
     }
 }

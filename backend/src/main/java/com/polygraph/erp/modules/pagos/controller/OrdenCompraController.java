@@ -25,6 +25,11 @@ public class OrdenCompraController {
         return ResponseEntity.status(HttpStatus.CREATED).body(ordenCompraService.crearOrden(request, auth.getName()));
     }
 
+    @PostMapping("/validar-cupon")
+    public ResponseEntity<ValidarCuponResponse> validarCupon(@Valid @RequestBody CrearOrdenRequest request, Authentication auth) {
+        return ResponseEntity.ok(ordenCompraService.validarCupon(request, auth.getName()));
+    }
+
     @PostMapping("/{id}/pagar")
     public ResponseEntity<IniciarPagoResponse> pagar(@PathVariable Long id, Authentication auth) {
         return ResponseEntity.ok(ordenCompraService.iniciarPago(id, auth.getName()));
@@ -33,6 +38,11 @@ public class OrdenCompraController {
     @GetMapping("/{id}")
     public ResponseEntity<OrdenCompraResponse> obtener(@PathVariable Long id, Authentication auth) {
         return ResponseEntity.ok(ordenCompraService.obtenerOrden(id, auth.getName()));
+    }
+
+    @GetMapping("/recargos-pendientes")
+    public ResponseEntity<RecargosPendientesResponse> recargosPendientes(Authentication auth) {
+        return ResponseEntity.ok(ordenCompraService.obtenerRecargosPendientes(auth.getName()));
     }
 
     @GetMapping

@@ -1,5 +1,6 @@
 package com.polygraph.erp.shared.service;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.DayOfWeek;
@@ -8,7 +9,10 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 
 @Service
+@RequiredArgsConstructor
 public class DiasHabilesService {
+
+    private final FestivosColombiaService festivosColombiaService;
 
     private static final LocalTime HORA_CORTE = LocalTime.of(16, 0);
 
@@ -28,10 +32,11 @@ public class DiasHabilesService {
         return fecha;
     }
 
-    // Días hábiles de elaboración: lunes a viernes
+    // Días hábiles de elaboración: lunes a viernes, sin festivo colombiano
     private boolean esDiaHabilElaboracion(LocalDate fecha) {
         DayOfWeek dia = fecha.getDayOfWeek();
-        return dia != DayOfWeek.SATURDAY && dia != DayOfWeek.SUNDAY;
+        if (dia == DayOfWeek.SATURDAY || dia == DayOfWeek.SUNDAY) return false;
+        return !festivosColombiaService.esFestivo(fecha);
     }
 
     private LocalDate siguienteDiaHabilElaboracion(LocalDate desde) {

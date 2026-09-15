@@ -34,6 +34,7 @@ public class PagoWompiWebhookService {
     private final PagoWompiRepository pagoWompiRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final AuditoriaPagoService auditoriaPagoService;
+    private final OrdenCompraService ordenCompraService;
 
     /** @return false únicamente cuando la firma es inválida (o el body no se puede parsear) — el controller responde 401 en ese caso. */
     @Transactional
@@ -79,7 +80,14 @@ public class PagoWompiWebhookService {
 
         PagoWompi pago = pagoWompiRepository.findByReferencia(referencia).orElse(null);
         if (pago == null) {
-            log.error("Webhook de Wompi con referencia desconocida: {}", referencia);
+            // No es un pago del flujo genérico (pospago) — puede ser una orden de compra del
+            // carrito prepago (flujo viejo, otra tabla). Un solo webhook de Wompi para ambos flujos,
+            // reusando el checksum ya validado arriba — no se vuelve a parsear ni a validar nada.
+            boolean reconocidoComoOrden = ordenCompraService.aplicarEventoTransaccion(
+                    transaccion, idTransaccionWompi, referencia, estadoWompi, rawBody);
+            if (!reconocidoComoOrden) {
+                log.error("Webhook de Wompi con referencia desconocida en ambos flujos: {}", referencia);
+            }
             return true;
         }
 

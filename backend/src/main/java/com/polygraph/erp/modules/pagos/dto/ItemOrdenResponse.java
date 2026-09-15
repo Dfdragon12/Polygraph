@@ -6,6 +6,8 @@ public record ItemOrdenResponse(
         Integer idProceso,
         String nombreProceso,
         Integer cantidad,
+        BigDecimal valorOriginal,
         BigDecimal valorUnitario,
-        BigDecimal subtotal
+        BigDecimal subtotal,
+        String nombreDescuentoAplicado
 ) {}

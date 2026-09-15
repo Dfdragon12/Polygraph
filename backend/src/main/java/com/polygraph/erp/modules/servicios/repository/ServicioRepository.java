@@ -62,4 +62,28 @@ public interface ServicioRepository extends JpaRepository<Servicio, Integer> {
     boolean existeDuplicado(@Param("cedula") String cedula,
                             @Param("idProceso") Integer idProceso,
                             @Param("fechaLimite") LocalDate fechaLimite);
+
+    /** Para el buscador global — por tipo de proceso, nombre/apellido del candidato, o nombre del
+     *  cliente. idGestor null = sin filtrar por gestor (uso de ADMIN_POLYGRAPH); con valor,
+     *  mismo alcance que el resto de consultas "por gestor" de este repositorio. Left join en
+     *  candidato/cliente para no excluir filas por un join implícito cuando alguno es null.
+     *  OJO: `patron` ya viene armado como "%texto%" en minúsculas desde BusquedaGlobalService —
+     *  NO usar concat(...) aquí: Hibernate 6 lo traduce con un "escape ''" que hace que el LIKE
+     *  no encuentre nada nunca (confirmado con ServicioRepositoryBusquedaTest). */
+    @Query("""
+            select s from Servicio s
+            left join s.candidato c
+            left join s.cliente cl
+            join s.proceso p
+            where (:idGestor is null or cl.idGestor = :idGestor)
+              and (
+                lower(p.nombreProceso) like :patron
+                or lower(coalesce(c.nombres, '')) like :patron
+                or lower(coalesce(c.apellidos, '')) like :patron
+                or lower(coalesce(cl.razonSocial, '')) like :patron
+                or lower(coalesce(cl.nombre, '')) like :patron
+              )
+            order by s.fechaSolicitud desc
+            """)
+    List<Servicio> buscar(@Param("patron") String patron, @Param("idGestor") Long idGestor, Pageable pageable);
 }
