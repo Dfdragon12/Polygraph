@@ -3,6 +3,21 @@ import { useParams, useNavigate } from 'react-router-dom'
 import solicitudService from '../../services/solicitudService'
 import ServiceStatusBadge from '../../components/ServiceStatusBadge'
 
+const formatearCOP = (valor) =>
+  new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(valor ?? 0)
+
+const BADGE_SUBPROCESO = {
+  PENDIENTE:  { color: 'bg-amber-100 text-amber-700',  dot: 'bg-amber-400',  texto: 'Pendiente' },
+  ASIGNADO:   { color: 'bg-blue-100 text-blue-700',    dot: 'bg-blue-400',   texto: 'Programado' },
+  COMPLETADO: { color: 'bg-green-100 text-green-700',  dot: 'bg-green-400',  texto: 'Completado' },
+  CANCELADO:  { color: 'bg-red-100 text-red-600',      dot: 'bg-red-400',    texto: 'Cancelado' },
+}
+
+function formatFechaHoraCorta(iso) {
+  if (!iso) return null
+  return new Date(iso).toLocaleString('es-CO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+}
+
 export default function SolicitudDetalle() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -64,6 +79,44 @@ export default function SolicitudDetalle() {
         )}
       </div>
 
+      {/* Progreso del estudio — resumen de cada subproceso (antecedentes, poligrafía, visita, etc.) */}
+      {detalle.subprocesos?.length > 0 && (() => {
+        const total = detalle.subprocesos.length
+        const completados = detalle.subprocesos.filter(sp => sp.estado === 'COMPLETADO').length
+        const pct = total > 0 ? Math.round((completados / total) * 100) : 0
+        return (
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Progreso del estudio</h2>
+              <span className="text-xs font-medium text-gray-500">{completados}/{total} completados</span>
+            </div>
+            <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden mb-4">
+              <div className="h-full bg-green-500 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+            </div>
+            <div className="space-y-2">
+              {detalle.subprocesos.map((sp, i) => {
+                const cfg = BADGE_SUBPROCESO[sp.estado] ?? { color: 'bg-gray-100 text-gray-500', dot: 'bg-gray-300', texto: sp.estado }
+                const fechaCorta = formatFechaHoraCorta(sp.fechaProgramada)
+                return (
+                  <div key={i} className="flex items-center justify-between gap-3 rounded-lg border border-gray-100 px-3 py-2.5">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${cfg.dot}`} />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-800 truncate">{sp.nombre}</p>
+                        {fechaCorta && <p className="text-xs text-gray-400">Programado: {fechaCorta}</p>}
+                      </div>
+                    </div>
+                    <span className={`flex-shrink-0 text-xs font-medium px-2.5 py-0.5 rounded-full whitespace-nowrap ${cfg.color}`}>
+                      {cfg.texto}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })()}
+
       {/* Datos del evaluado */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
         <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">Datos del evaluado</h2>
@@ -88,6 +141,10 @@ export default function SolicitudDetalle() {
             <span className="block text-xs text-gray-400">Email</span>
             <span className="text-gray-800 break-all">{detalle.emailEvaluado || '—'}</span>
           </div>
+          <div>
+            <span className="block text-xs text-gray-400">Ciudad</span>
+            <span className="text-gray-800">{detalle.nombreCiudad || '—'}</span>
+          </div>
         </div>
         {detalle.notas && (
           <div className="mt-4 bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm">
@@ -109,6 +166,38 @@ export default function SolicitudDetalle() {
           </div>
           <ServiceStatusBadge status={detalle.estado} />
         </div>
+
+        {detalle.historialRecargoCiudad?.length > 0 && (
+          <div className="mt-3 rounded-lg border border-gray-200 px-3 py-2.5 text-sm">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-gray-700">
+              <span>
+                📍 Recargo por ciudad ({detalle.nombreCiudad}) — pagado:{' '}
+                <span className="font-semibold text-green-700">{formatearCOP(detalle.totalPagadoRecargoCiudad)}</span>
+              </span>
+              {detalle.totalPendienteRecargoCiudad !== 0 && (
+                <span className={detalle.totalPendienteRecargoCiudad < 0 ? 'text-green-700' : 'text-red-700'}>
+                  {detalle.totalPendienteRecargoCiudad < 0 ? 'crédito a favor: ' : 'pendiente por cobrar: '}
+                  <span className="font-semibold">{formatearCOP(detalle.totalPendienteRecargoCiudad)}</span>
+                </span>
+              )}
+            </div>
+            <ul className="mt-2 space-y-1 border-t border-gray-100 pt-2 text-xs text-gray-500">
+              {detalle.historialRecargoCiudad.map((m, i) => (
+                <li key={i} className="flex items-center justify-between gap-2">
+                  <span>
+                    {m.ciudad}{m.motivo ? ` — ${m.motivo}` : ''} · {new Date(m.fechaGenerado).toLocaleDateString('es-CO')}
+                  </span>
+                  <span className={`flex-shrink-0 font-medium ${m.monto < 0 ? 'text-green-600' : 'text-gray-700'}`}>
+                    {formatearCOP(m.monto)}
+                    <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] ${m.estado === 'PAGADO' ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
+                      {m.estado}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
 
       {/* Historial de cambios */}

@@ -104,6 +104,7 @@ function CiudadSelect({ value, onChange, className, required = false, valueType 
         value={abierto ? query : (seleccionada ? etiqueta(seleccionada) : '')}
         placeholder={cargando ? 'Cargando ciudades...' : placeholder}
         onFocus={() => { setAbierto(true); setQuery('') }}
+        onClick={() => setAbierto(true)}
         onBlur={() => setAbierto(false)}
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Escape') { setAbierto(false); e.currentTarget.blur() } }}
@@ -160,12 +161,14 @@ function CiudadSelect({ value, onChange, className, required = false, valueType 
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Código DANE ciudad</label>
-                <input value={mCodigoCiudad} onChange={(e) => setMCodigoCiudad(e.target.value)} maxLength={10} placeholder="Opcional"
+                <input value={mCodigoCiudad} inputMode="numeric"
+                  onChange={(e) => setMCodigoCiudad(e.target.value.replace(/\D/g, ''))} maxLength={10} placeholder="Opcional"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Código DANE depto.</label>
-                <input value={mCodigoDepto} onChange={(e) => setMCodigoDepto(e.target.value)} maxLength={2} placeholder="Opcional"
+                <input value={mCodigoDepto} inputMode="numeric"
+                  onChange={(e) => setMCodigoDepto(e.target.value.replace(/\D/g, ''))} maxLength={2} placeholder="Opcional"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none" />
               </div>
             </div>

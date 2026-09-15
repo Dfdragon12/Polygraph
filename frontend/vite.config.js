@@ -7,47 +7,20 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // El service worker es un archivo propio (src/sw.js) en vez de uno generado —
+      // conserva la lógica hecha a mano (push notifications, estrategias por ruta) y
+      // solo delega en Workbox el precache de los assets versionados del build.
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
+      injectManifest: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,woff}'],
+      },
       // No activo el SW en dev para no interferir con hot-reload
       devOptions: { enabled: false },
       // Usamos el manifest.json manual en /public
       manifest: false,
       injectRegister: null,
-      workbox: {
-        // Precachear todos los assets del build
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,woff}'],
-        navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/api\//],
-        runtimeCaching: [
-          {
-            // API → network first, caché de 5 min como respaldo
-            urlPattern: ({ url }) => url.pathname.startsWith('/api/'),
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'polygraph-api-v1',
-              networkTimeoutSeconds: 8,
-              expiration: {
-                maxEntries: 150,
-                maxAgeSeconds: 300,
-              },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-          {
-            // Fuentes externas → cache first, un año
-            urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'polygraph-fonts-v1',
-              expiration: {
-                maxEntries: 20,
-                maxAgeSeconds: 60 * 60 * 24 * 365,
-              },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-        ],
-      },
     }),
   ],
   resolve: {
@@ -57,7 +30,7 @@ export default defineConfig({
     port: 5173,
     // Permite exponer el dev server vía túnel (cloudflared/ngrok) para probar
     // integraciones que exigen una URL pública, como el checkout de Wompi.
-    allowedHosts: ['.trycloudflare.com', '.ngrok-free.app', '.ngrok.io'],
+    allowedHosts: ['.trycloudflare.com', '.ngrok-free.app', '.ngrok-free.dev', '.ngrok.io'],
     proxy: {
       '/api': { target: 'http://localhost:8080', changeOrigin: true },
     },

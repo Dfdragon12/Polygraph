@@ -14,8 +14,14 @@ const SECCIONES = [
       { ruta: '/gestor/reversiones',   etiqueta: 'Reversiones',  icono: '↩️' },
     ],
   },
+  {
+    titulo: 'Análisis',
+    items: [
+      { ruta: '/gestor/agenda',        etiqueta: 'Agenda',        icono: '📅' },
+    ],
+  },
 ]
 
 export default function GestorLayout() {
-  return <InternalLayout secciones={SECCIONES} titulo="Portal Gestor" />
+  return <InternalLayout secciones={SECCIONES} titulo="Portal Gestor" busquedaEntidades />
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, Fragment } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import api from '../../../services/api'
 import Toast from '../../../components/Toast'
 import { alCambiarTexto } from '../../../utils/texto'
@@ -51,6 +51,29 @@ function fmtTiempo(minutos) {
 function IconoOrden({ activo, dir }) {
   if (!activo) return <span className="ml-1 text-gray-300 text-xs">↕</span>
   return <span className="ml-1 text-primary-500 text-xs">{dir === 'asc' ? '↑' : '↓'}</span>
+}
+
+/* ─── Iconos de acciones de tabla ─── */
+function IconoLapiz() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+    </svg>
+  )
+}
+function IconoPower() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5.636 5.636a9 9 0 1012.728 0M12 3v9" />
+    </svg>
+  )
+}
+function IconoHoja() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+    </svg>
+  )
 }
 
 function BarraFiltros({ busqueda, onBusqueda, filtro, onFiltro, total, activos, inactivos, visibles }) {
@@ -799,6 +822,7 @@ function FormProgreso({ progreso, onClose, onGuardado }) {
     horasEstimadas:   progreso?.minutosEstimados != null ? String(Math.floor(progreso.minutosEstimados / 60)) : '',
     minutosEstimados: progreso?.minutosEstimados != null ? String(progreso.minutosEstimados % 60) : '',
     rolResponsable: progreso?.rolResponsable ?? 'ANALISTA_INTERNO',
+    requiereDocumento: progreso?.requiereDocumento ?? false,
   })
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState(null)
@@ -815,6 +839,7 @@ function FormProgreso({ progreso, onClose, onGuardado }) {
           ? (Number(form.horasEstimadas || 0) * 60) + Number(form.minutosEstimados || 0)
           : null,
       rolResponsable: form.rolResponsable,
+      requiereDocumento: form.requiereDocumento,
     }
     try {
       if (progreso) {
@@ -885,6 +910,17 @@ function FormProgreso({ progreso, onClose, onGuardado }) {
           <span className="text-xs text-gray-400">minutos</span>
         </div>
       </div>
+      <label className="flex items-start gap-2 cursor-pointer">
+        <input type="checkbox" checked={form.requiereDocumento}
+          onChange={e => setForm(p => ({ ...p, requiereDocumento: e.target.checked }))}
+          className="mt-0.5 accent-primary-600" />
+        <span className="text-sm text-gray-700">
+          Requiere documento (plantilla)
+          <span className="block text-xs text-gray-400 font-normal">
+            Este subproceso necesita que el analista diligencie un formulario y se genere un documento — habilita el botón "Plantilla" en la tabla.
+          </span>
+        </span>
+      </label>
       <div className="flex justify-end gap-3 pt-1">
         <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancelar</button>
         <button type="submit" disabled={guardando}
@@ -938,19 +974,28 @@ function TablaProgresos({ progresos, cargando, onEditar, onDesactivar, onActivar
               <td className="px-4 py-3"><Badge activo={t.activo} /></td>
               <td className="px-4 py-3">
                 <div className="flex items-center gap-2">
-                  <button onClick={() => onEditar(t)}
-                    className="text-xs font-medium px-3 py-1 rounded-full border border-primary-200 text-primary-600 hover:bg-primary-50">
-                    Editar
+                  <Link to={`/admin/catalogo/plantilla/${t.idTipoProgreso}`}
+                    title={t.requiereDocumento ? `Plantilla de ${t.nombreProgreso}` : `Plantilla de ${t.nombreProgreso} (aún no marcada como "requiere documento")`}
+                    className={`p-1.5 rounded-lg transition-colors ${
+                      t.requiereDocumento
+                        ? 'text-primary-600 hover:bg-primary-50 hover:text-primary-800'
+                        : 'text-gray-300 hover:bg-gray-50 hover:text-gray-500'
+                    }`}>
+                    <IconoHoja />
+                  </Link>
+                  <button onClick={() => onEditar(t)} title="Editar"
+                    className="p-1.5 rounded-lg text-primary-600 hover:bg-primary-50 hover:text-primary-800 transition-colors">
+                    <IconoLapiz />
                   </button>
                   {t.activo ? (
-                    <button onClick={() => onDesactivar(t)}
-                      className="text-xs font-medium px-3 py-1 rounded-full border border-red-200 text-red-600 hover:bg-red-50">
-                      Desactivar
+                    <button onClick={() => onDesactivar(t)} title="Desactivar"
+                      className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 hover:text-red-800 transition-colors">
+                      <IconoPower />
                     </button>
                   ) : (
-                    <button onClick={() => onActivar(t)}
-                      className="text-xs font-medium px-3 py-1 rounded-full border border-green-200 text-green-700 hover:bg-green-50">
-                      Activar
+                    <button onClick={() => onActivar(t)} title="Activar"
+                      className="p-1.5 rounded-lg text-green-700 hover:bg-green-50 hover:text-green-900 transition-colors">
+                      <IconoPower />
                     </button>
                   )}
                 </div>
@@ -1057,13 +1102,13 @@ function TablaClasificaciones({ clasificaciones, cargando, onEditar, onEstado })
                 <td className="px-4 py-3"><Badge activo={c.activo} /></td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
-                    <button onClick={() => onEditar(c)}
-                      className="text-xs font-medium px-3 py-1 rounded-full border border-primary-200 text-primary-600 hover:bg-primary-50">
-                      Editar
+                    <button onClick={() => onEditar(c)} title="Editar"
+                      className="p-1.5 rounded-lg text-primary-600 hover:bg-primary-50 hover:text-primary-800 transition-colors">
+                      <IconoLapiz />
                     </button>
-                    <button onClick={() => onEstado(c)}
-                      className={`text-xs font-medium px-3 py-1 rounded-full border transition-colors ${c.activo ? 'border-red-200 text-red-600 hover:bg-red-50' : 'border-green-200 text-green-700 hover:bg-green-50'}`}>
-                      {c.activo ? 'Desactivar' : 'Activar'}
+                    <button onClick={() => onEstado(c)} title={c.activo ? 'Desactivar' : 'Activar'}
+                      className={`p-1.5 rounded-lg transition-colors ${c.activo ? 'text-red-600 hover:bg-red-50 hover:text-red-800' : 'text-green-700 hover:bg-green-50 hover:text-green-900'}`}>
+                      <IconoPower />
                     </button>
                   </div>
                 </td>

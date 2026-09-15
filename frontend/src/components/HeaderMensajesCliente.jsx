@@ -78,7 +78,7 @@ export default function HeaderMensajesCliente() {
       </button>
 
       {abierto && (
-        <div className="absolute right-0 top-11 w-80 bg-white rounded-xl shadow-xl border border-gray-200 z-50 flex flex-col" style={{ height: 460 }}>
+        <div className="fixed left-3 right-3 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-11 sm:w-80 bg-white rounded-xl shadow-xl border border-gray-200 z-50 flex flex-col" style={{ height: 'min(460px, 70vh)' }}>
           <div className="px-4 py-3 border-b border-gray-100 bg-primary-50 flex-shrink-0">
             <p className="text-xs font-semibold text-primary-700 uppercase tracking-wider">Tu gestor en Polygraph</p>
           </div>

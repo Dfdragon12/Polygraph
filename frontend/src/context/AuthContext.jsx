@@ -22,13 +22,19 @@ export function AuthProvider({ children }) {
     setCargando(false)
   }, [])
 
-  const login = async (email, password) => {
-    const datos = await authService.login(email, password)
+  // Guarda la sesión a partir de una respuesta de login ya obtenida (ej. login con Google, que
+  // no pasa por authService.login) — mismo mecanismo que usa login() abajo.
+  const establecerSesion = (datos) => {
     localStorage.setItem('token', datos.token)
     localStorage.setItem('refreshToken', datos.refreshToken)
     localStorage.setItem('usuario', JSON.stringify(datos.usuario))
     setUsuario(datos.usuario)
     return datos
+  }
+
+  const login = async (email, password) => {
+    const datos = await authService.login(email, password)
+    return establecerSesion(datos)
   }
 
   const logout = () => {
@@ -41,7 +47,7 @@ export function AuthProvider({ children }) {
   const isAuthenticated = () => !!localStorage.getItem('token') && !!usuario
 
   return (
-    <AuthContext.Provider value={{ usuario, cargando, login, logout, isAuthenticated }}>
+    <AuthContext.Provider value={{ usuario, cargando, login, logout, isAuthenticated, establecerSesion }}>
       {children}
     </AuthContext.Provider>
   )

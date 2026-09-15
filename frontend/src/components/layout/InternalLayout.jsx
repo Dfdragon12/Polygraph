@@ -4,6 +4,8 @@ import { useAuth } from '../../hooks/useAuth'
 import Campana from '../Campana'
 import HeaderMensajesGestor from '../HeaderMensajesGestor'
 import PanelEnlaces from '../PanelEnlaces'
+import BuscadorGlobal from '../BuscadorGlobal'
+import SidebarSeccion from './SidebarSeccion'
 
 const ETIQUETAS_ROL = {
   ADMIN_POLYGRAPH:  'Administrador',
@@ -25,10 +27,13 @@ const ETIQUETAS_RUTA = {
   servicios:    'Servicios',
   resultados:   'Resultados',
   visitas:      'Mis Visitas',
+  formulario:   'Formulario',
+  candidatos:   'Candidatos',
+  asignaciones: 'Mis Asignaciones',
 }
 
 function Breadcrumb({ titulo }) {
-  const { pathname } = useLocation()
+  const { pathname, state } = useLocation()
   const segmentos = pathname.split('/').filter(Boolean)
   const raiz = segmentos[0] ?? ''
   const resto = segmentos.slice(1)
@@ -36,7 +41,11 @@ function Breadcrumb({ titulo }) {
   const migas = [
     { label: titulo, ruta: `/${raiz}/dashboard` },
     ...resto.map((seg, i) => ({
-      label: ETIQUETAS_RUTA[seg] ?? (/^\d+$/.test(seg) ? 'Detalle' : seg),
+      // "formulario" es una ruta genérica compartida por varios portales (ver Formulario.jsx) —
+      // el segmento de la URL no dice de qué sección vino el clic (Servicios, Agenda, Mis
+      // Asignaciones...), así que quien arma el link pasa esa sección real por state.origenSeccion
+      // y acá se prioriza sobre la etiqueta genérica "Formulario".
+      label: (seg === 'formulario' && state?.origenSeccion) || ETIQUETAS_RUTA[seg] || (/^\d+$/.test(seg) ? 'Detalle' : seg),
       ruta: '/' + [raiz, ...resto.slice(0, i + 1)].join('/'),
     })),
   ]
@@ -60,75 +69,6 @@ function Breadcrumb({ titulo }) {
         </Fragment>
       ))}
     </nav>
-  )
-}
-
-/* ─── Buscador de secciones ─── */
-function BuscadorGlobal({ secciones }) {
-  const [abierto, setAbierto] = useState(false)
-  const [query, setQuery]     = useState('')
-  const inputRef = useRef(null)
-  const navigate = useNavigate()
-
-  const items = secciones.flatMap(s => s.items)
-  const resultados = query.trim()
-    ? items.filter(i => i.etiqueta.toLowerCase().includes(query.toLowerCase()))
-    : items
-
-  useEffect(() => {
-    if (abierto) setTimeout(() => inputRef.current?.focus(), 50)
-    else setQuery('')
-  }, [abierto])
-
-  useEffect(() => {
-    const h = (e) => { if (e.key === 'Escape') setAbierto(false) }
-    document.addEventListener('keydown', h)
-    return () => document.removeEventListener('keydown', h)
-  }, [])
-
-  const ir = (ruta) => { navigate(ruta); setAbierto(false) }
-
-  return (
-    <>
-      <button onClick={() => setAbierto(true)} title="Buscar"
-        className="p-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors">
-        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
-        </svg>
-      </button>
-
-      {abierto && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 px-4 bg-black/40 backdrop-blur-sm"
-          onClick={() => setAbierto(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
-            onClick={e => e.stopPropagation()}>
-            <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100">
-              <svg className="h-5 w-5 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
-              </svg>
-              <input ref={inputRef} value={query} onChange={e => setQuery(e.target.value)}
-                placeholder="Buscar sección..."
-                className="flex-1 text-sm text-gray-900 placeholder-gray-400 focus:outline-none" />
-              <kbd className="hidden sm:inline text-xs text-gray-400 border border-gray-200 rounded px-1.5 py-0.5">Esc</kbd>
-            </div>
-            <div className="max-h-64 overflow-y-auto py-2">
-              {resultados.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-6">Sin resultados</p>
-              ) : resultados.map(item => (
-                <button key={item.ruta} onClick={() => ir(item.ruta)}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-primary-50 transition-colors group">
-                  <span className="text-lg w-6 text-center flex-shrink-0">{item.icono}</span>
-                  <span className="text-sm text-gray-700 group-hover:text-primary-700 font-medium">{item.etiqueta}</span>
-                </button>
-              ))}
-            </div>
-            <div className="px-4 py-2 border-t border-gray-50 bg-gray-50">
-              <p className="text-xs text-gray-400">Cierra con Esc</p>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
   )
 }
 
@@ -156,7 +96,7 @@ function ConfiguracionMenu() {
       </button>
 
       {abierto && (
-        <div className="absolute right-0 top-10 w-52 bg-white rounded-xl shadow-xl border border-gray-200 z-50 py-1">
+        <div className="fixed left-3 right-3 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-10 sm:w-52 bg-white rounded-xl shadow-xl border border-gray-200 z-50 py-1">
           <button onClick={() => { navigate('/cambiar-password'); setAbierto(false) }}
             className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors text-left">
             <span>🔑</span> Cambiar contraseña
@@ -200,7 +140,7 @@ function AvatarUsuario({ usuario, cerrarSesion }) {
       </button>
 
       {abierto && (
-        <div className="absolute right-0 top-11 w-56 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden">
+        <div className="fixed left-3 right-3 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-11 sm:w-56 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100">
             <p className="text-sm font-semibold text-gray-900 truncate">{usuario?.nombre} {usuario?.apellido ?? ''}</p>
             <p className="text-xs text-gray-400 truncate mt-0.5">{usuario?.email}</p>
@@ -241,29 +181,10 @@ function SidebarContent({ usuario, secciones, onNavClick, collapsed }) {
         )}
       </div>
 
-      <nav className={`flex-1 py-4 overflow-y-auto space-y-5 ${collapsed ? 'px-1' : 'px-3'}`}>
+      <nav className={`flex-1 py-4 overflow-y-auto scrollbar-thin space-y-5 ${collapsed ? 'px-1' : 'px-3'}`}>
         {secciones.map(seccion => (
-          <div key={seccion.titulo}>
-            {!collapsed && (
-              <p className="px-3 mb-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                {seccion.titulo}
-              </p>
-            )}
-            <div className="space-y-0.5">
-              {seccion.items.map(({ ruta, etiqueta, icono }) => (
-                <NavLink key={ruta} to={ruta} onClick={onNavClick}
-                  title={collapsed ? etiqueta : undefined}
-                  className={({ isActive }) =>
-                    `flex items-center rounded-lg text-sm transition-colors ${
-                      collapsed ? 'justify-center p-2.5' : 'gap-3 px-3 py-2.5'
-                    } ${isActive ? 'bg-primary-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`
-                  }>
-                  <span className="text-base flex-shrink-0">{icono}</span>
-                  {!collapsed && etiqueta}
-                </NavLink>
-              ))}
-            </div>
-          </div>
+          <SidebarSeccion key={seccion.titulo} titulo={seccion.titulo} items={seccion.items}
+            collapsed={collapsed} onNavClick={onNavClick} />
         ))}
       </nav>
     </>
@@ -271,7 +192,7 @@ function SidebarContent({ usuario, secciones, onNavClick, collapsed }) {
 }
 
 /* ─── Layout principal ─── */
-export default function InternalLayout({ secciones, titulo = 'Panel Interno' }) {
+export default function InternalLayout({ secciones, titulo = 'Panel Interno', busquedaEntidades = false }) {
   const { usuario, logout } = useAuth()
   const navigate = useNavigate()
   const [menuMovil, setMenuMovil] = useState(false)
@@ -289,7 +210,7 @@ export default function InternalLayout({ secciones, titulo = 'Panel Interno' }) 
   }
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen h-[100dvh] bg-gray-50">
       {/* ─── Sidebar desktop ─── */}
       <aside className={`hidden md:flex md:flex-col bg-slate-900 text-white flex-shrink-0 transition-all duration-300 ${collapsed ? 'w-16' : 'w-64'}`}>
         <SidebarContent usuario={usuario} secciones={secciones} collapsed={collapsed} />
@@ -299,7 +220,7 @@ export default function InternalLayout({ secciones, titulo = 'Panel Interno' }) 
       {menuMovil && (
         <>
           <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setMenuMovil(false)} />
-          <aside className="fixed inset-y-0 left-0 z-50 flex flex-col w-72 bg-slate-900 text-white md:hidden shadow-2xl">
+          <aside className="fixed inset-y-0 left-0 z-50 flex flex-col w-72 bg-slate-900 text-white md:hidden shadow-2xl pt-safe pb-safe">
             <button onClick={() => setMenuMovil(false)}
               className="absolute top-4 right-4 p-1 text-slate-400 hover:text-white">
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -313,7 +234,7 @@ export default function InternalLayout({ secciones, titulo = 'Panel Interno' }) 
 
       {/* ─── Área principal ─── */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-        <header className="bg-white border-b border-gray-200 px-4 md:px-6 py-3 flex items-center justify-between flex-shrink-0">
+        <header className="bg-white border-b border-gray-200 px-4 md:px-6 pt-[calc(0.75rem+var(--sat))] pb-3 flex items-center justify-between flex-shrink-0">
           {/* Izquierda — hamburger móvil + toggle desktop */}
           <div className="flex items-center gap-1">
             {/* Móvil: abre overlay */}
@@ -336,7 +257,7 @@ export default function InternalLayout({ secciones, titulo = 'Panel Interno' }) 
 
           {/* Derecha — acciones */}
           <div className="flex items-center gap-1">
-            <BuscadorGlobal secciones={secciones} />
+            <BuscadorGlobal secciones={secciones} busquedaEntidades={busquedaEntidades} />
             <ConfiguracionMenu />
             <button onClick={() => setPanelEnlaces(true)} title="Referencias externas"
               className="relative p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
@@ -353,7 +274,7 @@ export default function InternalLayout({ secciones, titulo = 'Panel Interno' }) 
 
         <Breadcrumb titulo={titulo} />
 
-        <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 scrollbar-thin">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 pb-[calc(1rem+var(--sab))] md:pb-[calc(1.5rem+var(--sab))] scrollbar-thin">
           <Outlet />
         </main>
       </div>

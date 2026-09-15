@@ -11,6 +11,9 @@ const ciudadService = {
 
   confirmar: (id) =>
     api.patch(`/ciudades/${id}/confirmar`).then(r => r.data),
+
+  eliminar: (id) =>
+    api.delete(`/ciudades/${id}`),
 }
 
 export default ciudadService

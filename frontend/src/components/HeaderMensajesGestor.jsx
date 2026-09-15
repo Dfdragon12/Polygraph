@@ -103,7 +103,7 @@ export default function HeaderMensajesGestor() {
       </button>
 
       {abierto && (
-        <div className="absolute right-0 top-11 w-80 bg-white rounded-xl shadow-xl border border-gray-200 z-50 flex flex-col" style={{ height: 440 }}>
+        <div className="fixed left-3 right-3 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-11 sm:w-80 bg-white rounded-xl shadow-xl border border-gray-200 z-50 flex flex-col" style={{ height: 'min(440px, 70vh)' }}>
           {vista === 'lista' ? (
             <>
               <div className="px-4 py-3 border-b border-gray-100 bg-primary-50 flex-shrink-0">

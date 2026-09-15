@@ -2,9 +2,11 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import { CarritoProvider } from './context/CarritoContext'
 import { useAuth } from './hooks/useAuth'
+import useInactivityLogout from './hooks/useInactivityLogout'
 import ProtectedRoute from './components/ProtectedRoute'
 import OfflineIndicator from './components/OfflineIndicator'
 import PWAInstallBanner from './components/PWAInstallBanner'
+import { ConfirmModal } from './components/ui/Modal'
 
 // Layouts
 import ClientLayout      from './components/layout/ClientLayout'
@@ -32,6 +34,10 @@ import Documentos       from './pages/client/Documentos'
 import ComprarServicios from './pages/client/ComprarServicios'
 import SimuladorPago    from './pages/client/SimuladorPago'
 import ResultadoPago    from './pages/client/ResultadoPago'
+import ComprobantePago  from './pages/client/ComprobantePago'
+import MiCredito             from './pages/client/MiCredito'
+import FacturaPospagoDetalle from './pages/client/FacturaPospagoDetalle'
+import ResultadoPagoFactura  from './pages/client/ResultadoPagoFactura'
 
 // Portal admin
 import AdminDashboard    from './pages/admin/AdminDashboard'
@@ -39,18 +45,27 @@ import UsuariosInternos  from './pages/admin/UsuariosInternos'
 import Clientes          from './pages/admin/Clientes'
 import SemaforoServicios from './pages/admin/SemaforoServicios'
 import Catalogo          from './pages/admin/catalogo/Catalogo'
+import PlantillaFormulario from './pages/admin/catalogo/PlantillaFormulario'
 import AdminReversiones  from './pages/admin/AdminReversiones'
 import Descuentos        from './pages/admin/Descuentos'
 import Ciudades          from './pages/admin/Ciudades'
+import Facturacion         from './pages/admin/Facturacion'
+import FacturacionCliente  from './pages/admin/FacturacionCliente'
+import AdminComprobante  from './pages/admin/AdminComprobante'
+import AdminFacturaPospagoDetalle from './pages/admin/AdminFacturaPospagoDetalle'
 
 // Portales de rol
 import GestorDashboard       from './pages/gestor/GestorDashboard'
 import GestorSolicitudes     from './pages/gestor/Solicitudes'
 import GestorReversiones     from './pages/gestor/GestorReversiones'
-import AnalistaDashboard     from './pages/analista/AnalistaDashboard'
+import GestorAgenda          from './pages/gestor/Agenda'
 import ProgramadorDashboard  from './pages/programador/ProgramadorDashboard'
-import PoligrafistaDashboard from './pages/poligrafista/PoligrafistaDashboard'
-import VisitadorDashboard    from './pages/visitador/VisitadorDashboard'
+import ProgramadorAgenda     from './pages/programador/Agenda'
+// Compartidas entre analista/poligrafista/visitador — mismo backend filtra por rol autenticado
+import AsignacionDashboard from './pages/shared/AsignacionDashboard'
+import MisAsignaciones from './pages/shared/MisAsignaciones'
+import Formulario       from './pages/shared/Formulario'
+import CandidatoPerfil  from './pages/shared/CandidatoPerfil'
 
 const ROLES_CLIENTE = ['ADMIN_CLIENTE', 'ANALISTA_CLIENTE']
 
@@ -92,9 +107,31 @@ function PaginaPublica({ titulo, mensaje }) {
   )
 }
 
+function InactivityWatcher() {
+  const { mostrarAlerta, seguirConectado } = useInactivityLogout()
+  if (!mostrarAlerta) return null
+
+  // Sin botones ni contador en vivo a propósito — cerrar con la X ya significa "sigo aquí"
+  // (equivale a lo que antes hacía "Seguir conectado"); si de verdad no hay nadie, el cierre de
+  // sesión automático de todos modos sigue corriendo en segundo plano.
+  return (
+    <ConfirmModal
+      titulo="¿Sigues ahí?"
+      onClose={seguirConectado}
+      sinBotones
+      bloquearFondo
+    >
+      <p className="text-sm text-gray-500">
+        Por seguridad, vamos a cerrar tu sesión pronto por inactividad — cierra este aviso si sigues aquí.
+      </p>
+    </ConfirmModal>
+  )
+}
+
 function App() {
   return (
     <AuthProvider>
+      <InactivityWatcher />
       <OfflineIndicator />
       <PWAInstallBanner />
       <Routes>
@@ -131,6 +168,10 @@ function App() {
           <Route path="comprar-servicios" element={<ComprarServicios />} />
           <Route path="comprar-servicios/simulador/:idOrden" element={<SimuladorPago />} />
           <Route path="comprar-servicios/resultado/:idOrden" element={<ResultadoPago />} />
+          <Route path="comprar-servicios/comprobante/:idComprobante" element={<ComprobantePago />} />
+          <Route path="pospago"                       element={<MiCredito />} />
+          <Route path="pospago/facturas/:idFactura"   element={<FacturaPospagoDetalle />} />
+          <Route path="pospago/resultado/:referencia" element={<ResultadoPagoFactura />} />
           <Route path="documentos"        element={<Documentos />} />
           <Route path="estadisticas"      element={<Proximamente titulo="Estadísticas" />} />
         </Route>
@@ -144,9 +185,14 @@ function App() {
           <Route path="semaforo"          element={<SemaforoServicios />} />
           <Route path="reversiones"       element={<AdminReversiones />} />
           <Route path="catalogo"                  element={<Catalogo key="grid" />} />
+          <Route path="catalogo/plantilla/:idTipoProgreso" element={<PlantillaFormulario />} />
           <Route path="catalogo/:clasificacion"   element={<Catalogo key="detalle" />} />
           <Route path="descuentos"                element={<Descuentos />} />
           <Route path="ciudades"                  element={<Ciudades />} />
+          <Route path="facturacion"                          element={<Facturacion />} />
+          <Route path="facturacion/clientes/:idCliente"      element={<FacturacionCliente />} />
+          <Route path="facturacion/ordenes/comprobantes/:idComprobante" element={<AdminComprobante />} />
+          <Route path="facturacion/facturas/:idFactura"      element={<AdminFacturaPospagoDetalle />} />
         </Route>
 
         {/* ── Portal GESTOR ── */}
@@ -154,31 +200,46 @@ function App() {
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard"    element={<GestorDashboard />} />
           <Route path="solicitudes"   element={<GestorSolicitudes />} />
+          <Route path="agenda"       element={<GestorAgenda />} />
           <Route path="reversiones"  element={<GestorReversiones />} />
+          <Route path="formulario/:idServicioSubproceso" element={<Formulario />} />
+          <Route path="candidatos/:idCandidato" element={<CandidatoPerfil />} />
         </Route>
 
         {/* ── Portal ANALISTA_INTERNO ── */}
         <Route path="/analista" element={<ProtectedRoute roles={['ANALISTA_INTERNO']}><AnalistaLayout /></ProtectedRoute>}>
           <Route index element={<Navigate to="dashboard" replace />} />
-          <Route path="dashboard" element={<AnalistaDashboard />} />
+          <Route path="dashboard" element={<AsignacionDashboard />} />
+          <Route path="asignaciones" element={<MisAsignaciones />} />
+          <Route path="formulario/:idServicioSubproceso" element={<Formulario />} />
+          <Route path="candidatos/:idCandidato" element={<CandidatoPerfil />} />
         </Route>
 
         {/* ── Portal PROGRAMADOR ── */}
         <Route path="/programador" element={<ProtectedRoute roles={['PROGRAMADOR']}><ProgramadorLayout /></ProtectedRoute>}>
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<ProgramadorDashboard />} />
+          <Route path="agenda" element={<ProgramadorAgenda />} />
+          <Route path="formulario/:idServicioSubproceso" element={<Formulario />} />
+          <Route path="candidatos/:idCandidato" element={<CandidatoPerfil />} />
         </Route>
 
         {/* ── Portal POLIGRAFISTA ── */}
         <Route path="/poligrafista" element={<ProtectedRoute roles={['POLIGRAFISTA']}><PoligrafistLayout /></ProtectedRoute>}>
           <Route index element={<Navigate to="dashboard" replace />} />
-          <Route path="dashboard" element={<PoligrafistaDashboard />} />
+          <Route path="dashboard" element={<AsignacionDashboard />} />
+          <Route path="servicios" element={<MisAsignaciones />} />
+          <Route path="formulario/:idServicioSubproceso" element={<Formulario />} />
+          <Route path="candidatos/:idCandidato" element={<CandidatoPerfil />} />
         </Route>
 
         {/* ── Portal VISITADOR ── */}
         <Route path="/visitador" element={<ProtectedRoute roles={['VISITADOR']}><VisitadorLayout /></ProtectedRoute>}>
           <Route index element={<Navigate to="dashboard" replace />} />
-          <Route path="dashboard" element={<VisitadorDashboard />} />
+          <Route path="dashboard" element={<AsignacionDashboard />} />
+          <Route path="visitas" element={<MisAsignaciones />} />
+          <Route path="formulario/:idServicioSubproceso" element={<Formulario />} />
+          <Route path="candidatos/:idCandidato" element={<CandidatoPerfil />} />
         </Route>
 
         {/* ── Raíz — redirige según rol ── */}

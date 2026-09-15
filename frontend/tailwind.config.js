@@ -36,9 +36,20 @@ export default {
           '0%':   { opacity: 0, transform: 'translateY(4px)' },
           '100%': { opacity: 1, transform: 'translateY(0)' },
         },
+        scaleIn: {
+          '0%':   { opacity: 0, transform: 'scale(0.95) translateY(-6px)' },
+          '100%': { opacity: 1, transform: 'scale(1) translateY(0)' },
+        },
+        popIn: {
+          '0%':   { transform: 'scale(0.5)' },
+          '60%':  { transform: 'scale(1.2)' },
+          '100%': { transform: 'scale(1)' },
+        },
       },
       animation: {
         'fade-in': 'fadeIn .2s ease-out',
+        'scale-in': 'scaleIn .18s ease-out',
+        'pop-in': 'popIn .35s cubic-bezier(0.34, 1.56, 0.64, 1)',
       },
     },
   },

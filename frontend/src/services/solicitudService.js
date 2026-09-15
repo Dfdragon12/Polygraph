@@ -6,6 +6,8 @@ const solicitudService = {
   listar: ({ idCliente, estado, pagina = 0, tamano = 10 } = {}) =>
     api.get('/requests', { params: { idCliente, estado, pagina, tamano } }),
 
+  conteo: () => api.get('/requests/conteo').then(r => r.data),
+
   detalle: (id) => api.get(`/requests/${id}`),
 
   cambiarEstado: (id, estado, observacion) =>

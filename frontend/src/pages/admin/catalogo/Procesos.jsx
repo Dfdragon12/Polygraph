@@ -1,5 +1,8 @@
 import { useState, useEffect, useMemo } from 'react'
 import api from '../../../services/api'
+import Paginacion from '../../../components/ui/Paginacion'
+
+const POR_PAGINA = 10
 
 function Badge({ activo }) {
   return (
@@ -19,7 +22,7 @@ function Modal({ titulo, onClose, ancho = 'max-w-md', children }) {
           <h3 className="text-base font-semibold text-gray-900">{titulo}</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
         </div>
-        <div className="overflow-y-auto flex-1">{children}</div>
+        <div className="overflow-y-auto flex-1 scrollbar-thin">{children}</div>
       </div>
     </div>
   )
@@ -28,6 +31,29 @@ function Modal({ titulo, onClose, ancho = 'max-w-md', children }) {
 function IconoOrden({ activo, dir }) {
   if (!activo) return <span className="ml-1 text-gray-300 text-xs">↕</span>
   return <span className="ml-1 text-primary-500 text-xs">{dir === 'asc' ? '↑' : '↓'}</span>
+}
+
+/* ─── Iconos de acciones de tabla ─── */
+function IconoPasos() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
+    </svg>
+  )
+}
+function IconoLapiz() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+    </svg>
+  )
+}
+function IconoPower() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5.636 5.636a9 9 0 1012.728 0M12 3v9" />
+    </svg>
+  )
 }
 
 /* ─── Modal crear / editar proceso ─── */
@@ -235,6 +261,7 @@ export default function Procesos() {
   const [filtroEstado, setFiltroEstado] = useState('todos')
   const [ordenCol, setOrdenCol] = useState(null)
   const [ordenDir, setOrdenDir] = useState('asc')
+  const [pagina, setPagina] = useState(1)
 
   const cargar = async () => {
     setCargando(true)
@@ -287,6 +314,10 @@ export default function Procesos() {
 
     return lista
   }, [procesos, filtroEstado, busqueda, ordenCol, ordenDir])
+
+  useEffect(() => { setPagina(1) }, [busqueda, filtroEstado])
+
+  const procesosPagina = procesosVisibles.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA)
 
   const cuentaActivos   = procesos.filter(p => p.activo).length
   const cuentaInactivos = procesos.filter(p => !p.activo).length
@@ -383,7 +414,7 @@ export default function Procesos() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {procesosVisibles.map(p => (
+                {procesosPagina.map(p => (
                   <tr key={p.idProceso} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-3 text-sm text-gray-900 font-medium whitespace-nowrap">{p.nombreProceso}</td>
                     <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">{p.descripcion ?? '—'}</td>
@@ -395,19 +426,19 @@ export default function Procesos() {
                     <td className="px-4 py-3"><Badge activo={p.activo} /></td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <button onClick={() => setConfigurando(p)}
-                          className="text-xs font-medium px-3 py-1 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">
-                          Pasos
+                        <button onClick={() => setConfigurando(p)} title="Pasos"
+                          className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-slate-800 transition-colors">
+                          <IconoPasos />
                         </button>
-                        <button onClick={() => setEditando(p)}
-                          className="text-xs font-medium px-3 py-1 rounded-full border border-primary-200 text-primary-600 hover:bg-primary-50 transition-colors">
-                          Editar
+                        <button onClick={() => setEditando(p)} title="Editar"
+                          className="p-1.5 rounded-lg text-primary-600 hover:bg-primary-50 hover:text-primary-800 transition-colors">
+                          <IconoLapiz />
                         </button>
-                        <button onClick={() => cambiarEstado(p)}
-                          className={`text-xs font-medium px-3 py-1 rounded-full border transition-colors ${
-                            p.activo ? 'border-red-200 text-red-600 hover:bg-red-50' : 'border-green-200 text-green-700 hover:bg-green-50'
+                        <button onClick={() => cambiarEstado(p)} title={p.activo ? 'Desactivar' : 'Activar'}
+                          className={`p-1.5 rounded-lg transition-colors ${
+                            p.activo ? 'text-red-600 hover:bg-red-50 hover:text-red-800' : 'text-green-700 hover:bg-green-50 hover:text-green-900'
                           }`}>
-                          {p.activo ? 'Desactivar' : 'Activar'}
+                          <IconoPower />
                         </button>
                       </div>
                     </td>
@@ -416,6 +447,9 @@ export default function Procesos() {
               </tbody>
             </table>
           </div>
+        )}
+        {procesosVisibles.length > 0 && (
+          <Paginacion pagina={pagina} total={procesosVisibles.length} porPagina={POR_PAGINA} onChange={setPagina} />
         )}
       </div>
 

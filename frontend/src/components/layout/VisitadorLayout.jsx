@@ -17,5 +17,5 @@ const SECCIONES = [
 ]
 
 export default function VisitadorLayout() {
-  return <InternalLayout secciones={SECCIONES} titulo="Portal Visitador" />
+  return <InternalLayout secciones={SECCIONES} titulo="Portal Visitador" busquedaEntidades />
 }

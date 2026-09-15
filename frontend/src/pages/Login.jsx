@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 
 const esquema = z.object({
@@ -24,6 +24,8 @@ const RUTA_POR_ROL = {
 export default function Login() {
   const { login } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const cerradaPorInactividad = searchParams.get('motivo') === 'inactividad'
   const [error, setError] = useState(null)
   const [cargando, setCargando] = useState(false)
   const [mostrarPassword, setMostrarPassword] = useState(false)
@@ -126,6 +128,11 @@ export default function Login() {
             <p className="text-sm text-gray-500 mt-1 mb-7">Ingresa tus credenciales para continuar</p>
 
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" noValidate>
+              {cerradaPorInactividad && !error && (
+                <div className="flex items-start gap-2.5 bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded-lg text-sm slide-up">
+                  Tu sesión se cerró por inactividad. Vuelve a iniciar sesión para continuar.
+                </div>
+              )}
               {error && (
                 <div className="flex items-start gap-2.5 bg-slate-50 border border-slate-200 text-slate-700 px-4 py-3 rounded-lg text-sm slide-up">
                   <span className="w-5 h-5 rounded-full bg-primary-100 text-primary-600 flex items-center justify-center flex-shrink-0 mt-0.5">

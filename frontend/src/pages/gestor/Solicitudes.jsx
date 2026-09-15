@@ -6,9 +6,68 @@ import catalogoService from '../../services/catalogoService'
 import asignacionService from '../../services/asignacionService'
 import Toast from '../../components/Toast'
 import { Modal, ConfirmModal } from '../../components/ui/Modal'
+import Paginacion from '../../components/ui/Paginacion'
 import ModalAsignarSubproceso from '../../components/ModalAsignarSubproceso'
+import ModalAsignarProgramador from '../../components/ModalAsignarProgramador'
+import CiudadSelect from '../../components/CiudadSelect'
 
-const ESTADOS = ['TODOS', 'PENDIENTE', 'PROGRAMANDO', 'EN_EJECUCION', 'FINALIZADO', 'PUBLICADO', 'CANCELADO', 'REPROGRAMADO']
+/* ─── Iconos de acciones de tabla ─── */
+function IconoOjo() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+    </svg>
+  )
+}
+function IconoCambioEstado() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+    </svg>
+  )
+}
+function IconoEnviar() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+    </svg>
+  )
+}
+function IconoAsignado() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  )
+}
+
+function formatearPrecioCOP(valor) {
+  return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(valor)
+}
+
+// Tarjetas de resumen por estado (reemplazan los tabs de texto) — cada una filtra al hacer clic
+// y se vuelve a pulsar para volver a "Todos". El color de cada campo debe ir literal (no
+// interpolado) para que Tailwind lo detecte en el build.
+const CAMPO_CONTEO = {
+  PENDIENTE:    'pendientes',
+  PROGRAMANDO:  'programando',
+  EN_EJECUCION: 'enEjecucion',
+  FINALIZADO:   'finalizados',
+  PUBLICADO:    'publicados',
+  CANCELADO:    'cancelados',
+  REPROGRAMADO: 'reprogramados',
+}
+
+const TARJETAS_ESTADO = [
+  { estado: 'PENDIENTE',    label: 'Pendientes',    desc: 'Requieren atención',     border: 'border-amber-200',   dot: 'bg-amber-400',   texto: 'text-amber-600',   bgActivo: 'bg-amber-50/70',   ring: 'ring-amber-300' },
+  { estado: 'PROGRAMANDO',  label: 'Programando',   desc: 'En preparación',         border: 'border-blue-200',    dot: 'bg-blue-400',    texto: 'text-blue-600',    bgActivo: 'bg-blue-50/70',    ring: 'ring-blue-300' },
+  { estado: 'EN_EJECUCION', label: 'En ejecución',  desc: 'Siendo trabajados',      border: 'border-primary-200', dot: 'bg-primary-400', texto: 'text-primary-600', bgActivo: 'bg-primary-50/70', ring: 'ring-primary-300' },
+  { estado: 'FINALIZADO',   label: 'Finalizados',   desc: 'Listos para revisar',    border: 'border-green-200',   dot: 'bg-green-400',   texto: 'text-green-600',   bgActivo: 'bg-green-50/70',   ring: 'ring-green-300' },
+  { estado: 'PUBLICADO',    label: 'Publicados',    desc: 'Entregados',             border: 'border-cyan-200',    dot: 'bg-cyan-400',    texto: 'text-cyan-600',    bgActivo: 'bg-cyan-50/70',    ring: 'ring-cyan-300' },
+  { estado: 'CANCELADO',    label: 'Cancelados',    desc: 'No activos',             border: 'border-red-200',     dot: 'bg-red-400',     texto: 'text-red-500',     bgActivo: 'bg-red-50/70',     ring: 'ring-red-300' },
+  { estado: 'REPROGRAMADO', label: 'Reprogramados', desc: 'Cambiaron de fecha',     border: 'border-orange-200',  dot: 'bg-orange-400',  texto: 'text-orange-600',  bgActivo: 'bg-orange-50/70',  ring: 'ring-orange-300' },
+]
 
 // Debe coincidir con PASOS en frontend/src/pages/evaluee/EvalueeForm.jsx
 const PASOS_EVALUADO = ['Autorización', 'Datos personales', 'Educación', 'Experiencia laboral', 'Referencias', 'Documentos', 'Revisión']
@@ -82,6 +141,17 @@ function formatDuracion(minutos) {
   return m > 0 ? `${h}h ${m}m` : `${h}h`
 }
 
+// Subprocesos de poligrafía/visita (los que coordina Programador) de un servicio, y si ya se
+// les asignó un programador a TODOS — para decidir el ícono del botón "Asignar programador".
+function subprocesosProgramadorDe(subprocesos) {
+  const delProgramador = (subprocesos ?? []).filter(sp =>
+    sp.nombre?.toLowerCase().includes('poligraf') || sp.nombre?.toLowerCase().includes('visita'))
+  return {
+    hayAlgunos: delProgramador.length > 0,
+    todosAsignados: delProgramador.length > 0 && delProgramador.every(sp => sp.programadorAsignado),
+  }
+}
+
 const BADGE_SUBPROCESO = {
   PENDIENTE:  'bg-amber-100 text-amber-700',
   ASIGNADO:   'bg-blue-100 text-blue-700',
@@ -123,6 +193,7 @@ function FilaSubprocesos({ idServicio, colSpan, onToast }) {
   const [subprocesos, setSubprocesos] = useState(null)
   const [error, setError] = useState(false)
   const [seleccionado, setSeleccionado] = useState(null)
+  const [asignandoProgramadorDe, setAsignandoProgramadorDe] = useState(null)
 
   const cargar = useCallback(() => {
     asignacionService.listar({ idServicio, size: 50 })
@@ -147,20 +218,53 @@ function FilaSubprocesos({ idServicio, colSpan, onToast }) {
           <p className="text-xs text-gray-400">Este servicio no tiene subprocesos generados.</p>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
-            {subprocesos.map(sp => (
-              <button key={sp.id} onClick={() => setSeleccionado(sp)}
-                className="flex items-center justify-between gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2 text-left hover:border-primary-300 hover:shadow-sm transition-all">
-                <div className="min-w-0">
-                  <p className="text-xs font-medium text-gray-800 truncate">{sp.subproceso}</p>
-                  <p className="text-[11px] text-gray-400 truncate">
-                    {sp.nombreAsignado ?? 'Sin asignar'} · {formatDuracion(sp.duracionMinutos)}
-                  </p>
-                </div>
-                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0 ${BADGE_SUBPROCESO[sp.estado] ?? 'bg-gray-100 text-gray-600'}`}>
-                  {sp.estado}
-                </span>
-              </button>
-            ))}
+            {subprocesos.map(sp => {
+              // Poligrafía/visita se muestran para que el gestor no vea "sin subprocesos" cuando
+              // sí hay — pero solo lectura: eso lo asigna Programador, no se abre el modal.
+              const soloLectura = sp.rolResponsable !== 'ANALISTA_INTERNO'
+              if (soloLectura) {
+                return (
+                  <div key={sp.id} title="Lo coordina el Programador — solo lectura aquí"
+                    className="flex items-center justify-between gap-2 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2 opacity-80">
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-gray-600 truncate">{sp.subproceso}</p>
+                      <p className="text-[11px] text-gray-400 truncate">
+                        {sp.nombreAsignado ?? 'Sin asignar'} · {formatDuracion(sp.duracionMinutos)} ·{' '}
+                        <span className="italic">
+                          {sp.nombreProgramadorResponsable ? `Programador: ${sp.nombreProgramadorResponsable}` : 'Programador'}
+                        </span>
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {(sp.estado === 'PENDIENTE' || sp.estado === 'ASIGNADO') && (
+                        <button type="button" onClick={() => setAsignandoProgramadorDe(sp)}
+                          title="Elegir a qué programador encargarle esto"
+                          className="text-[10px] font-medium text-primary-600 hover:text-primary-800 hover:underline whitespace-nowrap">
+                          {sp.nombreProgramadorResponsable ? 'Reasignar programador' : 'Asignar programador'}
+                        </button>
+                      )}
+                      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${BADGE_SUBPROCESO[sp.estado] ?? 'bg-gray-100 text-gray-600'}`}>
+                        {sp.estado}
+                      </span>
+                    </div>
+                  </div>
+                )
+              }
+              return (
+                <button key={sp.id} onClick={() => setSeleccionado(sp)}
+                  className="flex items-center justify-between gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2 text-left hover:border-primary-300 hover:shadow-sm transition-all">
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-gray-800 truncate">{sp.subproceso}</p>
+                    <p className="text-[11px] text-gray-400 truncate">
+                      {sp.nombreAsignado ?? 'Sin asignar'} · {formatDuracion(sp.duracionMinutos)}
+                    </p>
+                  </div>
+                  <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0 ${BADGE_SUBPROCESO[sp.estado] ?? 'bg-gray-100 text-gray-600'}`}>
+                    {sp.estado}
+                  </span>
+                </button>
+              )
+            })}
           </div>
         )}
       </td>
@@ -171,6 +275,15 @@ function FilaSubprocesos({ idServicio, colSpan, onToast }) {
         asignacion={seleccionado}
         onClose={() => setSeleccionado(null)}
         onGuardado={() => { setSeleccionado(null); cargar(); onToast('Subproceso actualizado correctamente') }}
+        onToast={onToast}
+      />
+    )}
+
+    {asignandoProgramadorDe && (
+      <ModalAsignarProgramador
+        subprocesos={[asignandoProgramadorDe]}
+        onClose={() => setAsignandoProgramadorDe(null)}
+        onGuardado={() => { setAsignandoProgramadorDe(null); cargar() }}
         onToast={onToast}
       />
     )}
@@ -312,7 +425,7 @@ function ModalResumenEvaluado({ idServicio, nombreEvaluado, onClose }) {
               <section>
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Educación</h3>
                 <div className="overflow-x-auto rounded-lg border border-gray-200">
-                  <table className="w-full text-sm">
+                  <table className="table-stack w-full text-sm">
                     <thead className="bg-gray-50 text-gray-500 text-xs">
                       <tr>
                         <th className="px-3 py-2 text-left">Nivel</th>
@@ -324,10 +437,10 @@ function ModalResumenEvaluado({ idServicio, nombreEvaluado, onClose }) {
                     <tbody className="divide-y divide-gray-100">
                       {resumen.educacion.map((e, i) => (
                         <tr key={i}>
-                          <td className="px-3 py-2 text-gray-800">{e.nivel ?? '—'}</td>
-                          <td className="px-3 py-2 text-gray-800">{e.institucion ?? '—'}</td>
-                          <td className="px-3 py-2 text-gray-600">{e.ciudad ?? '—'}</td>
-                          <td className="px-3 py-2 text-gray-600">{e.enCurso ? 'En curso' : (e.fechaFin ? formatFecha(e.fechaFin) : '—')}</td>
+                          <td data-label="Nivel" className="px-3 py-2 text-gray-800">{e.nivel ?? '—'}</td>
+                          <td data-label="Institución" className="px-3 py-2 text-gray-800">{e.institucion ?? '—'}</td>
+                          <td data-label="Ciudad" className="px-3 py-2 text-gray-600">{e.ciudad ?? '—'}</td>
+                          <td data-label="Estado" className="px-3 py-2 text-gray-600">{e.enCurso ? 'En curso' : (e.fechaFin ? formatFecha(e.fechaFin) : '—')}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -341,7 +454,7 @@ function ModalResumenEvaluado({ idServicio, nombreEvaluado, onClose }) {
               <section>
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Experiencia laboral</h3>
                 <div className="overflow-x-auto rounded-lg border border-gray-200">
-                  <table className="w-full text-sm">
+                  <table className="table-stack w-full text-sm">
                     <thead className="bg-gray-50 text-gray-500 text-xs">
                       <tr>
                         <th className="px-3 py-2 text-left">Empresa</th>
@@ -354,11 +467,11 @@ function ModalResumenEvaluado({ idServicio, nombreEvaluado, onClose }) {
                     <tbody className="divide-y divide-gray-100">
                       {resumen.experienciaLaboral.map((ex, i) => (
                         <tr key={i}>
-                          <td className="px-3 py-2 text-gray-800">{ex.empresa ?? '—'}</td>
-                          <td className="px-3 py-2 text-gray-800">{ex.cargo ?? '—'}</td>
-                          <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{formatFecha(ex.fechaInicio)}</td>
-                          <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{ex.laboraActualmente ? 'Actual' : formatFecha(ex.fechaFin)}</td>
-                          <td className="px-3 py-2 text-gray-600 max-w-[140px]"><span className="truncate block">{ex.motivoRetiro ?? '—'}</span></td>
+                          <td data-label="Empresa" className="px-3 py-2 text-gray-800">{ex.empresa ?? '—'}</td>
+                          <td data-label="Cargo" className="px-3 py-2 text-gray-800">{ex.cargo ?? '—'}</td>
+                          <td data-label="Inicio" className="px-3 py-2 text-gray-600 whitespace-nowrap">{formatFecha(ex.fechaInicio)}</td>
+                          <td data-label="Fin" className="px-3 py-2 text-gray-600 whitespace-nowrap">{ex.laboraActualmente ? 'Actual' : formatFecha(ex.fechaFin)}</td>
+                          <td data-label="Motivo retiro" className="px-3 py-2 text-gray-600 max-w-[140px]"><span className="truncate block">{ex.motivoRetiro ?? '—'}</span></td>
                         </tr>
                       ))}
                     </tbody>
@@ -910,9 +1023,13 @@ const ICONO_EMAIL = (
 )
 
 /* ─── Sección: ficha del candidato, segmentada e interactiva ─── */
-function SeccionCandidato({ detalle }) {
+function SeccionCandidato({ detalle, onCiudadCorregida }) {
   const [copiado, setCopiado] = useState(null)
   const [resumenAbierto, setResumenAbierto] = useState(false)
+  const [editandoCiudad, setEditandoCiudad] = useState(false)
+  const [nuevaCiudad, setNuevaCiudad] = useState(null)
+  const [guardandoCiudad, setGuardandoCiudad] = useState(false)
+  const [errorCiudad, setErrorCiudad] = useState(null)
 
   const copiar = async (texto, campo) => {
     if (!texto) return
@@ -921,6 +1038,27 @@ function SeccionCandidato({ detalle }) {
       setCopiado(campo)
       setTimeout(() => setCopiado(null), 2000)
     } catch { /* silencioso */ }
+  }
+
+  const abrirEdicionCiudad = () => {
+    setNuevaCiudad(detalle?.idCiudad ?? null)
+    setErrorCiudad(null)
+    setEditandoCiudad(true)
+  }
+
+  const guardarCiudad = async () => {
+    if (!nuevaCiudad) { setErrorCiudad('Selecciona una ciudad.'); return }
+    setGuardandoCiudad(true)
+    setErrorCiudad(null)
+    try {
+      const r = await api.patch(`/gestor/solicitudes/${detalle.idServicio}/ciudad`, { idCiudad: nuevaCiudad })
+      onCiudadCorregida?.(r.data)
+      setEditandoCiudad(false)
+    } catch (err) {
+      setErrorCiudad(err.response?.data?.mensaje ?? 'No se pudo actualizar la ciudad.')
+    } finally {
+      setGuardandoCiudad(false)
+    }
   }
 
   return (
@@ -973,7 +1111,81 @@ function SeccionCandidato({ detalle }) {
           onCopiar={() => copiar(detalle?.emailEvaluado, 'email')}
           icono={ICONO_EMAIL}
         />
+
+        <div className="flex items-center gap-3 py-2 -mx-2 px-2 rounded-lg hover:bg-gray-50/80 transition-colors group">
+          <span className="text-gray-400 group-hover:text-primary-500 flex-shrink-0 transition-colors">📍</span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">Ciudad</p>
+            <p className="text-sm font-medium text-gray-800">{detalle?.nombreCiudad ?? '—'}</p>
+          </div>
+          <button onClick={abrirEdicionCiudad} title="Corregir ciudad" type="button"
+            className="flex-shrink-0 p-1.5 rounded-md opacity-0 group-hover:opacity-100 text-gray-400 hover:text-primary-600 hover:bg-primary-100 transition-all">
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
+            </svg>
+          </button>
+        </div>
       </div>
+
+      {detalle?.historialRecargoCiudad?.length > 0 && (
+        <div className="mt-2 rounded-lg border border-gray-200 px-3 py-2 text-xs">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-gray-700">
+            <span>
+              📍 Recargo ciudad — pagado: <span className="font-semibold text-green-700">{formatearPrecioCOP(detalle.totalPagadoRecargoCiudad)}</span>
+            </span>
+            {detalle.totalPendienteRecargoCiudad !== 0 && (
+              <span className={detalle.totalPendienteRecargoCiudad < 0 ? 'text-green-700' : 'text-red-700'}>
+                {detalle.totalPendienteRecargoCiudad < 0 ? 'crédito: ' : 'pendiente: '}
+                <span className="font-semibold">{formatearPrecioCOP(detalle.totalPendienteRecargoCiudad)}</span>
+              </span>
+            )}
+          </div>
+          <ul className="mt-1.5 space-y-1 border-t border-gray-100 pt-1.5 text-[11px] text-gray-500">
+            {detalle.historialRecargoCiudad.map((m, i) => (
+              <li key={i} className="flex items-center justify-between gap-2">
+                <span>
+                  {m.ciudad}{m.motivo ? ` — ${m.motivo}` : ''} · {new Date(m.fechaGenerado).toLocaleDateString('es-CO')}
+                </span>
+                <span className={`flex-shrink-0 font-medium ${m.monto < 0 ? 'text-green-600' : 'text-gray-700'}`}>
+                  {formatearPrecioCOP(m.monto)}
+                  <span className={`ml-1.5 rounded-full px-1.5 py-0.5 ${m.estado === 'PAGADO' ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
+                    {m.estado}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {editandoCiudad && (
+        <Modal titulo="Corregir ciudad del candidato" subtitulo="Si ya se había cobrado un recargo, se genera un crédito" onClose={() => setEditandoCiudad(false)} ancho="max-w-sm">
+          <div className="px-6 py-5 space-y-4">
+            {errorCiudad && (
+              <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{errorCiudad}</div>
+            )}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Ciudad correcta</label>
+              <CiudadSelect value={nuevaCiudad} onChange={setNuevaCiudad} />
+            </div>
+            <p className="text-xs text-gray-400">
+              Si el recargo de la ciudad anterior ya se había cobrado, se registra como crédito para la
+              siguiente compra del cliente en vez de un reembolso. Si la ciudad nueva también tiene
+              recargo, queda pendiente de cobro.
+            </p>
+          </div>
+          <div className="px-6 pb-5 flex justify-end gap-3">
+            <button type="button" onClick={() => setEditandoCiudad(false)} disabled={guardandoCiudad}
+              className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+              Cancelar
+            </button>
+            <button type="button" onClick={guardarCiudad} disabled={guardandoCiudad}
+              className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50 transition-colors">
+              {guardandoCiudad ? 'Guardando...' : 'Guardar'}
+            </button>
+          </div>
+        </Modal>
+      )}
     </section>
   )
 }
@@ -1141,7 +1353,7 @@ function ModalDetalle({ solicitud, onClose, onToast }) {
               {tab === 'informacion' && (
                 <div className="space-y-5">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
-                    <SeccionCandidato detalle={detalle} />
+                    <SeccionCandidato detalle={detalle} onCiudadCorregida={setDetalle} />
                     <SeccionCliente detalle={detalle} />
                   </div>
 
@@ -1220,12 +1432,15 @@ export default function Solicitudes() {
   const [error, setError]                 = useState(null)
   const [toast, setToast]                 = useState(null)
   const [pagina, setPagina]               = useState(0)
-  const [totalPaginas, setTotalPaginas]   = useState(0)
   const [totalElementos, setTotalElementos] = useState(0)
+  const POR_PAGINA = 10
   const [busqueda, setBusqueda]           = useState('')
   const [cambiandoEstado, setCambiandoEstado] = useState(null)
   const [detalle, setDetalle]             = useState(null)
   const [expandidos, setExpandidos]       = useState(() => new Set())
+  const [conteos, setConteos]             = useState(null)
+  const [cargandoPendientesId, setCargandoPendientesId] = useState(null)
+  const [asignandoProgramadorPara, setAsignandoProgramadorPara] = useState(null)
 
   const toggleExpandir = (idServicio) => {
     setExpandidos(prev => {
@@ -1239,12 +1454,15 @@ export default function Solicitudes() {
   const cargar = useCallback(async (estado, page = 0) => {
     setCargando(true); setError(null)
     try {
-      const params = new URLSearchParams({ page, size: 15 })
+      const params = new URLSearchParams({ page, size: POR_PAGINA })
       if (estado && estado !== 'TODOS') params.append('estado', estado)
-      const r = await api.get(`/gestor/solicitudes?${params}`)
-      setSolicitudes(r.data.content ?? [])
-      setTotalPaginas(r.data.totalPages ?? 0)
-      setTotalElementos(r.data.totalElements ?? 0)
+      const [rSolicitudes, rConteo] = await Promise.all([
+        api.get(`/gestor/solicitudes?${params}`),
+        api.get('/gestor/solicitudes/conteo'),
+      ])
+      setSolicitudes(rSolicitudes.data.content ?? [])
+      setTotalElementos(rSolicitudes.data.totalElements ?? 0)
+      setConteos(rConteo.data)
     } catch { setError('Error al cargar solicitudes.') }
     finally { setCargando(false) }
   }, [])
@@ -1272,6 +1490,30 @@ export default function Solicitudes() {
     setSearchParams(params)
   }
 
+  // Click en la tarjeta activa vuelve a "Todos" — no hay una tarjeta "Todos" aparte.
+  const alternarTarjeta = (estado) => cambiarTab(estadoParam === estado ? 'TODOS' : estado)
+
+  // Trae los subprocesos de poligrafía/visita del servicio (Pendientes o ya Programados — a estos
+  // últimos también se les puede cambiar quién los coordina) y abre el selector de programador
+  // para encargárselos/reasignárselos todos de una vez.
+  const abrirAsignarProgramador = async (idServicio) => {
+    setCargandoPendientesId(idServicio)
+    try {
+      const r = await asignacionService.listar({ idServicio, size: 50 })
+      const elegibles = (r.content ?? []).filter(sp =>
+        sp.rolResponsable !== 'ANALISTA_INTERNO' && (sp.estado === 'PENDIENTE' || sp.estado === 'ASIGNADO'))
+      if (elegibles.length === 0) {
+        setToast({ mensaje: 'No hay subprocesos de poligrafía/visita a los que asignarles programador en este servicio.', tipo: 'error' })
+        return
+      }
+      setAsignandoProgramadorPara(elegibles)
+    } catch (err) {
+      setToast({ mensaje: err.response?.data?.mensaje ?? 'No se pudieron cargar los subprocesos.', tipo: 'error' })
+    } finally {
+      setCargandoPendientesId(null)
+    }
+  }
+
   const solicitudesFiltradas = busqueda.trim()
     ? solicitudes.filter(s =>
         `${s.nombresEvaluado} ${s.apellidosEvaluado}`.toLowerCase().includes(busqueda.toLowerCase()) ||
@@ -1285,7 +1527,17 @@ export default function Solicitudes() {
       <div className="flex items-center justify-between mb-5">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Solicitudes</h2>
-          <p className="text-sm text-gray-500 mt-0.5">{totalElementos} solicitud{totalElementos !== 1 ? 'es' : ''} en total</p>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {totalElementos} solicitud{totalElementos !== 1 ? 'es' : ''} en total
+            {estadoParam !== 'TODOS' && (
+              <>
+                {' · filtrando por '}
+                <span className="font-medium text-gray-600">{estadoParam.replace('_', ' ')}</span>
+                {' — '}
+                <button onClick={() => cambiarTab('TODOS')} className="text-primary-600 hover:underline">ver todas</button>
+              </>
+            )}
+          </p>
         </div>
       </div>
 
@@ -1295,19 +1547,24 @@ export default function Solicitudes() {
         </div>
       )}
 
-      {/* ── Tabs de estado ── */}
-      <div className="flex gap-1 mb-4 overflow-x-auto border-b border-gray-200 pb-0">
-        {ESTADOS.map(e => (
-          <button key={e}
-            onClick={() => cambiarTab(e)}
-            className={`px-3 py-2.5 text-xs font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
-              estadoParam === e
-                ? 'border-primary-600 text-primary-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}>
-            {e === 'TODOS' ? 'Todos' : e.replace('_', ' ')}
-          </button>
-        ))}
+      {/* ── Tarjetas de resumen por estado ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-7 gap-4 mb-4">
+        {TARJETAS_ESTADO.map(t => {
+          const activo = estadoParam === t.estado
+          return (
+            <button key={t.estado} type="button" onClick={() => alternarTarjeta(t.estado)}
+              className={`text-left bg-white rounded-xl border shadow-sm p-4 cursor-pointer hover:shadow-md transition-shadow ${t.border} ${
+                activo ? `${t.bgActivo} ring-2 ${t.ring}` : ''
+              }`}>
+              <div className="flex items-center gap-2 mb-2">
+                <span className={`w-2 h-2 rounded-full ${t.dot}`} />
+                <span className="text-xs font-medium text-gray-500">{t.label}</span>
+              </div>
+              <p className={`text-3xl font-bold ${t.texto}`}>{conteos ? conteos[CAMPO_CONTEO[t.estado]] : '—'}</p>
+              <p className="text-xs text-gray-400 mt-1">{t.desc}</p>
+            </button>
+          )
+        })}
       </div>
 
       {/* ── Buscador ── */}
@@ -1367,18 +1624,37 @@ export default function Solicitudes() {
                     <td className="px-4 py-3"><BolitasSubprocesos subprocesos={s.subprocesos} /></td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <button onClick={() => setDetalle(s)}
-                          className="text-xs font-medium px-3 py-1 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors whitespace-nowrap">
-                          Ver
+                        <button onClick={() => setDetalle(s)} title="Ver"
+                          className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-slate-800 transition-colors">
+                          <IconoOjo />
                         </button>
+                        {(() => {
+                          const { hayAlgunos, todosAsignados } = subprocesosProgramadorDe(s.subprocesos)
+                          if (!hayAlgunos) return null
+                          return (
+                            <button onClick={() => abrirAsignarProgramador(s.idServicio)}
+                              disabled={cargandoPendientesId === s.idServicio}
+                              title={todosAsignados ? 'Programador ya asignado — reasignar' : 'Asignar programador'}
+                              className={`p-1.5 rounded-lg transition-colors disabled:opacity-40 ${
+                                todosAsignados
+                                  ? 'text-green-600 hover:bg-green-50 hover:text-green-800'
+                                  : 'text-cyan-600 hover:bg-cyan-50 hover:text-cyan-800'
+                              }`}>
+                              {cargandoPendientesId === s.idServicio
+                                ? <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                                : (todosAsignados ? <IconoAsignado /> : <IconoEnviar />)}
+                            </button>
+                          )
+                        })()}
                         {(TRANSICIONES_GESTOR[s.estado]?.length ?? 0) > 0 && (
                           <button onClick={() => setCambiandoEstado(s)}
-                            className={`text-xs font-medium px-3 py-1 rounded-full border transition-colors whitespace-nowrap ${
+                            title={s.estado === 'CANCELADO' ? 'Solicitar reversión' : 'Cambiar estado'}
+                            className={`p-1.5 rounded-lg transition-colors ${
                               s.estado === 'CANCELADO'
-                                ? 'border-amber-200 text-amber-600 hover:bg-amber-50'
-                                : 'border-primary-200 text-primary-600 hover:bg-primary-50'
+                                ? 'text-amber-600 hover:bg-amber-50 hover:text-amber-800'
+                                : 'text-primary-600 hover:bg-primary-50 hover:text-primary-800'
                             }`}>
-                            {s.estado === 'CANCELADO' ? 'Solicitar reversión' : 'Cambiar estado'}
+                            <IconoCambioEstado />
                           </button>
                         )}
                       </div>
@@ -1394,24 +1670,15 @@ export default function Solicitudes() {
             </table>
           </div>
         )}
+        {!cargando && solicitudesFiltradas.length > 0 && (
+          <Paginacion
+            pagina={pagina + 1}
+            total={totalElementos}
+            porPagina={POR_PAGINA}
+            onChange={(p) => { setPagina(p - 1); cargar(estadoParam, p - 1) }}
+          />
+        )}
       </div>
-
-      {/* ── Paginación ── */}
-      {totalPaginas > 1 && (
-        <div className="flex items-center justify-center gap-2 mt-4">
-          <button onClick={() => { setPagina(p => p - 1); cargar(estadoParam, pagina - 1) }}
-            disabled={pagina === 0}
-            className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
-            Anterior
-          </button>
-          <span className="text-xs text-gray-500">{pagina + 1} / {totalPaginas}</span>
-          <button onClick={() => { setPagina(p => p + 1); cargar(estadoParam, pagina + 1) }}
-            disabled={pagina >= totalPaginas - 1}
-            className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
-            Siguiente
-          </button>
-        </div>
-      )}
 
       {cambiandoEstado && (
         <ModalCambioEstado
@@ -1425,6 +1692,15 @@ export default function Solicitudes() {
         <ModalDetalle
           solicitud={detalle}
           onClose={() => setDetalle(null)}
+          onToast={(mensaje, tipo = 'exito') => setToast({ mensaje, tipo: tipo === 'error' ? 'error' : 'exito' })}
+        />
+      )}
+
+      {asignandoProgramadorPara && (
+        <ModalAsignarProgramador
+          subprocesos={asignandoProgramadorPara}
+          onClose={() => setAsignandoProgramadorPara(null)}
+          onGuardado={() => { setAsignandoProgramadorPara(null); cargar(estadoParam, pagina) }}
           onToast={(mensaje, tipo = 'exito') => setToast({ mensaje, tipo: tipo === 'error' ? 'error' : 'exito' })}
         />
       )}

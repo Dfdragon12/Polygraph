@@ -37,10 +37,51 @@
   }
 }
 
+/* ── Tablas que se apilan en tarjetas en pantallas angostas (evita el scroll horizontal) ──
+   Uso: agregar la clase "table-stack" a un <table>, y data-label="{texto del <th>}" a cada
+   <td> del <tbody> (mismo texto que su columna). Las celdas sin data-label (p. ej. una fila de
+   "sin resultados" con colSpan, o una columna de solo íconos) se alinean a la izquierda sin
+   prefijo. El thead se oculta porque el label de cada celda ya cumple ese rol. */
+@media (max-width: 767px) {
+  .table-stack thead { display: none; }
+  .table-stack, .table-stack tbody, .table-stack tr, .table-stack td { display: block; width: 100%; }
+  .table-stack tr {
+    border: 1px solid #f3f4f6;
+    border-radius: 0.75rem;
+    padding: 0.625rem 0.875rem;
+    margin-bottom: 0.625rem;
+  }
+  .table-stack tbody tr:last-child { margin-bottom: 0; }
+  .table-stack td {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.3rem 0 !important;
+    border: none !important;
+    text-align: right;
+  }
+  .table-stack td[data-label]::before {
+    content: attr(data-label);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: #9ca3af;
+    text-align: left;
+    flex-shrink: 0;
+  }
+  .table-stack td:not([data-label]) { justify-content: flex-start; text-align: left; }
+}
+
 @layer utilities {
-  /* Scrollbar delgada (WebKit + Firefox) */
+  /* Scrollbar delgada (WebKit + Firefox) — invisible hasta que pasas el mouse por encima del
+     contenedor (como las barras "overlay" de macOS), para que no se vea una barra gris pegada al
+     lado derecho todo el tiempo en pantallas con muchos campos/filas. Sigue siendo 100% funcional
+     con el mouse quieto o en móvil (el navegador la muestra igual mientras se hace scroll). */
   .scrollbar-thin {
     scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+  .scrollbar-thin:hover {
     scrollbar-color: #e5e7eb transparent;
   }
   .scrollbar-thin::-webkit-scrollbar {
@@ -51,8 +92,11 @@
     background: transparent;
   }
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    background: #e5e7eb;
+    background: transparent;
     border-radius: 2px;
+  }
+  .scrollbar-thin:hover::-webkit-scrollbar-thumb {
+    background: #e5e7eb;
   }
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
     background: #d1d5db;

@@ -1,21 +1,34 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import api from '../../services/api'
 import Toast from '../../components/Toast'
 import { Modal } from '../../components/ui/Modal'
+import Paginacion from '../../components/ui/Paginacion'
 import CiudadSelect from '../../components/CiudadSelect'
 import ModalDocumentosCliente from '../../components/ModalDocumentosCliente'
 
 /* ─── Helpers ─── */
 
-/** El backend siempre manda mensaje="Errores de validación" para cualquier fallo de @Valid — el
- * detalle real (qué campo y por qué) viaja aparte en `errores: {campo: mensaje}`. */
-function mensajeErrorValidacion(err, fallback = 'Error al guardar.') {
-  const data = err.response?.data
-  if (data?.errores && typeof data.errores === 'object' && Object.keys(data.errores).length) {
-    return Object.entries(data.errores).map(([campo, msg]) => `${campo}: ${msg}`).join(' · ')
-  }
-  return data?.mensaje ?? data?.message ?? fallback
-}
+// Tarjetas de filtro — el color de cada campo va literal (no interpolado) para que Tailwind lo
+// detecte en el build, mismo criterio que TARJETAS_ESTADO en Solicitudes / ROLES_FILTRO en
+// UsuariosInternos.
+const ESTADO_FILTRO = [
+  { value: 'activos',   label: 'Activos',   corto: 'AC',
+    border: 'border-green-200', badge: 'bg-green-500', texto: 'text-green-600', bgActivo: 'bg-green-50/70', ring: 'ring-green-300' },
+  { value: 'inactivos', label: 'Inactivos', corto: 'IN',
+    border: 'border-red-200',   badge: 'bg-red-500',   texto: 'text-red-600',   bgActivo: 'bg-red-50/70',   ring: 'ring-red-300' },
+]
+
+const TIPO_FILTRO = [
+  { value: 'natural',  label: 'Persona Natural',  corto: 'PN',
+    border: 'border-indigo-200', badge: 'bg-indigo-500', texto: 'text-indigo-600', bgActivo: 'bg-indigo-50/70', ring: 'ring-indigo-300' },
+  { value: 'juridica', label: 'Persona Jurídica', corto: 'PJ',
+    border: 'border-teal-200',   badge: 'bg-teal-500',   texto: 'text-teal-600',   bgActivo: 'bg-teal-50/70',   ring: 'ring-teal-300' },
+  { value: 'prepago',  label: 'Prepago',          corto: 'PR',
+    border: 'border-blue-200',   badge: 'bg-blue-500',   texto: 'text-blue-600',   bgActivo: 'bg-blue-50/70',   ring: 'ring-blue-300' },
+  { value: 'pospago',  label: 'Pospago',          corto: 'PO',
+    border: 'border-purple-200', badge: 'bg-purple-500', texto: 'text-purple-600', bgActivo: 'bg-purple-50/70', ring: 'ring-purple-300' },
+]
 
 function Badge({ activo }) {
   return (
@@ -26,12 +39,6 @@ function Badge({ activo }) {
     </span>
   )
 }
-
-const OPCIONES_MORA = [
-  { valor: 'NORMAL',     etiqueta: 'Al día' },
-  { valor: 'EN_MORA',    etiqueta: 'En mora' },
-  { valor: 'SUSPENDIDO', etiqueta: 'Suspendido' },
-]
 
 function BadgeMora({ mora }) {
   const cfg = {
@@ -116,6 +123,20 @@ function IconPower() {
     </svg>
   )
 }
+function IconDocumento() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+    </svg>
+  )
+}
+function IconRecibo() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3M3.75 6h16.5a1.5 1.5 0 011.5 1.5v9a1.5 1.5 0 01-1.5 1.5H3.75a1.5 1.5 0 01-1.5-1.5v-9a1.5 1.5 0 011.5-1.5z" />
+    </svg>
+  )
+}
 function IconUsuarios({ className = 'h-5 w-5' }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -150,41 +171,6 @@ function Avatar({ nombre, apellido, rol, size = 'h-11 w-11 text-sm' }) {
   return (
     <div className={`${size} rounded-full bg-gradient-to-br ${gradient} text-white font-semibold flex items-center justify-center flex-shrink-0 shadow-sm`}>
       {iniciales(nombre, apellido)}
-    </div>
-  )
-}
-
-/* ─── Paginación ─── */
-function Paginacion({ pagina, total, porPagina, onChange }) {
-  const totalPags = Math.ceil(total / porPagina)
-  if (totalPags <= 1) return null
-  const inicio = (pagina - 1) * porPagina + 1
-  const fin    = Math.min(pagina * porPagina, total)
-  const nums = []
-  for (let i = Math.max(1, pagina - 2); i <= Math.min(totalPags, pagina + 2); i++) nums.push(i)
-  return (
-    <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
-      <span className="text-xs text-gray-400">{inicio}–{fin} de {total}</span>
-      <div className="flex items-center gap-1">
-        <button onClick={() => onChange(pagina - 1)} disabled={pagina === 1}
-          className="px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-          ← Anterior
-        </button>
-        {nums[0] > 1 && <span className="text-xs text-gray-400 px-1">…</span>}
-        {nums.map(p => (
-          <button key={p} onClick={() => onChange(p)}
-            className={`w-8 h-8 text-xs rounded-lg border transition-colors ${
-              p === pagina ? 'bg-primary-600 border-primary-600 text-white font-semibold' : 'border-gray-200 text-gray-500 hover:bg-gray-50'
-            }`}>
-            {p}
-          </button>
-        ))}
-        {nums[nums.length - 1] < totalPags && <span className="text-xs text-gray-400 px-1">…</span>}
-        <button onClick={() => onChange(pagina + 1)} disabled={pagina === totalPags}
-          className="px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-          Siguiente →
-        </button>
-      </div>
     </div>
   )
 }
@@ -305,90 +291,6 @@ function Campo({ label, name, value, onChange, type = 'text', required = false, 
       <input name={name} type={type} value={value} onChange={onChange} required={required} placeholder={placeholder}
         className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
     </div>
-  )
-}
-
-/** Asignar/ajustar el cupo de crédito de un cliente pospago — no hay facturación automática todavía,
- * así que el crédito disponible lo administra el admin manualmente hasta que exista ese módulo. */
-function ModalCredito({ cliente, onClose, onGuardado }) {
-  const p = cliente.pospago
-  const [form, setForm] = useState({
-    limiteCredito:      p?.limiteCredito != null ? String(p.limiteCredito) : '',
-    creditoDisponible:  p?.creditoDisponible != null ? String(p.creditoDisponible) : '',
-    estadoMora:         p?.estadoMora ?? 'NORMAL',
-    requiereAprobacion: p?.requiereAprobacion ?? false,
-  })
-  const [guardando, setGuardando] = useState(false)
-  const [error, setError] = useState(null)
-
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    setGuardando(true); setError(null)
-    try {
-      const payload = {
-        limiteCredito:      form.limiteCredito !== '' ? Number(form.limiteCredito) : null,
-        creditoDisponible:  form.creditoDisponible !== '' ? Number(form.creditoDisponible) : null,
-        estadoMora:         form.estadoMora,
-        requiereAprobacion: form.requiereAprobacion,
-      }
-      await api.patch(`/clientes/${cliente.idCliente}/pospago`, payload)
-      onGuardado()
-      onClose()
-    } catch (err) {
-      setError(mensajeErrorValidacion(err, 'Error al actualizar el crédito.'))
-    } finally { setGuardando(false) }
-  }
-
-  return (
-    <Modal titulo="Crédito pospago" subtitulo={cliente.nombreDisplay} onClose={onClose} ancho="max-w-md">
-      <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{error}</div>
-        )}
-        <div className="bg-amber-50 border border-amber-200 text-amber-700 text-xs px-3 py-2 rounded-lg">
-          Todavía no hay facturación automática — el crédito disponible se ajusta manualmente aquí
-          hasta que ese módulo exista.
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <Campo label="Límite de crédito (COP)" name="limiteCredito" type="number" value={form.limiteCredito}
-            onChange={e => setForm(p2 => ({ ...p2, limiteCredito: e.target.value }))} placeholder="Ej: 5000000" />
-          <Campo label="Crédito disponible (COP)" name="creditoDisponible" type="number" value={form.creditoDisponible}
-            onChange={e => setForm(p2 => ({ ...p2, creditoDisponible: e.target.value }))} placeholder="Ej: 5000000" />
-        </div>
-
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Estado de mora</label>
-          <select value={form.estadoMora} onChange={e => setForm(p2 => ({ ...p2, estadoMora: e.target.value }))}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
-            {OPCIONES_MORA.map(o => (
-              <option key={o.valor} value={o.valor}>{o.etiqueta}</option>
-            ))}
-          </select>
-          {form.estadoMora !== 'NORMAL' && (
-            <p className="text-xs text-amber-600 mt-1">
-              Mientras esté en este estado, el cliente no podrá crear nuevas solicitudes.
-            </p>
-          )}
-        </div>
-
-        <label className="flex items-center gap-2 text-sm text-gray-700">
-          <input type="checkbox" checked={form.requiereAprobacion}
-            onChange={e => setForm(p2 => ({ ...p2, requiereAprobacion: e.target.checked }))}
-            className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
-          Requiere aprobación de estudio de crédito
-        </label>
-
-        <div className="flex justify-end gap-3 pt-2">
-          <button type="button" onClick={onClose}
-            className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancelar</button>
-          <button type="submit" disabled={guardando}
-            className="bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white text-sm font-medium px-5 py-2 rounded-lg transition-colors">
-            {guardando ? 'Guardando...' : 'Guardar'}
-          </button>
-        </div>
-      </form>
-    </Modal>
   )
 }
 
@@ -562,6 +464,20 @@ function ModalUsuarios({ cliente, onClose, onCambio }) {
   const [editar, setEditar] = useState(null)
   const [accionando, setAccionando] = useState(null)
   const [error, setError] = useState(null)
+  const [busqueda, setBusqueda] = useState('')
+
+  // Mismo criterio de búsqueda que Equipo Polygraph (UsuariosInternos): varias palabras, todas
+  // deben aparecer, insensible a mayúsculas — antes esta lista no tenía ningún buscador, quedaba
+  // inconsistente con el resto de listas de usuarios de la plataforma.
+  const usuariosFiltrados = useMemo(() => {
+    const terminos = busqueda.trim().toLowerCase().split(/\s+/).filter(Boolean)
+    if (terminos.length === 0) return usuarios
+    return usuarios.filter(u => {
+      const texto = [u.nombre, u.apellido, u.email, ETIQUETA_ROL_CLIENTE[u.rol] ?? u.rol]
+        .filter(Boolean).join(' ').toLowerCase()
+      return terminos.every(t => texto.includes(t))
+    })
+  }, [usuarios, busqueda])
 
   const toggleActivo = async (u) => {
     setAccionando(u.idUsuario); setError(null)
@@ -594,11 +510,23 @@ function ModalUsuarios({ cliente, onClose, onCambio }) {
         </div>
 
         {/* Barra de acción */}
-        <div className="px-6 py-3 border-b border-gray-100 flex-shrink-0 bg-gray-50/60">
+        <div className="px-6 py-3 border-b border-gray-100 flex-shrink-0 bg-gray-50/60 space-y-2.5">
           <button onClick={() => setCrear(true)}
             className="w-full inline-flex items-center justify-center gap-1.5 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium px-4 py-2 rounded-xl transition-all hover:shadow-md active:scale-[0.98]">
             <IconPlus /> Nuevo usuario
           </button>
+          {usuarios.length > 0 && (
+            <div>
+              <input type="search" value={busqueda} onChange={e => setBusqueda(e.target.value)}
+                placeholder="Buscar por nombre, email o rol…"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white" />
+              {busqueda.trim() && (
+                <p className="text-xs text-gray-400 mt-1.5">
+                  {usuariosFiltrados.length} resultado{usuariosFiltrados.length !== 1 ? 's' : ''}
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="px-6 py-4 overflow-y-auto flex-1 scrollbar-thin">
@@ -617,9 +545,14 @@ function ModalUsuarios({ cliente, onClose, onCambio }) {
                 <IconPlus /> Crear primer usuario
               </button>
             </div>
+          ) : usuariosFiltrados.length === 0 ? (
+            <div className="flex flex-col items-center text-center py-10 text-gray-400">
+              <p className="text-sm text-gray-500">No encontramos usuarios que coincidan con "{busqueda}".</p>
+              <button onClick={() => setBusqueda('')} className="mt-2 text-xs text-primary-600 hover:underline">Limpiar búsqueda</button>
+            </div>
           ) : (
             <div className="space-y-2.5">
-              {usuarios.map(u => (
+              {usuariosFiltrados.map(u => (
                 <div key={u.idUsuario}
                   className={`group border rounded-xl px-4 py-3 transition-all duration-150 hover:shadow-md hover:-translate-y-0.5 ${
                     u.activo ? 'border-gray-100 bg-white' : 'border-gray-100 bg-gray-50/70'
@@ -710,11 +643,12 @@ export default function Clientes() {
   const [editando, setEditando] = useState(null)
   const [documentosDe, setDocumentosDe] = useState(null)
   const [usuariosDe, setUsuariosDe] = useState(null)
-  const [editandoCredito, setEditandoCredito] = useState(null)
 
-  const [busqueda, setBusqueda] = useState('')
-  const [filtroEstado, setFiltroEstado] = useState('todos')
-  const [filtroTipo, setFiltroTipo] = useState('todos')
+  // Prefiere el resultado del buscador global (Ctrl+K) — llega como /admin/clientes?q=nombre.
+  const [searchParams] = useSearchParams()
+  const [busqueda, setBusqueda] = useState(searchParams.get('q') ?? '')
+  const [filtroEstado, setFiltroEstado] = useState('')
+  const [filtroTipo, setFiltroTipo] = useState('')
   const [ordenCol, setOrdenCol] = useState(null)
   const [ordenDir, setOrdenDir] = useState('asc')
   const [pagina, setPagina] = useState(1)
@@ -748,6 +682,9 @@ export default function Clientes() {
     if (ordenCol === col) setOrdenDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setOrdenCol(col); setOrdenDir('asc') }
   }
+
+  const alternarEstado = (valor) => setFiltroEstado(prev => prev === valor ? '' : valor)
+  const alternarTipo = (valor) => setFiltroTipo(prev => prev === valor ? '' : valor)
 
   const clientesFiltrados = useMemo(() => {
     let lista = clientes
@@ -783,8 +720,16 @@ export default function Clientes() {
     return lista
   }, [clientes, filtroEstado, filtroTipo, busqueda, ordenCol, ordenDir])
 
-  const activos   = clientes.filter(c => c.estado === 'ACTIVO').length
-  const inactivos = clientes.filter(c => c.estado !== 'ACTIVO').length
+  const conteoEstado = {
+    activos:   clientes.filter(c => c.estado === 'ACTIVO').length,
+    inactivos: clientes.filter(c => c.estado !== 'ACTIVO').length,
+  }
+  const conteoTipo = {
+    natural:  clientes.filter(c => c.tipoPersona === 'NATURAL').length,
+    juridica: clientes.filter(c => c.tipoPersona === 'JURIDICA').length,
+    prepago:  clientes.filter(c => c.tipoCliente === 'PREPAGO').length,
+    pospago:  clientes.filter(c => c.tipoCliente === 'POSPAGO').length,
+  }
 
   const clientesVisibles = clientesFiltrados.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA)
 
@@ -814,43 +759,67 @@ export default function Clientes() {
         </div>
       )}
 
-      {/* Filtros */}
+      {/* Tarjetas de filtro por estado y tipo — clic en la activa vuelve a "Todos" (no hay
+          tarjeta aparte). Son dos grupos independientes: se pueden combinar (ej. Activos + Prepago). */}
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-6 gap-3 mb-2">
+        {ESTADO_FILTRO.map(f => {
+          const activo = filtroEstado === f.value
+          return (
+            <button key={f.value} type="button" onClick={() => alternarEstado(f.value)}
+              className={`text-left bg-white rounded-xl border shadow-sm p-3.5 cursor-pointer hover:shadow-md transition-shadow ${f.border} ${
+                activo ? `${f.bgActivo} ring-2 ${f.ring}` : ''
+              }`}>
+              <div className="flex items-center gap-2 mb-2.5">
+                <span className={`w-7 h-7 rounded-full ${f.badge} text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0`}>
+                  {f.corto}
+                </span>
+                <span className="text-xs font-medium text-gray-600 leading-tight">{f.label}</span>
+              </div>
+              <p className={`text-2xl font-bold ${f.texto}`}>{conteoEstado[f.value] ?? 0}</p>
+            </button>
+          )
+        })}
+        {TIPO_FILTRO.map(f => {
+          const activo = filtroTipo === f.value
+          return (
+            <button key={f.value} type="button" onClick={() => alternarTipo(f.value)}
+              className={`text-left bg-white rounded-xl border shadow-sm p-3.5 cursor-pointer hover:shadow-md transition-shadow ${f.border} ${
+                activo ? `${f.bgActivo} ring-2 ${f.ring}` : ''
+              }`}>
+              <div className="flex items-center gap-2 mb-2.5">
+                <span className={`w-7 h-7 rounded-full ${f.badge} text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0`}>
+                  {f.corto}
+                </span>
+                <span className="text-xs font-medium text-gray-600 leading-tight">{f.label}</span>
+              </div>
+              <p className={`text-2xl font-bold ${f.texto}`}>{conteoTipo[f.value] ?? 0}</p>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Buscador */}
       <div className="flex flex-wrap items-center gap-3 mb-3">
         <input
           type="search" value={busqueda} onChange={e => setBusqueda(e.target.value)}
           placeholder="Buscar por nombre, email, NIT…"
           className="flex-1 min-w-[200px] max-w-xs border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
         />
-
-        {/* Estado */}
-        <div className="flex gap-1">
-          {[
-            { k: 'todos',    l: 'Todos',    n: clientes.length },
-            { k: 'activos',  l: 'Activos',  n: activos         },
-            { k: 'inactivos',l: 'Inactivos',n: inactivos       },
-          ].map(f => (
-            <button key={f.k} onClick={() => setFiltroEstado(f.k)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                filtroEstado === f.k
-                  ? f.k === 'inactivos' ? 'bg-red-100 text-red-700' : f.k === 'activos' ? 'bg-green-100 text-green-700' : 'bg-primary-100 text-primary-700'
-                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-              }`}>
-              {f.l} <span className="ml-1 opacity-70">{f.n}</span>
-            </button>
-          ))}
-        </div>
-
-        {/* Tipo */}
-        <select value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)}
-          className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs text-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
-          <option value="todos">Todos los tipos</option>
-          <option value="natural">Persona natural</option>
-          <option value="juridica">Persona jurídica</option>
-          <option value="prepago">Prepago</option>
-          <option value="pospago">Pospago</option>
-        </select>
-
-        <span className="text-xs text-gray-400">{clientesFiltrados.length} resultado{clientesFiltrados.length !== 1 ? 's' : ''}</span>
+        <span className="text-xs text-gray-400">
+          {clientesFiltrados.length} resultado{clientesFiltrados.length !== 1 ? 's' : ''}
+          {(filtroEstado || filtroTipo) && (
+            <>
+              {' · filtrando por '}
+              <span className="font-medium text-gray-600">
+                {[filtroEstado && ESTADO_FILTRO.find(f => f.value === filtroEstado)?.label,
+                  filtroTipo && TIPO_FILTRO.find(f => f.value === filtroTipo)?.label]
+                  .filter(Boolean).join(' + ')}
+              </span>
+              {' — '}
+              <button onClick={() => { setFiltroEstado(''); setFiltroTipo('') }} className="text-primary-600 hover:underline">ver todos</button>
+            </>
+          )}
+        </span>
       </div>
 
       {/* Tabla */}
@@ -895,12 +864,6 @@ export default function Clientes() {
                         {c.pospago?.estadoMora && c.pospago.estadoMora !== 'NORMAL' && (
                           <BadgeMora mora={c.pospago.estadoMora} />
                         )}
-                        {c.tipoCliente === 'POSPAGO' && (
-                          <button onClick={() => setEditandoCredito(c)}
-                            className="text-[10px] font-medium text-primary-600 hover:text-primary-800 hover:underline text-left w-fit">
-                            {c.pospago ? 'Editar crédito' : 'Asignar crédito'}
-                          </button>
-                        )}
                       </div>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500">{c.telefono ?? '—'}</td>
@@ -931,22 +894,27 @@ export default function Clientes() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5 flex-nowrap">
-                        <button onClick={() => setDocumentosDe(c)}
-                          className="text-xs font-medium px-2.5 py-1 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors whitespace-nowrap">
-                          Documentos
+                        <Link to={`/admin/facturacion/clientes/${c.idCliente}`} title="Facturación"
+                          className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-slate-800 transition-colors">
+                          <IconRecibo />
+                        </Link>
+                        <button onClick={() => setDocumentosDe(c)} title="Documentos"
+                          className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-slate-800 transition-colors">
+                          <IconDocumento />
                         </button>
-                        <button onClick={() => setEditando(c)}
-                          className="text-xs font-medium px-2.5 py-1 rounded-full border border-primary-200 text-primary-600 hover:bg-primary-50 transition-colors whitespace-nowrap">
-                          Editar
+                        <button onClick={() => setEditando(c)} title="Editar"
+                          className="p-1.5 rounded-lg text-primary-600 hover:bg-primary-50 hover:text-primary-800 transition-colors">
+                          <IconLapiz />
                         </button>
                         <button
                           onClick={() => cambiarEstado(c, c.estado !== 'ACTIVO')}
-                          className={`text-xs font-medium px-2.5 py-1 rounded-full border transition-colors whitespace-nowrap ${
+                          title={c.estado === 'ACTIVO' ? 'Desactivar' : 'Activar'}
+                          className={`p-1.5 rounded-lg transition-colors ${
                             c.estado === 'ACTIVO'
-                              ? 'border-red-200 text-red-600 hover:bg-red-50'
-                              : 'border-green-200 text-green-700 hover:bg-green-50'
+                              ? 'text-red-600 hover:bg-red-50 hover:text-red-800'
+                              : 'text-green-700 hover:bg-green-50 hover:text-green-900'
                           }`}>
-                          {c.estado === 'ACTIVO' ? 'Desactivar' : 'Activar'}
+                          <IconPower />
                         </button>
                       </div>
                     </td>
@@ -969,14 +937,6 @@ export default function Clientes() {
           cliente={editando}
           onClose={() => setEditando(null)}
           onGuardado={() => { cargar(); mostrarToast('Cliente actualizado correctamente') }}
-        />
-      )}
-
-      {editandoCredito && (
-        <ModalCredito
-          cliente={editandoCredito}
-          onClose={() => setEditandoCredito(null)}
-          onGuardado={() => { cargar(); mostrarToast('Crédito actualizado correctamente') }}
         />
       )}
 

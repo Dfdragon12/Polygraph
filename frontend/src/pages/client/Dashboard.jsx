@@ -2,7 +2,11 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import dashboardService from '../../services/dashboardService'
+import pospagoService from '../../services/pospagoService'
 import ServiceStatusBadge from '../../components/ServiceStatusBadge'
+
+const formatearCOP = (valor) =>
+  new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(valor ?? 0)
 
 function iniciales(nombre) {
   return (nombre?.[0] ?? '?').toUpperCase()
@@ -26,6 +30,11 @@ const ICONO_FINALIZADOS = (
 const ICONO_BOLSA = (
   <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M20 7h-3V6a4 4 0 00-8 0v1H6a1 1 0 00-1 1v11a2 2 0 002 2h10a2 2 0 002-2V8a1 1 0 00-1-1zM9 6a3 3 0 016 0v1H9V6zm1 6a1 1 0 11-2 0 1 1 0 012 0zm6 0a1 1 0 11-2 0 1 1 0 012 0z" />
+  </svg>
+)
+const ICONO_CREDITO = (
+  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3M3.75 6h16.5a1.5 1.5 0 011.5 1.5v9a1.5 1.5 0 01-1.5 1.5H3.75a1.5 1.5 0 01-1.5-1.5v-9a1.5 1.5 0 011.5-1.5z" />
   </svg>
 )
 const ICONO_CARRITO = (
@@ -57,23 +66,29 @@ function KpiCard({ titulo, valor, subtitulo, color, icono }) {
 export default function Dashboard() {
   const { usuario } = useAuth()
   const navigate = useNavigate()
+  const esPospago = usuario?.tipoCliente === 'POSPAGO'
   const [datos, setDatos] = useState(null)
   const [bolsa, setBolsa] = useState(null)
+  const [credito, setCredito] = useState(null)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
 
   useEffect(() => {
+    // Pospago no compra saldo por adelantado — no tiene bolsa, tiene cupo de crédito.
     Promise.all([
       dashboardService.obtenerDashboard(),
-      dashboardService.obtenerBolsaServicios().catch(() => []),
+      esPospago
+        ? pospagoService.obtenerEstadoCuenta().catch(() => null)
+        : dashboardService.obtenerBolsaServicios().catch(() => []),
     ])
-      .then(([dashData, bolsaData]) => {
+      .then(([dashData, segundoDato]) => {
         setDatos(dashData)
-        setBolsa(Array.isArray(bolsaData) ? bolsaData : [])
+        if (esPospago) setCredito(segundoDato)
+        else setBolsa(Array.isArray(segundoDato) ? segundoDato : [])
       })
       .catch(() => setError('No se pudo cargar el dashboard. Intenta nuevamente.'))
       .finally(() => setCargando(false))
-  }, [])
+  }, [esPospago])
 
   if (cargando) {
     return (
@@ -94,6 +109,10 @@ export default function Dashboard() {
   const totalBolsa = bolsa?.reduce((acc, b) => acc + (b.cantidad || 0), 0) ?? 0
   const disponiblesBolsa = datos?.serviciosDisponibles ?? 0
   const pctBolsa = totalBolsa > 0 ? Math.round((disponiblesBolsa / totalBolsa) * 100) : 0
+
+  const limiteCredito = credito?.limiteCredito ?? 0
+  const creditoDisponible = credito?.creditoDisponible ?? 0
+  const pctCreditoUsado = limiteCredito > 0 ? Math.round(((limiteCredito - creditoDisponible) / limiteCredito) * 100) : 0
 
   return (
     <div className="space-y-6">
@@ -140,33 +159,67 @@ export default function Dashboard() {
           color="bg-green-50 text-green-600"
           icono={ICONO_FINALIZADOS}
         />
-        <KpiCard
-          titulo="Disponibles en bolsa"
-          valor={disponiblesBolsa}
-          subtitulo={totalBolsa > 0 ? `De ${totalBolsa} comprados` : 'Bolsa prepago'}
-          color="bg-purple-50 text-purple-600"
-          icono={ICONO_BOLSA}
-        />
+        {esPospago ? (
+          <KpiCard
+            titulo="Cupo de crédito"
+            valor={formatearCOP(creditoDisponible)}
+            subtitulo={limiteCredito > 0 ? `De ${formatearCOP(limiteCredito)} totales` : 'Disponible'}
+            color="bg-purple-50 text-purple-600"
+            icono={ICONO_CREDITO}
+          />
+        ) : (
+          <KpiCard
+            titulo="Disponibles en bolsa"
+            valor={disponiblesBolsa}
+            subtitulo={totalBolsa > 0 ? `De ${totalBolsa} comprados` : 'Bolsa prepago'}
+            color="bg-purple-50 text-purple-600"
+            icono={ICONO_BOLSA}
+          />
+        )}
       </div>
 
-      {/* Indicador bolsa */}
+      {/* Indicador bolsa / cupo de crédito */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-5 py-4">
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="w-10 h-10 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center flex-shrink-0">
-            {ICONO_CARRITO}
+        {esPospago ? (
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="w-10 h-10 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center flex-shrink-0">
+              {ICONO_CREDITO}
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm text-gray-700">
+                Tienes <strong className="text-primary-700">{formatearCOP(creditoDisponible)}</strong> de cupo disponible
+                {limiteCredito > 0 ? ` de ${formatearCOP(limiteCredito)} totales` : ''}
+              </p>
+            </div>
+            <Link to="/cliente/pospago"
+              className="ml-auto text-xs font-semibold text-primary-600 hover:text-primary-800 border border-primary-200 px-3 py-1.5 rounded-lg hover:bg-primary-50 transition-colors whitespace-nowrap">
+              Ver mi crédito →
+            </Link>
           </div>
-          <div className="min-w-0">
-            <p className="text-sm text-gray-700">
-              Tienes <strong className="text-primary-700">{disponiblesBolsa}</strong> servicio{disponiblesBolsa !== 1 ? 's' : ''} disponible{disponiblesBolsa !== 1 ? 's' : ''}
-              {totalBolsa > 0 ? ` de ${totalBolsa} comprados` : ' en tu bolsa prepago'}
-            </p>
+        ) : (
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="w-10 h-10 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center flex-shrink-0">
+              {ICONO_CARRITO}
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm text-gray-700">
+                Tienes <strong className="text-primary-700">{disponiblesBolsa}</strong> servicio{disponiblesBolsa !== 1 ? 's' : ''} disponible{disponiblesBolsa !== 1 ? 's' : ''}
+                {totalBolsa > 0 ? ` de ${totalBolsa} comprados` : ' en tu bolsa prepago'}
+              </p>
+            </div>
+            <Link to="/cliente/comprar-servicios"
+              className="ml-auto text-xs font-semibold text-primary-600 hover:text-primary-800 border border-primary-200 px-3 py-1.5 rounded-lg hover:bg-primary-50 transition-colors whitespace-nowrap">
+              Comprar más →
+            </Link>
           </div>
-          <Link to="/cliente/comprar-servicios"
-            className="ml-auto text-xs font-semibold text-primary-600 hover:text-primary-800 border border-primary-200 px-3 py-1.5 rounded-lg hover:bg-primary-50 transition-colors whitespace-nowrap">
-            Comprar más →
-          </Link>
-        </div>
-        {totalBolsa > 0 && (
+        )}
+        {esPospago ? (
+          limiteCredito > 0 && (
+            <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden mt-3">
+              <div className="h-full bg-primary-500 rounded-full transition-all duration-500" style={{ width: `${pctCreditoUsado}%` }} />
+            </div>
+          )
+        ) : totalBolsa > 0 && (
           <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden mt-3">
             <div className="h-full bg-primary-500 rounded-full transition-all duration-500" style={{ width: `${pctBolsa}%` }} />
           </div>

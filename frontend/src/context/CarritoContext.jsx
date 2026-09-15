@@ -8,7 +8,9 @@ const claveStorage = (idUsuario) => idUsuario ? `carrito-cliente-${idUsuario}` :
 
 export function CarritoProvider({ children }) {
   const { usuario } = useAuth()
-  const idUsuario = usuario?.idUsuario ?? null
+  // El objeto de sesión (login) trae "id", no "idUsuario" (ese nombre solo lo usan las entidades
+  // completas en otras pantallas) — con el nombre equivocado esto nunca guardaba nada.
+  const idUsuario = usuario?.id ?? null
   const [items, setItems] = useState([])
   // Evita que, justo al cambiar de usuario, el carrito que se acaba de cargar se sobreescriba
   // con el del usuario anterior antes de que el nuevo estado termine de aplicarse.

@@ -17,5 +17,5 @@ const SECCIONES = [
 ]
 
 export default function PoligrafistLayout() {
-  return <InternalLayout secciones={SECCIONES} titulo="Portal Poligrafista" />
+  return <InternalLayout secciones={SECCIONES} titulo="Portal Poligrafista" busquedaEntidades />
 }

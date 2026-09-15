@@ -1,5 +1,23 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import api from '../services/api'
+import { useAuth } from '../hooks/useAuth'
+
+// A qué portal pertenece el formulario de un servicio, según el rol de quien está viendo la
+// notificación — GESTOR y PROGRAMADOR son los únicos que reciben FORMULARIO_ACTUALIZADO (ver
+// FormularioService.notificarCambioFormulario en el backend), cada uno con su propia ruta.
+const PREFIJO_FORMULARIO_POR_ROL = { GESTOR: '/gestor', PROGRAMADOR: '/programador' }
+
+// Adónde llevar al usuario al hacer clic en una notificación, según su tipo. Solo se resuelven
+// los tipos con una pantalla clara a la que aterrizar — el resto solo se marca como leída.
+const RUTA_POR_TIPO = {
+  PROGRAMAR_ASIGNACION: () => '/programador/agenda',
+  NUEVA_SOLICITUD:      (n) => n.referenciaId ? `/gestor/solicitudes?id=${n.referenciaId}` : '/gestor/solicitudes',
+  FORMULARIO_ACTUALIZADO: (n, usuario) => {
+    const prefijo = PREFIJO_FORMULARIO_POR_ROL[usuario?.rol]
+    return n.referenciaId && prefijo ? `${prefijo}/formulario/${n.referenciaId}` : null
+  },
+}
 
 const TIPO_CONFIG = {
   CATALOGO:          { color: 'bg-primary-100 text-primary-700',   label: 'Catálogo'   },
@@ -7,6 +25,8 @@ const TIPO_CONFIG = {
   CLIENTE:           { color: 'bg-amber-100 text-amber-700',     label: 'Cliente'    },
   NUEVA_SOLICITUD:   { color: 'bg-orange-100 text-orange-700',   label: 'Solicitud'  },
   SOLICITUD_CREADA:  { color: 'bg-blue-100 text-blue-700',       label: 'Solicitud'  },
+  PROGRAMAR_ASIGNACION: { color: 'bg-indigo-100 text-indigo-700', label: 'Programar' },
+  FORMULARIO_ACTUALIZADO: { color: 'bg-cyan-100 text-cyan-700',   label: 'Formulario' },
   SISTEMA:           { color: 'bg-slate-100 text-slate-600',     label: 'Sistema'    },
   SESION:            { color: 'bg-sky-100 text-sky-700',          label: 'Sesión'     },
   ENLACES:           { color: 'bg-teal-100 text-teal-700',        label: 'Referencias'},
@@ -29,6 +49,8 @@ export default function Campana() {
   const [noLeidas, setNoLeidas] = useState(0)
   const [abierto, setAbierto]   = useState(false)
   const ref = useRef(null)
+  const navigate = useNavigate()
+  const { usuario } = useAuth()
 
   const cargar = useCallback(async () => {
     try {
@@ -78,6 +100,14 @@ export default function Campana() {
     } catch { /* silencioso */ }
   }
 
+  const irANotificacion = (n) => {
+    const ruta = RUTA_POR_TIPO[n.tipo]?.(n, usuario)
+    if (!ruta) return
+    if (!n.leida) marcarUnaLeida(n.id)
+    setAbierto(false)
+    navigate(ruta)
+  }
+
   return (
     <div className="relative" ref={ref}>
       <button
@@ -95,7 +125,7 @@ export default function Campana() {
       </button>
 
       {abierto && (
-        <div className="absolute right-0 top-10 w-80 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden">
+        <div className="fixed left-3 right-3 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-10 sm:w-80 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
             <span className="text-sm font-semibold text-gray-900">Notificaciones</span>
             {noLeidas > 0 && (
@@ -110,8 +140,11 @@ export default function Campana() {
               <p className="text-sm text-gray-400 text-center py-8">Sin notificaciones</p>
             ) : notifs.map(n => {
               const cfg = TIPO_CONFIG[n.tipo] ?? TIPO_CONFIG.SISTEMA
+              const clicable = Boolean(RUTA_POR_TIPO[n.tipo])
               return (
-                <div key={n.id} className={`px-4 py-3 group ${n.leida ? '' : 'bg-primary-50/40'}`}>
+                <div key={n.id}
+                  onClick={clicable ? () => irANotificacion(n) : undefined}
+                  className={`px-4 py-3 group ${n.leida ? '' : 'bg-primary-50/40'} ${clicable ? 'cursor-pointer hover:bg-gray-50' : ''}`}>
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-start gap-2 min-w-0">
                       <span className={`mt-0.5 text-xs px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${cfg.color}`}>
@@ -121,14 +154,14 @@ export default function Campana() {
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                       {!n.leida && (
-                        <button onClick={() => marcarUnaLeida(n.id)} title="Marcar como leída"
+                        <button onClick={(e) => { e.stopPropagation(); marcarUnaLeida(n.id) }} title="Marcar como leída"
                           className="p-1 text-gray-400 hover:text-primary-600 rounded transition-colors">
                           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                           </svg>
                         </button>
                       )}
-                      <button onClick={() => eliminarNotif(n.id)} title="Eliminar"
+                      <button onClick={(e) => { e.stopPropagation(); eliminarNotif(n.id) }} title="Eliminar"
                         className="p-1 text-gray-400 hover:text-red-500 rounded transition-colors">
                         <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />

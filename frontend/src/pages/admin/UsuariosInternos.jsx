@@ -1,8 +1,16 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import api from '../../services/api'
 import Toast from '../../components/Toast'
 import { Modal } from '../../components/ui/Modal'
+import Paginacion from '../../components/ui/Paginacion'
 import CiudadSelect from '../../components/CiudadSelect'
+import catalogoService from '../../services/catalogoService'
+
+// Minúsculas + sin tildes/diacríticos, para que la búsqueda encuentre "Jose" al escribir "José"
+// (o al revés) sin tener que teclear el acento exacto.
+const RANGO_DIACRITICOS = new RegExp('[' + String.fromCharCode(0x0300) + '-' + String.fromCharCode(0x036f) + ']', 'g')
+const normalizarTexto = (s) => (s ?? '').toString().toLowerCase().normalize('NFD').replace(RANGO_DIACRITICOS, '')
 
 const ROLES_OPCIONES = [
   { value: 'ADMIN_POLYGRAPH',  label: 'Administrador' },
@@ -23,6 +31,23 @@ const ETIQUETA_ROL = {
   ADMIN_CLIENTE:    'Admin Cliente',
   ANALISTA_CLIENTE: 'Analista Cliente',
 }
+
+// Tarjetas de filtro por rol — el color de cada campo va literal (no interpolado) para que
+// Tailwind lo detecte en el build, mismo criterio que TARJETAS_ESTADO en Solicitudes.
+const ROLES_FILTRO = [
+  { value: 'ADMIN_POLYGRAPH',  label: 'Administrador',    corto: 'AD',
+    border: 'border-violet-200',  badge: 'bg-violet-500',  texto: 'text-violet-600',  bgActivo: 'bg-violet-50/70',  ring: 'ring-violet-300' },
+  { value: 'GESTOR',           label: 'Gestor',            corto: 'GE',
+    border: 'border-blue-200',    badge: 'bg-blue-500',    texto: 'text-blue-600',    bgActivo: 'bg-blue-50/70',    ring: 'ring-blue-300' },
+  { value: 'ANALISTA_INTERNO', label: 'Analista Interno',  corto: 'AI',
+    border: 'border-emerald-200', badge: 'bg-emerald-500', texto: 'text-emerald-600', bgActivo: 'bg-emerald-50/70', ring: 'ring-emerald-300' },
+  { value: 'PROGRAMADOR',      label: 'Programador',       corto: 'PR',
+    border: 'border-amber-200',   badge: 'bg-amber-500',   texto: 'text-amber-600',   bgActivo: 'bg-amber-50/70',   ring: 'ring-amber-300' },
+  { value: 'POLIGRAFISTA',     label: 'Poligrafista',      corto: 'PG',
+    border: 'border-rose-200',    badge: 'bg-rose-500',    texto: 'text-rose-600',    bgActivo: 'bg-rose-50/70',    ring: 'ring-rose-300' },
+  { value: 'VISITADOR',        label: 'Visitador',         corto: 'VS',
+    border: 'border-cyan-200',    badge: 'bg-cyan-500',    texto: 'text-cyan-600',    bgActivo: 'bg-cyan-50/70',    ring: 'ring-cyan-300' },
+]
 
 function Badge({ activo }) {
   return (
@@ -62,75 +87,98 @@ function OjoIcon({ visible }) {
   )
 }
 
-const CIUDADES_CO = [
-  'Bogotá', 'Medellín', 'Cali', 'Barranquilla', 'Cartagena',
-  'Cúcuta', 'Pereira', 'Manizales', 'Ibagué', 'Bucaramanga',
-  'Santa Marta', 'Villavicencio', 'Neiva', 'Pasto', 'Armenia',
-  'Valledupar', 'Montería', 'Sincelejo', 'Popayán', 'Tunja',
-]
+const ICONO_SALA = (
+  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" />
+  </svg>
+)
 
-/* ─── Sub-modal selección de sala (para POLIGRAFISTA) ─── */
-function ModalSala({ valorActual, novedadesActual, onConfirmar, onClose }) {
-  const match = valorActual?.match(/^(.+) - Sala (\d+)$/)
-  const [ciudad, setCiudad] = useState(match?.[1] ?? CIUDADES_CO[0])
-  const [numero, setNumero] = useState(match?.[2] ?? '1')
-  const [novedades, setNovedades] = useState(novedadesActual ?? '')
+const ICONO_MAPA = (
+  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+  </svg>
+)
+
+const ICONO_MAS = (
+  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+  </svg>
+)
+
+/* ─── Selector de varias ciudades REALES del catálogo — usado tanto para las salas del
+   POLIGRAFISTA (con número de sala) como para las zonas del VISITADOR (solo ciudad).
+   Ambos roles quedan validados de la misma forma: al menos una ciudad agregada.
+   `value` es un array de { idCiudad, nombreCiudad, numeroSala } — no texto libre — para que a
+   futuro se pueda filtrar por idCiudad quién puede atender un servicio en esa ciudad. ─── */
+function SelectorMultiCiudad({ value, onChange, conSala = false, tieneError }) {
+  const entradas = value ?? []
+  const [ciudades, setCiudades] = useState([])
+  const [agregando, setAgregando] = useState(false)
+  const [idCiudadNueva, setIdCiudadNueva] = useState(null)
+  const [salaNueva, setSalaNueva] = useState('1')
+
+  useEffect(() => {
+    catalogoService.listarCiudades().then(setCiudades).catch(() => {})
+  }, [])
+
+  const agregar = () => {
+    if (!idCiudadNueva) return
+    const numeroSala = conSala ? Number(salaNueva || 1) : null
+    const yaExiste = entradas.some(e => e.idCiudad === idCiudadNueva && (!conSala || e.numeroSala === numeroSala))
+    if (!yaExiste) {
+      const ciudad = ciudades.find(c => c.idCiudad === idCiudadNueva)
+      onChange([...entradas, { idCiudad: idCiudadNueva, nombreCiudad: ciudad?.nombreCiudad ?? '', numeroSala }])
+    }
+    setIdCiudadNueva(null)
+    setSalaNueva('1')
+    setAgregando(false)
+  }
+
+  const quitar = (idx) => onChange(entradas.filter((_, i) => i !== idx))
 
   return (
-    <Modal titulo="Configurar sala" onClose={onClose} ancho="max-w-md">
-      <div className="px-5 py-4 space-y-4">
-          {/* Ciudad y número */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Ciudad <span className="text-red-500">*</span></label>
-              <select value={ciudad} onChange={e => setCiudad(e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
-                {CIUDADES_CO.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">N.° de sala <span className="text-red-500">*</span></label>
-              <input type="number" min={1} value={numero}
-                onChange={e => setNumero(e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
-            </div>
-          </div>
-
-          {/* Preview */}
-          <div className="bg-primary-50 rounded-lg px-3 py-2 text-sm text-primary-700 font-medium text-center">
-            {ciudad} — Sala {numero || '?'}
-          </div>
-
-          {/* Novedades */}
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">
-              Novedades de la sala
-              <span className="ml-1 text-gray-400 font-normal">(observaciones, incidencias, notas)</span>
-            </label>
-            <textarea
-              value={novedades}
-              onChange={e => setNovedades(e.target.value)}
-              rows={4}
-              placeholder="Registra aquí novedades, incidencias o notas importantes de esta sala…"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
-            />
-            {novedades && (
-              <p className="text-xs text-gray-400 mt-0.5 text-right">{novedades.length} caracteres</p>
-            )}
-          </div>
+    <div className={`border rounded-lg p-2.5 space-y-2 transition-colors ${
+      tieneError ? 'border-red-300 bg-red-50/40' : 'border-gray-200 bg-white'
+    }`}>
+      {entradas.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {entradas.map((e, idx) => (
+            <span key={`${e.idCiudad}-${e.numeroSala}-${idx}`} className="inline-flex items-center gap-1.5 bg-primary-50 text-primary-700 text-xs font-medium pl-2 pr-1.5 py-1 rounded-full">
+              <span className="text-primary-500">{conSala ? ICONO_SALA : ICONO_MAPA}</span>
+              {e.nombreCiudad}{conSala && e.numeroSala ? ` — Sala ${e.numeroSala}` : ''}
+              <button type="button" onClick={() => quitar(idx)} className="text-primary-400 hover:text-primary-700 leading-none text-sm">×</button>
+            </span>
+          ))}
         </div>
+      )}
 
-        <div className="px-5 pb-5 flex justify-end gap-3">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancelar</button>
-          <button
-            onClick={() => { if (numero && ciudad) { onConfirmar(`${ciudad} - Sala ${numero}`, novedades); onClose() } }}
-            disabled={!numero || !ciudad}
-            className="bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-          >
-            Confirmar
+      {agregando ? (
+        <div className="flex items-center gap-2">
+          <div className="flex-1">
+            <CiudadSelect value={idCiudadNueva} onChange={setIdCiudadNueva} placeholder="Busca la ciudad…" />
+          </div>
+          {conSala && (
+            <input type="number" min={1} value={salaNueva} onChange={e => setSalaNueva(e.target.value)}
+              placeholder="N.° sala"
+              className="w-20 border border-gray-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+          )}
+          <button type="button" onClick={agregar} disabled={!idCiudadNueva}
+            className="bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white text-xs font-medium px-3 py-2 rounded-lg whitespace-nowrap transition-colors">
+            Agregar
+          </button>
+          <button type="button" onClick={() => { setAgregando(false); setIdCiudadNueva(null) }}
+            className="text-xs text-gray-400 hover:text-gray-600 px-1">
+            Cancelar
           </button>
         </div>
-    </Modal>
+      ) : (
+        <button type="button" onClick={() => setAgregando(true)}
+          className="w-full flex items-center justify-center gap-1.5 border border-dashed border-gray-300 rounded-lg px-3 py-2 text-xs text-gray-500 hover:border-primary-300 hover:text-primary-600 hover:bg-primary-50/50 transition-colors">
+          {ICONO_MAS} {conSala ? 'Agregar ciudad y sala' : 'Agregar ciudad'}
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -140,41 +188,38 @@ function IconoOrden({ activo, dir }) {
   return <span className="ml-1 text-primary-500 text-xs">{dir === 'asc' ? '↑' : '↓'}</span>
 }
 
-/* ─── Paginación ─── */
-function Paginacion({ pagina, total, porPagina, onChange }) {
-  const totalPags = Math.ceil(total / porPagina)
-  if (totalPags <= 1) return null
-  const inicio = (pagina - 1) * porPagina + 1
-  const fin    = Math.min(pagina * porPagina, total)
-  const nums = []
-  for (let i = Math.max(1, pagina - 2); i <= Math.min(totalPags, pagina + 2); i++) nums.push(i)
+/* ─── Iconos de acciones de tabla ─── */
+function IconoOjo() {
   return (
-    <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
-      <span className="text-xs text-gray-400">{inicio}–{fin} de {total}</span>
-      <div className="flex items-center gap-1">
-        <button onClick={() => onChange(pagina - 1)} disabled={pagina === 1}
-          className="px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-          ← Anterior
-        </button>
-        {nums[0] > 1 && <span className="text-xs text-gray-400 px-1">…</span>}
-        {nums.map(p => (
-          <button key={p} onClick={() => onChange(p)}
-            className={`w-8 h-8 text-xs rounded-lg border transition-colors ${
-              p === pagina ? 'bg-primary-600 border-primary-600 text-white font-semibold' : 'border-gray-200 text-gray-500 hover:bg-gray-50'
-            }`}>
-            {p}
-          </button>
-        ))}
-        {nums[nums.length - 1] < totalPags && <span className="text-xs text-gray-400 px-1">…</span>}
-        <button onClick={() => onChange(pagina + 1)} disabled={pagina === totalPags}
-          className="px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-          Siguiente →
-        </button>
-      </div>
-    </div>
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+    </svg>
+  )
+}
+function IconoLapiz() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+    </svg>
+  )
+}
+function IconoPower() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5.636 5.636a9 9 0 1012.728 0M12 3v9" />
+    </svg>
+  )
+}
+function IconoLlave({ className = 'h-3.5 w-3.5' }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
+    </svg>
   )
 }
 
+/* ─── Paginación ─── */
 /* ─── Helpers de fecha ─── */
 function fmtFecha(iso) {
   if (!iso) return '—'
@@ -258,35 +303,34 @@ function ModalDetalleEmpleado({ usuario, onClose }) {
             <FilaDetalle label="Último cambio" valor={fmtFechaHora(usuario.fechaUltimoCambioPassword)} />
           </Seccion>
 
-          {/* Sala de trabajo */}
-          <Seccion titulo="Sala de trabajo">
-            <FilaDetalle label="Sala asignada" valor={usuario.salaEncargada || '—'} />
-            {usuario.novedadesSala ? (
-              <div className="mt-2">
-                <p className="text-xs text-gray-400 mb-1">Novedades</p>
-                <p className="text-sm text-gray-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 leading-relaxed whitespace-pre-wrap">
-                  {usuario.novedadesSala}
-                </p>
-              </div>
-            ) : (
-              <FilaDetalle label="Novedades" valor="Sin novedades registradas" />
-            )}
-          </Seccion>
-
-          {/* Zonas de visita */}
-          <Seccion titulo="Zonas de visita">
-            {usuario.zonasVisita ? (
-              <div className="flex flex-wrap gap-2 pt-1">
-                {usuario.zonasVisita.split(',').map(z => z.trim()).filter(Boolean).map(zona => (
-                  <span key={zona} className="text-xs bg-primary-50 text-primary-700 border border-primary-100 px-2.5 py-1 rounded-full">
-                    {zona}
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-gray-400 py-1">Sin zonas asignadas</p>
-            )}
-          </Seccion>
+          {/* Ciudades asignadas — salas (poligrafista) o zonas de cobertura (visitador) */}
+          {(usuario.rol === 'POLIGRAFISTA' || usuario.rol === 'VISITADOR') && (
+            <Seccion titulo={usuario.rol === 'POLIGRAFISTA' ? 'Salas asignadas' : 'Zonas de visita'}>
+              {usuario.ciudadesAsignadas?.length > 0 ? (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {usuario.ciudadesAsignadas.map(c => (
+                    <span key={`${c.idCiudad}-${c.numeroSala ?? ''}`} className="text-xs bg-primary-50 text-primary-700 border border-primary-100 px-2.5 py-1 rounded-full">
+                      {c.nombreCiudad}{c.numeroSala ? ` — Sala ${c.numeroSala}` : ''}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400 py-1">Sin ciudades asignadas</p>
+              )}
+              {usuario.rol === 'POLIGRAFISTA' && (
+                usuario.novedadesSala ? (
+                  <div className="mt-2">
+                    <p className="text-xs text-gray-400 mb-1">Novedades</p>
+                    <p className="text-sm text-gray-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 leading-relaxed whitespace-pre-wrap">
+                      {usuario.novedadesSala}
+                    </p>
+                  </div>
+                ) : (
+                  <FilaDetalle label="Novedades" valor="Sin novedades registradas" />
+                )
+              )}
+            </Seccion>
+          )}
 
         {/* Footer */}
         <div className="px-5 py-4 border-t border-gray-100 flex-shrink-0">
@@ -343,7 +387,7 @@ function Th({ children, sortable, onClick, ordenCol, col, ordenDir, cls = '' }) 
 }
 
 /* ─── Tabla internos ─── */
-function TablaInternos({ usuarios, cargando, onCambiarEstado, onEditar, onDetalle, ordenCol, ordenDir, onOrdenar }) {
+function TablaInternos({ usuarios, cargando, onCambiarEstado, onEditar, onDetalle, onCambiarPassword, ordenCol, ordenDir, onOrdenar }) {
   if (cargando) return (
     <div className="flex items-center justify-center py-16">
       <div className="animate-spin rounded-full h-8 w-8 border-4 border-primary-600 border-t-transparent" />
@@ -382,19 +426,24 @@ function TablaInternos({ usuarios, cargando, onCambiarEstado, onEditar, onDetall
               <td className="px-4 py-3"><Badge activo={u.activo} /></td>
               <td className="px-4 py-3">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <button onClick={() => onDetalle(u)}
-                    className="text-xs font-medium px-3 py-1 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors whitespace-nowrap">
-                    Detalle
+                  <button onClick={() => onDetalle(u)} title="Detalle"
+                    className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-slate-800 transition-colors">
+                    <IconoOjo />
                   </button>
-                  <button onClick={() => onEditar(u)}
-                    className="text-xs font-medium px-3 py-1 rounded-full border border-primary-200 text-primary-600 hover:bg-primary-50 transition-colors whitespace-nowrap">
-                    Editar
+                  <button onClick={() => onEditar(u)} title="Editar"
+                    className="p-1.5 rounded-lg text-primary-600 hover:bg-primary-50 hover:text-primary-800 transition-colors">
+                    <IconoLapiz />
+                  </button>
+                  <button onClick={() => onCambiarPassword(u)} title="Cambiar contraseña"
+                    className="p-1.5 rounded-lg text-amber-600 hover:bg-amber-50 hover:text-amber-800 transition-colors">
+                    <IconoLlave />
                   </button>
                   <button onClick={() => onCambiarEstado(u.idUsuario, !u.activo)}
-                    className={`text-xs font-medium px-3 py-1 rounded-full border transition-colors whitespace-nowrap ${
-                      u.activo ? 'border-red-200 text-red-600 hover:bg-red-50' : 'border-green-200 text-green-700 hover:bg-green-50'
+                    title={u.activo ? 'Desactivar' : 'Activar'}
+                    className={`p-1.5 rounded-lg transition-colors ${
+                      u.activo ? 'text-red-600 hover:bg-red-50 hover:text-red-800' : 'text-green-700 hover:bg-green-50 hover:text-green-900'
                     }`}>
-                    {u.activo ? 'Desactivar' : 'Activar'}
+                    <IconoPower />
                   </button>
                 </div>
               </td>
@@ -412,7 +461,7 @@ function ModalCrear({ onClose, onGuardado }) {
     nombre: '', apellido: '', email: '', password: '',
     rol: 'GESTOR', telefono: '',
     tipoDocumento: 'CC', documento: '', idCiudadResidencia: null,
-    salaEncargada: '', novedadesSala: '', zonasVisita: '',
+    novedadesSala: '', ciudadesAsignadas: [],
     idsSubprocesos: [],
   })
   const [guardando, setGuardando] = useState(false)
@@ -429,7 +478,8 @@ function ModalCrear({ onClose, onGuardado }) {
     setGuardando(true)
     setError(null)
     try {
-      await api.post('/usuarios-internos', form)
+      const payload = { ...form, ciudadesAsignadas: form.ciudadesAsignadas.map(c => ({ idCiudad: c.idCiudad, numeroSala: c.numeroSala })) }
+      await api.post('/usuarios-internos', payload)
       onGuardado()
       onClose()
     } catch (err) {
@@ -466,9 +516,8 @@ function ModalEditar({ usuario, onClose, onGuardado }) {
     tipoDocumento:   usuario.tipoDocumento ?? 'CC',
     documento:       usuario.documento ?? '',
     idCiudadResidencia: usuario.idCiudadResidencia ?? null,
-    salaEncargada:   usuario.salaEncargada ?? '',
     novedadesSala:   usuario.novedadesSala ?? '',
-    zonasVisita:     usuario.zonasVisita ?? '',
+    ciudadesAsignadas: usuario.ciudadesAsignadas?.map(c => ({ idCiudad: c.idCiudad, nombreCiudad: c.nombreCiudad, numeroSala: c.numeroSala })) ?? [],
     idsSubprocesos:  usuario.subprocesosAsignados?.map(p => p.idTipoProgreso) ?? [],
   })
   const [guardando, setGuardando] = useState(false)
@@ -485,7 +534,11 @@ function ModalEditar({ usuario, onClose, onGuardado }) {
     setGuardando(true)
     setError(null)
     try {
-      const payload = { ...form, password: form.password.trim() || null }
+      const payload = {
+        ...form,
+        password: form.password.trim() || null,
+        ciudadesAsignadas: form.ciudadesAsignadas.map(c => ({ idCiudad: c.idCiudad, numeroSala: c.numeroSala })),
+      }
       await api.put(`/usuarios-internos/${usuario.idUsuario}`, payload)
       onGuardado()
       onClose()
@@ -517,7 +570,6 @@ function FormularioUsuario({ form, onChange, onSubmit, onCancel, guardando, erro
   const [mostrarConfirm, setMostrarConfirm] = useState(false)
   const [confirmPwd, setConfirmPwd] = useState('')
   const [localError, setLocalError] = useState(null)
-  const [salaModal, setSalaModal] = useState(false)
   const [subprocesos, setSubprocesos] = useState([])
 
   const rolActual = form.rol
@@ -556,21 +608,16 @@ function FormularioUsuario({ form, onChange, onSubmit, onCancel, guardando, erro
       setLocalError('La contraseña debe tener al menos 8 caracteres')
       return
     }
-    if (rolActual === 'VISITADOR' && !form.zonasVisita?.trim()) {
+    if (rolActual === 'VISITADOR' && (form.ciudadesAsignadas?.length ?? 0) === 0) {
       setLocalError('Las zonas de visita son obligatorias para el rol Visitador')
       return
     }
-    if (rolActual === 'POLIGRAFISTA' && !form.salaEncargada?.trim()) {
-      setLocalError('Debes configurar la sala encargada para el rol Poligrafista')
+    if (rolActual === 'POLIGRAFISTA' && (form.ciudadesAsignadas?.length ?? 0) === 0) {
+      setLocalError('Debes asignar al menos una ciudad y sala para el rol Poligrafista')
       return
     }
 
     onSubmit(e)
-  }
-
-  const setSala = (sala, novedadesSala) => {
-    onChange({ target: { name: 'salaEncargada', value: sala } })
-    onChange({ target: { name: 'novedadesSala', value: novedadesSala } })
   }
 
   const errMsg = localError || error
@@ -685,36 +732,42 @@ function FormularioUsuario({ form, onChange, onSubmit, onCancel, guardando, erro
         </div>
       </div>
 
-      {/* Sala — solo POLIGRAFISTA usa el sub-modal */}
-      {rolActual === 'POLIGRAFISTA' ? (
+      {/* Ciudades asignadas — POLIGRAFISTA (con sala) y VISITADOR (solo ciudad) comparten el
+          mismo selector contra el catálogo real y la misma validación: al menos una ciudad. */}
+      {(rolActual === 'POLIGRAFISTA' || rolActual === 'VISITADOR') && (
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">
-            Sala encargada <span className="text-red-500">*</span>
+          <label className="text-xs font-medium text-gray-600 mb-1 flex items-center gap-1">
+            {rolActual === 'POLIGRAFISTA' ? ICONO_SALA : ICONO_MAPA}
+            {rolActual === 'POLIGRAFISTA' ? 'Salas asignadas' : 'Zonas de visita'} <span className="text-red-500">*</span>
           </label>
-          <div className="flex items-center gap-2">
-            <div className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-700 min-h-[37px]">
-              {form.salaEncargada || <span className="text-gray-400">Sin sala configurada</span>}
+          <SelectorMultiCiudad
+            value={form.ciudadesAsignadas}
+            onChange={(lista) => onChange({ target: { name: 'ciudadesAsignadas', value: lista } })}
+            conSala={rolActual === 'POLIGRAFISTA'}
+            tieneError={(form.ciudadesAsignadas?.length ?? 0) === 0}
+          />
+          <p className={`text-xs mt-1 ${(form.ciudadesAsignadas?.length ?? 0) === 0 ? 'text-red-500' : 'text-gray-400'}`}>
+            {(form.ciudadesAsignadas?.length ?? 0) > 0
+              ? (rolActual === 'POLIGRAFISTA' ? 'Ciudades y salas donde atiende este poligrafista.' : 'Ciudades de cobertura de este visitador.')
+              : `Agrega al menos una ciudad${rolActual === 'POLIGRAFISTA' ? ' y sala' : ' de cobertura'} para este ${rolActual === 'POLIGRAFISTA' ? 'poligrafista' : 'visitador'}.`}
+          </p>
+          {rolActual === 'POLIGRAFISTA' && (
+            <div className="mt-3">
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Novedades
+                <span className="ml-1 text-gray-400 font-normal">(observaciones, incidencias, notas de sus salas)</span>
+              </label>
+              <textarea
+                value={form.novedadesSala ?? ''}
+                onChange={e => onChange({ target: { name: 'novedadesSala', value: e.target.value } })}
+                rows={3}
+                placeholder="Registra aquí novedades, incidencias o notas importantes…"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+              />
             </div>
-            <button type="button" onClick={() => setSalaModal(true)}
-              className="bg-primary-600 hover:bg-primary-700 text-white text-xs font-medium px-3 py-2 rounded-lg whitespace-nowrap transition-colors">
-              {form.salaEncargada ? 'Cambiar' : 'Configurar'}
-            </button>
-          </div>
+          )}
         </div>
-      ) : (
-        <Campo label="Sala encargada" name="salaEncargada" value={form.salaEncargada}
-          onChange={onChange} placeholder="Ej: Sala Bogotá Norte" />
       )}
-
-      {/* Zonas — OBLIGATORIO para VISITADOR */}
-      <Campo
-        label="Zonas de visita"
-        name="zonasVisita"
-        value={form.zonasVisita}
-        onChange={onChange}
-        required={rolActual === 'VISITADOR'}
-        placeholder={rolActual === 'VISITADOR' ? 'Obligatorio — Ej: Norte, Sur' : 'Ej: Norte, Sur, Occidente'}
-      />
 
       {/* Capacidades — qué subprocesos puede este empleado tener asignados. Solo se ofrecen los
           subprocesos cuyo rol_responsable coincide con el rol elegido (lo valida también el backend). */}
@@ -750,16 +803,105 @@ function FormularioUsuario({ form, onChange, onSubmit, onCancel, guardando, erro
           {guardando ? 'Guardando...' : esEdicion ? 'Guardar cambios' : 'Crear usuario'}
         </button>
       </div>
-
-      {salaModal && (
-        <ModalSala
-          valorActual={form.salaEncargada}
-          novedadesActual={form.novedadesSala}
-          onConfirmar={setSala}
-          onClose={() => setSalaModal(false)}
-        />
-      )}
     </form>
+  )
+}
+
+/* ─── Modal cambiar contraseña — aparte de Editar a propósito: no debería depender de que las
+   ciudades/sala (poligrafista, visitador) o subprocesos también estén completos. ─── */
+function ModalCambiarPassword({ usuario, onClose, onGuardado }) {
+  const [password, setPassword] = useState('')
+  const [confirmPwd, setConfirmPwd] = useState('')
+  const [mostrarPwd, setMostrarPwd] = useState(false)
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState(null)
+
+  const noCoinciden = confirmPwd !== '' && confirmPwd !== password
+  const esFuerte = password.length >= 8
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setError(null)
+    if (password.length < 8) {
+      setError('La contraseña debe tener al menos 8 caracteres')
+      return
+    }
+    if (password !== confirmPwd) {
+      setError('Las contraseñas no coinciden')
+      return
+    }
+    setGuardando(true)
+    try {
+      await api.patch(`/usuarios-internos/${usuario.idUsuario}/password`, { password })
+      onGuardado()
+      onClose()
+    } catch (err) {
+      setError(err.response?.data?.mensaje ?? 'No se pudo cambiar la contraseña.')
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <Modal titulo="Cambiar contraseña" subtitulo={`${usuario.nombre} ${usuario.apellido ?? ''}`} onClose={onClose} ancho="max-w-sm">
+      <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
+        <div className="flex items-center gap-3 pb-1">
+          <div className="w-11 h-11 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+            <IconoLlave className="h-5 w-5 text-amber-600" />
+          </div>
+          <p className="text-xs text-gray-500">
+            El usuario deberá volver a cambiarla la próxima vez que inicie sesión.
+          </p>
+        </div>
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{error}</div>
+        )}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            Nueva contraseña <span className="text-red-500">*</span>
+          </label>
+          <div className="relative">
+            <input
+              type={mostrarPwd ? 'text' : 'password'} value={password}
+              onChange={e => setPassword(e.target.value)} required minLength={8}
+              placeholder="Mínimo 8 caracteres" autoFocus
+              className={`w-full border rounded-lg px-4 py-2.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 ${
+                password && !esFuerte ? 'border-red-300 bg-red-50' : 'border-gray-300'}`}
+            />
+            <button type="button" onClick={() => setMostrarPwd(v => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+              <OjoIcon visible={mostrarPwd} />
+            </button>
+          </div>
+          {password && !esFuerte && <p className="text-xs text-red-500 mt-1">Mínimo 8 caracteres</p>}
+          {password && esFuerte && <p className="text-xs text-green-600 mt-1">Contraseña válida</p>}
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            Confirmar contraseña <span className="text-red-500">*</span>
+          </label>
+          <input
+            type={mostrarPwd ? 'text' : 'password'} value={confirmPwd}
+            onChange={e => setConfirmPwd(e.target.value)} required
+            placeholder="Repite la nueva contraseña"
+            className={`w-full border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 ${
+              noCoinciden ? 'border-red-300 bg-red-50' : 'border-gray-300'}`}
+          />
+          {noCoinciden && <p className="text-xs text-red-500 mt-1">Las contraseñas no coinciden</p>}
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <button type="button" onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+            Cancelar
+          </button>
+          <button type="submit" disabled={guardando || noCoinciden || !esFuerte}
+            className="px-4 py-2 text-sm font-medium bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white rounded-lg transition-colors">
+            {guardando ? 'Guardando…' : 'Cambiar contraseña'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   )
 }
 
@@ -769,12 +911,15 @@ export default function UsuariosInternos() {
   const [cargandoInternos, setCargandoInternos] = useState(true)
   const [modalCrear, setModalCrear] = useState(false)
   const [usuarioEditar, setUsuarioEditar] = useState(null)
+  const [usuarioPassword, setUsuarioPassword] = useState(null)
   const [detalleUsuario, setDetalleUsuario] = useState(null)
   const [errorGlobal, setErrorGlobal] = useState(null)
   const [toast, setToast] = useState(null)
 
-  const [busqueda, setBusqueda] = useState('')
-  const [filtroEstado, setFiltroEstado] = useState('todos')
+  // Prefiere el resultado del buscador global (Ctrl+K) — llega como /admin/usuarios-internos?q=nombre.
+  const [searchParams] = useSearchParams()
+  const [busqueda, setBusqueda] = useState(searchParams.get('q') ?? '')
+  const [filtroRol, setFiltroRol] = useState('')
   const [ordenCol, setOrdenCol] = useState(null)
   const [ordenDir, setOrdenDir] = useState('asc')
   const [pagina, setPagina] = useState(1)
@@ -796,7 +941,9 @@ export default function UsuariosInternos() {
   }
 
   useEffect(() => { cargarInternos() }, [])
-  useEffect(() => { setPagina(1) }, [busqueda, filtroEstado])
+  useEffect(() => { setPagina(1) }, [busqueda, filtroRol])
+
+  const alternarRol = (rol) => setFiltroRol(prev => prev === rol ? '' : rol)
 
   const cambiarEstado = async (id, activar) => {
     try {
@@ -815,15 +962,19 @@ export default function UsuariosInternos() {
 
   const internosFiltrados = useMemo(() => {
     let lista = internos
-    if (filtroEstado === 'activos')   lista = lista.filter(u => u.activo)
-    if (filtroEstado === 'inactivos') lista = lista.filter(u => !u.activo)
-    if (busqueda.trim()) {
-      const q = busqueda.toLowerCase()
-      lista = lista.filter(u =>
-        `${u.nombre} ${u.apellido ?? ''}`.toLowerCase().includes(q) ||
-        u.email.toLowerCase().includes(q) ||
-        (ETIQUETA_ROL[u.rol] ?? u.rol).toLowerCase().includes(q)
-      )
+    if (filtroRol) lista = lista.filter(u => u.rol === filtroRol)
+    // Varias palabras (todas deben aparecer, en cualquier campo) e insensible a tildes — así
+    // "jose gestor" encuentra a "José Pérez" con rol Gestor sin que sea una frase exacta, y
+    // buscar "poligrafista" encuentra por rol igual que por nombre/email/documento/ciudad.
+    const terminos = normalizarTexto(busqueda).split(/\s+/).filter(Boolean)
+    if (terminos.length > 0) {
+      lista = lista.filter(u => {
+        const texto = normalizarTexto([
+          u.nombre, u.apellido, u.email, u.telefono, u.documento,
+          u.nombreCiudad, ETIQUETA_ROL[u.rol] ?? u.rol,
+        ].filter(Boolean).join(' '))
+        return terminos.every(t => texto.includes(t))
+      })
     }
     if (ordenCol) {
       lista = [...lista].sort((a, b) => {
@@ -837,10 +988,13 @@ export default function UsuariosInternos() {
       })
     }
     return lista
-  }, [internos, filtroEstado, busqueda, ordenCol, ordenDir])
+  }, [internos, filtroRol, busqueda, ordenCol, ordenDir])
 
-  const cuentaActivos   = internos.filter(u => u.activo).length
-  const cuentaInactivos = internos.filter(u => !u.activo).length
+  const conteoPorRol = useMemo(() => {
+    const mapa = {}
+    internos.forEach(u => { mapa[u.rol] = (mapa[u.rol] ?? 0) + 1 })
+    return mapa
+  }, [internos])
 
   const totalPaginas    = Math.ceil(internosFiltrados.length / POR_PAGINA)
   const internosVisibles = internosFiltrados.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA)
@@ -867,41 +1021,46 @@ export default function UsuariosInternos() {
         </div>
       )}
 
-      {/* Barra de filtros */}
+      {/* Tarjetas de filtro por rol — clic en la activa vuelve a "Todos" (no hay tarjeta aparte) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+        {ROLES_FILTRO.map(r => {
+          const activo = filtroRol === r.value
+          return (
+            <button key={r.value} type="button" onClick={() => alternarRol(r.value)}
+              className={`text-left bg-white rounded-xl border shadow-sm p-3.5 cursor-pointer hover:shadow-md transition-shadow ${r.border} ${
+                activo ? `${r.bgActivo} ring-2 ${r.ring}` : ''
+              }`}>
+              <div className="flex items-center gap-2 mb-2.5">
+                <span className={`w-7 h-7 rounded-full ${r.badge} text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0`}>
+                  {r.corto}
+                </span>
+                <span className="text-xs font-medium text-gray-600 leading-tight">{r.label}</span>
+              </div>
+              <p className={`text-2xl font-bold ${r.texto}`}>{conteoPorRol[r.value] ?? 0}</p>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Buscador */}
       <div className="flex flex-wrap items-center gap-3 mb-3">
         <input
           type="search"
           value={busqueda}
           onChange={e => setBusqueda(e.target.value)}
-          placeholder="Buscar por nombre, email o rol…"
+          placeholder="Buscar por nombre, email, documento, teléfono, ciudad o rol…"
           className="flex-1 min-w-[200px] max-w-xs border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
         />
-        <div className="flex gap-1">
-          {[
-            { key: 'todos',    label: 'Todos',    count: internos.length },
-            { key: 'activos',  label: 'Activos',  count: cuentaActivos   },
-            { key: 'inactivos',label: 'Inactivos',count: cuentaInactivos },
-          ].map(f => (
-            <button
-              key={f.key}
-              onClick={() => setFiltroEstado(f.key)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                filtroEstado === f.key
-                  ? f.key === 'inactivos'
-                    ? 'bg-red-100 text-red-700'
-                    : f.key === 'activos'
-                      ? 'bg-green-100 text-green-700'
-                      : 'bg-primary-100 text-primary-700'
-                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-              }`}
-            >
-              {f.label}
-              <span className="ml-1.5 font-normal opacity-70">{f.count}</span>
-            </button>
-          ))}
-        </div>
         <span className="text-xs text-gray-400">
           {internosFiltrados.length} resultado{internosFiltrados.length !== 1 ? 's' : ''}
+          {filtroRol && (
+            <>
+              {' · filtrando por '}
+              <span className="font-medium text-gray-600">{ETIQUETA_ROL[filtroRol] ?? filtroRol}</span>
+              {' — '}
+              <button onClick={() => setFiltroRol('')} className="text-primary-600 hover:underline">ver todos</button>
+            </>
+          )}
         </span>
       </div>
 
@@ -911,6 +1070,7 @@ export default function UsuariosInternos() {
           cargando={cargandoInternos}
           onCambiarEstado={cambiarEstado}
           onEditar={setUsuarioEditar}
+          onCambiarPassword={setUsuarioPassword}
           onDetalle={setDetalleUsuario}
           ordenCol={ordenCol}
           ordenDir={ordenDir}
@@ -933,6 +1093,14 @@ export default function UsuariosInternos() {
           usuario={usuarioEditar}
           onClose={() => setUsuarioEditar(null)}
           onGuardado={() => { cargarInternos(); mostrarToast('Usuario actualizado correctamente') }}
+        />
+      )}
+
+      {usuarioPassword && (
+        <ModalCambiarPassword
+          usuario={usuarioPassword}
+          onClose={() => setUsuarioPassword(null)}
+          onGuardado={() => mostrarToast('Contraseña cambiada correctamente')}
         />
       )}
 

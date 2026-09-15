@@ -18,5 +18,5 @@ const SECCIONES = [
 ]
 
 export default function AnalistaLayout() {
-  return <InternalLayout secciones={SECCIONES} titulo="Portal Analista Interno" />
+  return <InternalLayout secciones={SECCIONES} titulo="Portal Analista Interno" busquedaEntidades />
 }

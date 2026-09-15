@@ -5,6 +5,7 @@ import solicitudService from '../../services/solicitudService'
 import dashboardService from '../../services/dashboardService'
 import { useAuth } from '../../hooks/useAuth'
 import CiudadSelect from '../../components/CiudadSelect'
+import { ETIQUETA_NIVEL_CIUDAD, recargoPorCiudad } from '../../utils/recargoCiudad'
 
 function formatearPrecio(valor) {
   if (!valor) return 'Precio a convenir'
@@ -331,9 +332,23 @@ function NewRequest() {
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between gap-2 mt-4 pt-3 border-t border-gray-100">
-                      <p className="text-xs text-gray-400">Valor base</p>
-                      <p className="text-base font-semibold text-primary-700">{formatearPrecio(s.valor)}</p>
+                    <div className="mt-4 pt-3 border-t border-gray-100 space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs text-gray-400">Valor base</p>
+                        <p className="text-base font-semibold text-primary-700">{formatearPrecio(s.valor)}</p>
+                      </div>
+                      {(() => {
+                        const recargo = recargoPorCiudad(s, ciudadSeleccionada)
+                        if (!recargo) return null
+                        return (
+                          <div className="flex items-center justify-between gap-2 text-xs">
+                            <p className="text-sky-600">
+                              + Recargo por ciudad ({ciudadSeleccionada.nombreCiudad})
+                            </p>
+                            <p className="font-medium text-sky-700">{formatearPrecio(recargo)}</p>
+                          </div>
+                        )
+                      })()}
                     </div>
 
                     {/* Subprocesos incluidos — siempre visibles, sin botón */}
@@ -458,6 +473,31 @@ function NewRequest() {
             {/* Costo */}
             <div className="px-5 py-4">
               <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Costo estimado</h3>
+
+              {(() => {
+                const proceso = serviciosSeleccionadosData[0]
+                const recargo = recargoPorCiudad(proceso, ciudadSeleccionada)
+                if (!recargo) return null
+                return (
+                  <div className="rounded-lg border border-sky-200 bg-sky-50 px-3.5 py-3 mb-3 text-sm text-sky-800 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span>Valor base — {proceso.nombreProceso}</span>
+                      <span className="font-medium">{formatearPrecio(proceso.valor)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>
+                        Recargo por ciudad — {ciudadSeleccionada.nombreCiudad}
+                        {' '}({ETIQUETA_NIVEL_CIUDAD[ciudadSeleccionada.nivelCiudad]})
+                      </span>
+                      <span className="font-medium">+ {formatearPrecio(recargo)}</span>
+                    </div>
+                    <p className="text-xs text-sky-600 border-t border-sky-200 pt-1.5">
+                      No se cobra ahora — se suma automáticamente a tu próxima compra en Comprar Servicios.
+                    </p>
+                  </div>
+                )
+              })()}
+
               {(() => {
                 if (esPospago) {
                   return (
@@ -472,6 +512,8 @@ function NewRequest() {
                 }
                 const proceso = serviciosSeleccionadosData[0]
                 const saldo = proceso ? saldos.find((s) => s.idProceso === proceso.idProceso) : null
+                const linkCompra = `/cliente/comprar-servicios${proceso ? `?idProceso=${proceso.idProceso}` : ''}`
+
                 if (saldo && saldo.cantidadDisponible > 0) {
                   return (
                     <div className="flex items-start gap-3 rounded-lg border border-green-200 bg-green-50 px-3.5 py-3">
@@ -487,7 +529,7 @@ function NewRequest() {
                     <span className="text-lg leading-none flex-shrink-0">⚠️</span>
                     <p className="text-sm text-amber-800">
                       No tienes saldo disponible{proceso ? ` de "${proceso.nombreProceso}"` : ''} en tu bolsa prepago.{' '}
-                      <a href="/cliente/comprar-servicios" className="font-semibold underline hover:text-amber-900">
+                      <a href={linkCompra} className="font-semibold underline hover:text-amber-900">
                         Cómpralo en Comprar Servicios
                       </a>{' '}
                       antes de enviar esta solicitud.

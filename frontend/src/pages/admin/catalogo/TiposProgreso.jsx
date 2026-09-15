@@ -1,5 +1,8 @@
 import { useState, useEffect, useMemo } from 'react'
 import api from '../../../services/api'
+import Paginacion from '../../../components/ui/Paginacion'
+
+const POR_PAGINA = 10
 
 const FORM_VACIO = { nombreProgreso: '', descripcion: '', orden: 0, rolResponsable: 'ANALISTA_INTERNO' }
 
@@ -45,6 +48,22 @@ function Modal({ titulo, onClose, children }) {
 function IconoOrden({ activo, dir }) {
   if (!activo) return <span className="ml-1 text-gray-300 text-xs">↕</span>
   return <span className="ml-1 text-primary-500 text-xs">{dir === 'asc' ? '↑' : '↓'}</span>
+}
+
+/* ─── Iconos de acciones de tabla ─── */
+function IconoLapiz() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+    </svg>
+  )
+}
+function IconoPower() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5.636 5.636a9 9 0 1012.728 0M12 3v9" />
+    </svg>
+  )
 }
 
 function Formulario({ form, onChange, onSubmit, onCancel, guardando, error, esEdicion }) {
@@ -101,6 +120,7 @@ export default function TiposProgreso() {
   const [filtroEstado, setFiltroEstado] = useState('todos')
   const [ordenCol, setOrdenCol] = useState(null)
   const [ordenDir, setOrdenDir] = useState('asc')
+  const [pagina, setPagina] = useState(1)
 
   const cargar = async () => {
     setCargando(true)
@@ -185,6 +205,10 @@ export default function TiposProgreso() {
 
     return lista
   }, [tipos, filtroEstado, busqueda, ordenCol, ordenDir])
+
+  useEffect(() => { setPagina(1) }, [busqueda, filtroEstado])
+
+  const tiposPagina = tiposVisibles.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA)
 
   const cuentaActivos   = tipos.filter(t => t.activo).length
   const cuentaInactivos = tipos.filter(t => !t.activo).length
@@ -282,7 +306,7 @@ export default function TiposProgreso() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {tiposVisibles.map(t => (
+                {tiposPagina.map(t => (
                   <tr key={t.idTipoProgreso} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-3 text-sm text-gray-500 text-center w-16">{t.orden ?? 0}</td>
                     <td className="px-4 py-3 text-sm text-gray-900 font-medium">{t.nombreProgreso}</td>
@@ -291,15 +315,15 @@ export default function TiposProgreso() {
                     <td className="px-4 py-3"><Badge activo={t.activo} /></td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <button onClick={() => abrirEditar(t)}
-                          className="text-xs font-medium px-3 py-1 rounded-full border border-primary-200 text-primary-600 hover:bg-primary-50 transition-colors">
-                          Editar
+                        <button onClick={() => abrirEditar(t)} title="Editar"
+                          className="p-1.5 rounded-lg text-primary-600 hover:bg-primary-50 hover:text-primary-800 transition-colors">
+                          <IconoLapiz />
                         </button>
-                        <button onClick={() => cambiarEstado(t)}
-                          className={`text-xs font-medium px-3 py-1 rounded-full border transition-colors ${
-                            t.activo ? 'border-red-200 text-red-600 hover:bg-red-50' : 'border-green-200 text-green-700 hover:bg-green-50'
+                        <button onClick={() => cambiarEstado(t)} title={t.activo ? 'Desactivar' : 'Activar'}
+                          className={`p-1.5 rounded-lg transition-colors ${
+                            t.activo ? 'text-red-600 hover:bg-red-50 hover:text-red-800' : 'text-green-700 hover:bg-green-50 hover:text-green-900'
                           }`}>
-                          {t.activo ? 'Desactivar' : 'Activar'}
+                          <IconoPower />
                         </button>
                       </div>
                     </td>
@@ -308,6 +332,9 @@ export default function TiposProgreso() {
               </tbody>
             </table>
           </div>
+        )}
+        {tiposVisibles.length > 0 && (
+          <Paginacion pagina={pagina} total={tiposVisibles.length} porPagina={POR_PAGINA} onChange={setPagina} />
         )}
       </div>
 

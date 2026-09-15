@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import catalogoService from '../../services/catalogoService'
 import pagosService from '../../services/pagosService'
 import dashboardService from '../../services/dashboardService'
@@ -9,6 +9,7 @@ import { useFavoritos } from '../../hooks/useFavoritos'
 import { metaCategoria, ordenarCategorias, formatearPrecio } from '../../utils/catalogoDisplay'
 import { recomendarPorTexto, coincideTexto } from '../../utils/busquedaInteligente'
 import { Modal } from '../../components/ui/Modal'
+import Paginacion from '../../components/ui/Paginacion'
 import Toast from '../../components/Toast'
 
 const OPCIONES_ORDEN = [
@@ -367,6 +368,7 @@ function TabCatalogo({ onToast }) {
   const [cargandoPrevia, setCargandoPrevia] = useState(false)
   const { agregarItem } = useCarrito()
   const { esFavorito, toggleFavorito } = useFavoritos()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const recomendacion = useMemo(() => recomendarPorTexto(busqueda), [busqueda])
 
@@ -380,7 +382,24 @@ function TabCatalogo({ onToast }) {
   const agregarAlCarrito = (servicio, cantidad) => {
     agregarItem(servicio, cantidad)
     onToast(`${servicio.nombreProceso} agregado al carrito`)
+    // Cierra el modal de ofertas o de vista previa si el "Agregar" se disparó desde ahí — antes
+    // se quedaban abiertos porque nada los cerraba al agregar, solo el botón X o el fondo.
+    setVistaPrevia(null)
+    setOfertasAbiertas(null)
   }
+
+  // Llega desde "Nueva Solicitud" cuando falta saldo de ese servicio — se agrega solo, sin que el
+  // cliente tenga que volver a buscarlo en el catálogo.
+  useEffect(() => {
+    if (!servicios.length) return
+    const idProceso = searchParams.get('idProceso')
+    if (!idProceso) return
+
+    const servicio = servicios.find((s) => s.idProceso === Number(idProceso))
+    if (servicio) agregarAlCarrito(servicio, 1)
+    setSearchParams({}, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [servicios])
 
   const abrirVistaPrevia = (servicio) => {
     setVistaPrevia(servicio)
@@ -604,69 +623,35 @@ function TabCatalogo({ onToast }) {
 }
 
 /* ─── Pestaña: historial de compras ─── */
-function ModalDetalleOrden({ orden, onClose, onToast }) {
-  const [pagando, setPagando] = useState(false)
-  const puedeReintentar = orden.estado === 'PENDIENTE' || orden.estado === 'RECHAZADA'
-
-  const pagar = async () => {
-    setPagando(true)
-    try {
-      const pago = await pagosService.iniciarPago(orden.idOrdenCompra)
-      window.location.href = pago.urlCheckout
-    } catch (err) {
-      onToast(err.response?.data?.mensaje ?? 'No se pudo iniciar el pago', 'error')
-      setPagando(false)
-    }
-  }
-
-  return (
-    <Modal titulo={orden.referencia} subtitulo={formatFecha(orden.fechaCreacion)}
-      onClose={pagando ? undefined : onClose} ancho="max-w-md">
-      <div className="p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <EstadoOrdenBadge estado={orden.estado} />
-          <span className="text-xs text-gray-400">{orden.modoSimulado ? 'Pago simulado' : 'Wompi'}</span>
-        </div>
-
-        <ul className="divide-y divide-gray-100">
-          {orden.items.map((i) => (
-            <li key={i.idProceso} className="py-2 flex items-center justify-between text-sm gap-3">
-              <span className="text-gray-700">{i.cantidad} × {i.nombreProceso}</span>
-              <span className="font-medium text-gray-800 flex-shrink-0">{formatearPrecio(i.subtotal)}</span>
-            </li>
-          ))}
-        </ul>
-
-        <div className="flex items-center justify-between border-t border-gray-100 pt-3">
-          <span className="text-sm font-semibold text-gray-600">Total</span>
-          <span className="text-lg font-bold text-primary-700">{formatearPrecio(orden.montoTotal)}</span>
-        </div>
-
-        {puedeReintentar && (
-          <button onClick={pagar} disabled={pagando}
-            className="w-full bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white text-sm font-medium py-2.5 rounded-lg transition-colors">
-            {pagando ? 'Redirigiendo...' : orden.estado === 'PENDIENTE' ? 'Completar pago' : 'Reintentar pago'}
-          </button>
-        )}
-      </div>
-    </Modal>
-  )
-}
+const POR_PAGINA_HISTORIAL = 10
 
 function TabHistorial({ onToast }) {
   const [ordenes, setOrdenes] = useState([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
-  const [ordenSeleccionada, setOrdenSeleccionada] = useState(null)
+  const [pagandoId, setPagandoId] = useState(null)
+  const [pagina, setPagina] = useState(0)
+  const [totalElementos, setTotalElementos] = useState(0)
+
+  const pagarOrden = async (idOrdenCompra) => {
+    setPagandoId(idOrdenCompra)
+    try {
+      const pago = await pagosService.iniciarPago(idOrdenCompra)
+      window.location.href = pago.urlCheckout
+    } catch (err) {
+      onToast(err.response?.data?.mensaje ?? 'No se pudo iniciar el pago', 'error')
+      setPagandoId(null)
+    }
+  }
 
   const cargar = useCallback(() => {
     setCargando(true)
     setError(null)
-    pagosService.listarOrdenes()
-      .then((data) => setOrdenes(data.content ?? data ?? []))
+    pagosService.listarOrdenes({ page: pagina, size: POR_PAGINA_HISTORIAL })
+      .then((data) => { setOrdenes(data.content ?? data ?? []); setTotalElementos(data.totalElements ?? 0) })
       .catch(() => setError('No se pudo cargar tu historial de compras.'))
       .finally(() => setCargando(false))
-  }, [])
+  }, [pagina])
 
   useEffect(() => { cargar() }, [cargar])
 
@@ -723,14 +708,36 @@ function TabHistorial({ onToast }) {
                   </td>
                   <td className="px-4 py-3"><EstadoOrdenBadge estado={o.estado} /></td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center justify-center">
-                      <button onClick={() => setOrdenSeleccionada(o)} title="Ver detalle"
+                    <div className="flex items-center justify-center gap-1.5">
+                      {o.estado === 'PENDIENTE' ? (
+                        <button onClick={() => pagarOrden(o.idOrdenCompra)} disabled={pagandoId === o.idOrdenCompra}
+                          title={pagandoId === o.idOrdenCompra ? 'Redirigiendo...' : 'Completar pago'}
+                          className="p-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white transition-colors">
+                          {pagandoId === o.idOrdenCompra ? (
+                            <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                          ) : (
+                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3M3.75 6h16.5a1.5 1.5 0 011.5 1.5v9a1.5 1.5 0 01-1.5 1.5H3.75a1.5 1.5 0 01-1.5-1.5v-9a1.5 1.5 0 011.5-1.5z" />
+                            </svg>
+                          )}
+                        </button>
+                      ) : (
+                      <Link to={`/cliente/comprar-servicios/resultado/${o.idOrdenCompra}`} title="Ver detalle"
                         className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors">
                         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                           <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                         </svg>
-                      </button>
+                      </Link>
+                      )}
+                      {o.idComprobante && (
+                        <Link to={`/cliente/comprar-servicios/comprobante/${o.idComprobante}`} title="Ver factura"
+                          className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors">
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                        </Link>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -738,15 +745,9 @@ function TabHistorial({ onToast }) {
             </tbody>
           </table>
         </div>
+        <Paginacion pagina={pagina + 1} total={totalElementos} porPagina={POR_PAGINA_HISTORIAL}
+          onChange={(p) => setPagina(p - 1)} />
       </div>
-
-      {ordenSeleccionada && (
-        <ModalDetalleOrden
-          orden={ordenSeleccionada}
-          onClose={() => setOrdenSeleccionada(null)}
-          onToast={onToast}
-        />
-      )}
     </>
   )
 }

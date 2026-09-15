@@ -2,6 +2,24 @@ import { useState, useEffect, useCallback } from 'react'
 import reversionService from '../services/reversionService'
 import Toast from './Toast'
 import { Modal } from './ui/Modal'
+import Paginacion from './ui/Paginacion'
+
+const POR_PAGINA = 10
+
+function IconoCheck() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+    </svg>
+  )
+}
+function IconoX() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+    </svg>
+  )
+}
 
 const BADGE_ESTADO_SERVICIO = {
   PENDIENTE:    'bg-amber-100 text-amber-700',
@@ -93,7 +111,7 @@ function ModalRevision({ item, accion, onConfirmar, onCancelar }) {
 export default function ReversionesLista({ base, soloLectura = false }) {
   const [items, setItems]               = useState([])
   const [pagina, setPagina]             = useState(0)
-  const [totalPaginas, setTotalPaginas] = useState(0)
+  const [totalElementos, setTotalElementos] = useState(0)
   const [filtro, setFiltro]             = useState('PENDIENTE')
   const [busqueda, setBusqueda]         = useState('')
   const [busquedaAplicada, setBusquedaAplicada] = useState('')
@@ -114,13 +132,13 @@ export default function ReversionesLista({ base, soloLectura = false }) {
     setCargando(true)
     try {
       const peticiones = [
-        reversionService.listar({ estado: filtro || undefined, q: busquedaAplicada || undefined, page: pagina, base }),
+        reversionService.listar({ estado: filtro || undefined, q: busquedaAplicada || undefined, page: pagina, size: POR_PAGINA, base }),
       ]
       if (!soloLectura) peticiones.push(reversionService.contarPendientes())
 
       const [pag, count] = await Promise.all(peticiones)
       setItems(pag.content ?? [])
-      setTotalPaginas(pag.totalPages ?? 0)
+      setTotalElementos(pag.totalElements ?? 0)
       if (!soloLectura) setPendientes(count ?? 0)
     } catch (e) {
       const status = e.response?.status
@@ -256,13 +274,13 @@ export default function ReversionesLista({ base, soloLectura = false }) {
                       <td className="px-4 py-3">
                         {r.estado === 'PENDIENTE' ? (
                           <div className="flex items-center justify-center gap-1.5">
-                            <button onClick={() => setRevisando({ item: r, accion: 'aprobar' })}
-                              className="text-xs font-medium px-2.5 py-1 rounded-lg bg-primary-600 hover:bg-primary-700 text-white transition-colors whitespace-nowrap">
-                              Aprobar
+                            <button onClick={() => setRevisando({ item: r, accion: 'aprobar' })} title="Aprobar"
+                              className="p-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white transition-colors">
+                              <IconoCheck />
                             </button>
-                            <button onClick={() => setRevisando({ item: r, accion: 'rechazar' })}
-                              className="text-xs font-medium px-2.5 py-1 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors whitespace-nowrap">
-                              Rechazar
+                            <button onClick={() => setRevisando({ item: r, accion: 'rechazar' })} title="Rechazar"
+                              className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 transition-colors">
+                              <IconoX />
                             </button>
                           </div>
                         ) : (
@@ -277,16 +295,9 @@ export default function ReversionesLista({ base, soloLectura = false }) {
           </div>
         )}
 
-        {totalPaginas > 1 && (
-          <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
-            <span>Página {pagina + 1} de {totalPaginas}</span>
-            <div className="flex gap-1">
-              <button onClick={() => setPagina(p => Math.max(0, p - 1))} disabled={pagina === 0}
-                className="px-3 py-1.5 rounded-lg hover:bg-gray-100 disabled:opacity-40 transition-colors">← Anterior</button>
-              <button onClick={() => setPagina(p => Math.min(totalPaginas - 1, p + 1))} disabled={pagina >= totalPaginas - 1}
-                className="px-3 py-1.5 rounded-lg hover:bg-gray-100 disabled:opacity-40 transition-colors">Siguiente →</button>
-            </div>
-          </div>
+        {!cargando && items.length > 0 && (
+          <Paginacion pagina={pagina + 1} total={totalElementos} porPagina={POR_PAGINA}
+            onChange={(p) => setPagina(p - 1)} />
         )}
       </div>
 
