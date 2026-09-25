@@ -66,13 +66,24 @@ public class FormularioPlantillaWordService {
     public byte[] generar(FormularioPlantillaConfig config, Candidato candidato, Cliente cliente, List<FormularioSeccion> secciones,
                            Map<Integer, String> valoresCampos, Map<Integer, List<FormularioFila>> filasPorSeccion,
                            Map<Integer, Map<Integer, String>> valoresPorFila, boolean actorPuedeEditarPlantilla) {
+        return generar(config, candidato, cliente, secciones, valoresCampos, filasPorSeccion, valoresPorFila,
+                actorPuedeEditarPlantilla, null, null);
+    }
+
+    /** riesgo/calificacion: marcadores de la calificación de riesgo (ver ContextoPlantillaWord). */
+    public byte[] generar(FormularioPlantillaConfig config, Candidato candidato, Cliente cliente, List<FormularioSeccion> secciones,
+                           Map<Integer, String> valoresCampos, Map<Integer, List<FormularioFila>> filasPorSeccion,
+                           Map<Integer, Map<Integer, String>> valoresPorFila, boolean actorPuedeEditarPlantilla,
+                           Map<String, String> riesgo, Map<String, String> calificacion) {
         String ruta = config != null ? config.getPlantillaWordRuta() : null;
         if (ruta == null || ruta.isBlank()) {
             throw new ApiException("Esta plantilla todavía no tiene un documento Word con marcadores subido.",
                     HttpStatus.BAD_REQUEST);
         }
 
-        ContextoPlantillaWord contexto = construirContexto(candidato, cliente, secciones, valoresCampos, filasPorSeccion, valoresPorFila);
+        ContextoPlantillaWord base = construirContexto(candidato, cliente, secciones, valoresCampos, filasPorSeccion, valoresPorFila);
+        ContextoPlantillaWord contexto = new ContextoPlantillaWord(base.getCandidato(), base.getCampos(), base.getTablas(),
+                riesgo, calificacion);
 
         // Se carga el archivo ANTES del try de generación, y su propia excepción (ej. "Archivo no
         // encontrado" si se borró del disco o el entorno perdió el volumen de uploads) se deja
@@ -94,8 +105,13 @@ public class FormularioPlantillaWordService {
             return limpiarComentarios(salida.toByteArray());
         } catch (Exception e) {
             log.error("No se pudo generar el documento desde la plantilla Word ({}): {}", ruta, e.getMessage(), e);
+            // El admin sí puede actuar sobre el detalle técnico (es quien entra a corregir el
+            // .docx); el analista/poligrafista/visitador no tiene esa pantalla, así que para él
+            // se queda el mensaje genérico de siempre — mostrarle "SpelEvaluationException:..."
+            // no le sirve para nada, solo lo confunde.
             String mensaje = actorPuedeEditarPlantilla
-                    ? "No se pudo generar el documento a partir de la plantilla Word — revisa que los marcadores estén bien escritos."
+                    ? "No se pudo generar el documento a partir de la plantilla Word: " + causaLegible(e)
+                            + " — revisa que los marcadores estén bien escritos."
                     : "No se pudo generar el documento — hay un problema con los marcadores de la plantilla. Avísale al administrador para que la revise.";
             throw new ApiException(mensaje, HttpStatus.INTERNAL_SERVER_ERROR);
         }
@@ -255,7 +271,9 @@ public class FormularioPlantillaWordService {
         return bloqueSinFlotar;
     }
 
-    private ContextoPlantillaWord construirContexto(Candidato candidato, Cliente cliente, List<FormularioSeccion> secciones,
+    // Sin "private" a propósito — FormularioPlantillaWordServiceValidacionTest la prueba directo,
+    // sin tener que montar un XWPFDocument real solo para verificar cómo se arma el contexto.
+    ContextoPlantillaWord construirContexto(Candidato candidato, Cliente cliente, List<FormularioSeccion> secciones,
                                                       Map<Integer, String> valoresCampos,
                                                       Map<Integer, List<FormularioFila>> filasPorSeccion,
                                                       Map<Integer, Map<Integer, String>> valoresPorFila) {
@@ -290,7 +308,29 @@ public class FormularioPlantillaWordService {
                 // mapaTablas desde resolverTablasFijas() de arriba, leída en vivo de la hoja de
                 // vida real del candidato — el analista la edita directamente ahí (ver
                 // CandidatoHojaVidaController), no hay una copia aparte que sobrescribir aquí.
-                if (seccion.getOrigenFijo() != null) continue;
+                // Lo único que SÍ agrega esta sección son sus columnas de VALIDACIÓN (ver
+                // FormularioFila.idOrigenFijo) — se mezclan dentro del MISMO mapa de fila que ya
+                // tiene los datos fijos, para que en Word se usen con el mismo
+                // repeatTableRow(tablas['clave']), ej. ${nombre} (fijo) y ${verificado}
+                // (validación) en la misma fila, sin un marcador de tabla aparte.
+                if (seccion.getOrigenFijo() != null) {
+                    Map<String, Map<String, Object>> indiceFilasFijas = new HashMap<>();
+                    for (Map<String, Object> filaFija : mapaTablas.getOrDefault(seccion.getOrigenFijo(), List.of())) {
+                        Object id = filaFija.get("id");
+                        if (id != null) indiceFilasFijas.put(String.valueOf(id), filaFija);
+                    }
+                    for (FormularioFila filaValidacion : filasPorSeccion.getOrDefault(seccion.getIdSeccion(), List.of())) {
+                        if (filaValidacion.getIdOrigenFijo() == null) continue;
+                        Map<String, Object> filaFija = indiceFilasFijas.get(String.valueOf(filaValidacion.getIdOrigenFijo()));
+                        if (filaFija == null) continue; // fila de validación huérfana (su fila original ya no existe)
+                        Map<Integer, String> valoresFila = valoresPorFila.getOrDefault(filaValidacion.getIdFila(), Map.of());
+                        for (FormularioColumna columna : columnas) {
+                            if (columna.getClave() == null) continue;
+                            filaFija.put(columna.getClave(), valorColumna(columna, candidato, cliente, valoresFila.get(columna.getIdColumna())));
+                        }
+                    }
+                    continue;
+                }
                 List<FormularioFila> filas = filasPorSeccion.getOrDefault(seccion.getIdSeccion(), List.of()).stream()
                         .sorted(Comparator.comparing(FormularioFila::getOrden)).toList();
                 List<Map<String, Object>> filasContexto = new ArrayList<>();
@@ -355,6 +395,27 @@ public class FormularioPlantillaWordService {
     /** Vista previa desde la estructura que se está editando (aunque no se haya guardado) — con
      *  datos de ejemplo. No hay ningún subproceso real de fondo todavía. */
     public byte[] generarVistaPrevia(FormularioPlantillaConfig config, GuardarPlantillaRequest req) {
+        try {
+            return intentarGenerarVistaPrevia(config, req);
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            String ruta = config != null ? config.getPlantillaWordRuta() : null;
+            log.error("No se pudo generar la vista previa desde la plantilla Word ({}): {}", ruta, e.getMessage(), e);
+            throw new ApiException(
+                    "No se pudo generar la vista previa: " + causaLegible(e)
+                            + " — revisa que los marcadores estén bien escritos.",
+                    HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /** Mismo cuerpo de generarVistaPrevia(), pero sin envolver la excepción real en un
+     *  ApiException genérico — así analizarMarcadores() puede reusarlo como un "ensayo" de
+     *  generación real y detectar el mismo fallo que el admin vería al pedir la vista previa,
+     *  en vez de basarse solo en comparar nombres de marcadores por texto (ver comentario de
+     *  analizarMarcadores: eso deliberadamente no valida marcadores sueltos ${['clave']}, que
+     *  es justo el tipo de error que SÍ revienta al generar de verdad). */
+    private byte[] intentarGenerarVistaPrevia(FormularioPlantillaConfig config, GuardarPlantillaRequest req) throws Exception {
         String ruta = config != null ? config.getPlantillaWordRuta() : null;
         if (ruta == null || ruta.isBlank()) {
             throw new ApiException("Sube primero un documento Word con marcadores para poder ver la vista previa.",
@@ -400,17 +461,25 @@ public class FormularioPlantillaWordService {
             }
         }
 
-        ContextoPlantillaWord contexto = new ContextoPlantillaWord(mapaCandidato, mapaCampos, mapaTablas);
+        // Valores de ejemplo para los marcadores de riesgo en la vista previa.
+        ContextoPlantillaWord contexto = new ContextoPlantillaWord(mapaCandidato, mapaCampos, mapaTablas,
+                Map.of("nivel", "MEDIO", "puntaje", "31,0"), Map.of("nivel", "BAJO", "puntaje", "10,0"));
         try (InputStream plantilla = almacenamientoService.cargarComoResource(ruta).getInputStream();
              ByteArrayOutputStream salida = new ByteArrayOutputStream()) {
             OfficeStampers.docxStamper().stamp(plantilla, contexto, salida);
             return limpiarComentarios(salida.toByteArray());
-        } catch (Exception e) {
-            log.error("No se pudo generar la vista previa desde la plantilla Word ({}): {}", ruta, e.getMessage(), e);
-            throw new ApiException(
-                    "No se pudo generar la vista previa — revisa que los marcadores estén bien escritos.",
-                    HttpStatus.INTERNAL_SERVER_ERROR);
         }
+    }
+
+    /** Primera línea del mensaje real de la excepción (SpelEvaluationException/
+     *  OfficeStamperException citan ahí mismo el marcador exacto que falló, ej. "Expression
+     *  ...${['etiqueta']}... could not be resolved") — mucho más útil para el admin que el
+     *  mensaje genérico de siempre, y sin el resto del stack trace en texto plano. */
+    private String causaLegible(Throwable e) {
+        String msg = e.getMessage();
+        if (msg == null || msg.isBlank()) return e.getClass().getSimpleName();
+        int salto = msg.indexOf('\n');
+        return salto > 0 ? msg.substring(0, salto) : msg;
     }
 
     private String valorPreview(GuardarPlantillaRequest.ColumnaRequest c) {
@@ -426,7 +495,7 @@ public class FormularioPlantillaWordService {
     }
 
     private static final Pattern MARCADOR = Pattern.compile(
-            "\\$\\{\\s*(campos|candidato|tablas)\\s*\\[\\s*['\"]([^'\"]+)['\"]\\s*]\\s*}");
+            "\\$\\{\\s*(campos|candidato|tablas|riesgo|calificacion)\\s*\\[\\s*['\"]([^'\"]+)['\"]\\s*]\\s*}");
     /** La sintaxis REAL de una tabla repetida — repeatTableRow(...)/repeatDocPart(...) nunca
      *  llevan ${...} alrededor, ni en el comentario (así los reconoce el procesador de
      *  comentarios) ni mucho menos en el cuerpo del documento. Un admin que nunca ha visto la
@@ -455,6 +524,7 @@ public class FormularioPlantillaWordService {
 
         Set<String> camposUsados = new HashSet<>();
         Set<String> candidatoUsados = new HashSet<>();
+        Set<String> riesgoUsados = new HashSet<>();
         // Separadas a propósito: "tablas['clave']" solo funciona de verdad dentro de un
         // comentario repeatTableRow(...) sobre una fila de tabla — si aparece suelto en el texto
         // del documento, office-stamper lo reemplaza por el toString() de la lista completa
@@ -488,7 +558,7 @@ public class FormularioPlantillaWordService {
             // que de verdad pasa al descargar el .docx.
             textosCuerpo.addAll(extraerTextosDeCuadrosDeTexto(doc.getDocument().xmlText()));
             for (String texto : textosCuerpo) {
-                extraerMarcadores(texto, camposUsados, candidatoUsados, tablasEnTexto);
+                extraerMarcadores(texto, camposUsados, candidatoUsados, tablasEnTexto, riesgoUsados);
                 extraerRepeatTabla(texto, tablasEnTexto);
             }
 
@@ -496,7 +566,7 @@ public class FormularioPlantillaWordService {
             if (comentarios != null) {
                 for (XWPFComment comentario : comentarios) {
                     String texto = comentario.getText();
-                    extraerMarcadores(texto, camposUsados, candidatoUsados, tablasComoMarcadorEnComentario);
+                    extraerMarcadores(texto, camposUsados, candidatoUsados, tablasComoMarcadorEnComentario, riesgoUsados);
                     extraerRepeatTabla(texto, tablasEnComentarios);
                 }
             }
@@ -531,6 +601,7 @@ public class FormularioPlantillaWordService {
         for (String c : camposUsados) if (!camposDefinidos.contains(c)) desconocidos.add("campos['" + c + "']");
         for (String c : tablasUsados) if (!tablasSiempreDisponibles.contains(c)) desconocidos.add("tablas['" + c + "']");
         for (String c : candidatoUsados) if (!candidatoDefinidos.contains(c)) desconocidos.add("candidato['" + c + "']");
+        for (String r : riesgoUsados) if (!MARCADORES_RIESGO.contains(r)) desconocidos.add(r);
 
         List<String> sinUsar = new ArrayList<>();
         for (String c : camposDefinidos) if (!camposUsados.contains(c)) sinUsar.add("campos['" + c + "']");
@@ -540,8 +611,21 @@ public class FormularioPlantillaWordService {
         tablasMalUsadasClaves.addAll(tablasComoMarcadorEnComentario);
         List<String> tablasMalUsadas = tablasMalUsadasClaves.stream().sorted().map(c -> "tablas['" + c + "']").toList();
 
+        // Ensayo real de generación con datos de ejemplo — la comparación de arriba es solo por
+        // nombre de marcador y no detecta un ${['clave']} suelto mal ubicado (fuera de una fila
+        // repetida real): eso NO revienta por nombre desconocido, revienta al momento de resolver
+        // la expresión contra el documento completo. Sin esto, "Analizar" podía decir que todo
+        // estaba bien mientras "Vista previa" fallaba con el mismo archivo y los mismos campos.
+        String errorGeneracion = null;
+        try {
+            intentarGenerarVistaPrevia(config, req);
+        } catch (Exception e) {
+            log.warn("analizarMarcadores: la plantilla Word ({}) no generaría un documento válido: {}", ruta, e.getMessage());
+            errorGeneracion = causaLegible(e);
+        }
+
         return new AnalisisPlantillaWordResponse(desconocidos.stream().sorted().toList(), sinUsar.stream().sorted().toList(),
-                tablasMalUsadas);
+                tablasMalUsadas, errorGeneracion);
     }
 
     private static final Pattern PATRON_TXBX_CONTENT = Pattern.compile("<w:txbxContent>([\\s\\S]*?)</w:txbxContent>");
@@ -571,7 +655,12 @@ public class FormularioPlantillaWordService {
         return textos;
     }
 
-    private void extraerMarcadores(String texto, Set<String> campos, Set<String> candidato, Set<String> tablas) {
+    /** Marcadores de riesgo válidos (docs/modelo-calificacion-riesgo.md §7) — cualquier otra
+     *  clave de riesgo/calificacion se reporta como desconocida. */
+    static final Set<String> MARCADORES_RIESGO = Set.of(
+            "riesgo['nivel']", "riesgo['puntaje']", "calificacion['nivel']", "calificacion['puntaje']");
+
+    private void extraerMarcadores(String texto, Set<String> campos, Set<String> candidato, Set<String> tablas, Set<String> riesgo) {
         if (texto == null || texto.isBlank()) return;
         Matcher m = MARCADOR.matcher(texto);
         while (m.find()) {
@@ -581,6 +670,7 @@ public class FormularioPlantillaWordService {
                 case "campos" -> campos.add(clave);
                 case "candidato" -> candidato.add(clave);
                 case "tablas" -> tablas.add(clave);
+                case "riesgo", "calificacion" -> riesgo.add(mapa + "['" + clave + "']");
                 default -> { }
             }
         }

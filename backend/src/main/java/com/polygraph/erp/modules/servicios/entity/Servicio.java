@@ -16,7 +16,7 @@ import java.time.LocalTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@ToString(exclude = {"cliente", "candidato", "proceso", "usuarioSolicita"})
+@ToString(exclude = {"cliente", "candidato", "proceso", "usuarioSolicita", "usuarioCriticidad"})
 public class Servicio {
 
     @Id
@@ -70,4 +70,14 @@ public class Servicio {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "id_usuario_solicita", nullable = false)
     private Usuario usuarioSolicita;
+
+    /** Criticidad del cargo de ESTE caso para el motor de riesgo; null = usa la del proceso
+     *  (Proceso.criticidadDefecto). La ajusta el gestor según el cargo real del evaluado. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "criticidad_cargo", length = 10)
+    private com.polygraph.erp.shared.enums.CriticidadCargo criticidadCargo;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "id_usuario_criticidad")
+    private Usuario usuarioCriticidad;
 }

@@ -31,15 +31,6 @@ public class EmailService {
     private String frontendUrl;
 
     @Async
-    public void enviarActivacion(String destinatario, String nombre, String token) {
-        String enlace = frontendUrl + "/activate?token=" + token;
-        String html = cargarPlantilla("templates/email/activacion.html")
-                .replace("{{nombre}}", nombre)
-                .replace("{{enlace}}", enlace);
-        enviar(destinatario, "Activa tu cuenta - Polygraph Service", html);
-    }
-
-    @Async
     public void enviarResetPassword(String destinatario, String nombre, String token) {
         String enlace = frontendUrl + "/reset-password?token=" + token;
         String html = cargarPlantilla("templates/email/reset_password.html")

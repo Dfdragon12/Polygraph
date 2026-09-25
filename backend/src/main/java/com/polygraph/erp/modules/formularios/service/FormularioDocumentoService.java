@@ -39,8 +39,15 @@ public class FormularioDocumentoService {
     private final FormularioPlantillaConfigRepository configRepository;
     private final FormularioPlantillaWordService plantillaWordService;
     private final DocumentoPdfConverter pdfConverter;
+    private final com.polygraph.erp.modules.riesgo.service.CalificacionRiesgoService calificacionRiesgoService;
 
     private static final java.util.Set<Rol> ROLES_EJECUTORES = java.util.Set.of(Rol.ANALISTA_INTERNO, Rol.POLIGRAFISTA, Rol.VISITADOR);
+
+    /** Misma noción de "cerrado" que FormularioService.estaCongelado — COMPLETADO y PUBLICADO se
+     *  documentan igual, congelados en la versión de plantilla que tenían al completarse. */
+    private static boolean estaCongelado(EstadoAsignacion estado) {
+        return estado == EstadoAsignacion.COMPLETADO || estado == EstadoAsignacion.PUBLICADO;
+    }
 
     /** Mismo documento que generar() (mismo .docx, mismos marcadores resueltos) — solo se le
      *  cambia el formato de salida a PDF al final, para que "Descargar PDF" muestre el mismo
@@ -52,6 +59,7 @@ public class FormularioDocumentoService {
     public byte[] generar(Long idServicioSubproceso, Usuario actor) {
         ServicioSubproceso subproceso = servicioSubprocesoRepository.findById(idServicioSubproceso)
                 .orElseThrow(() -> new ApiException("Subproceso no encontrado", HttpStatus.NOT_FOUND));
+        com.polygraph.erp.shared.utils.AccesoGestor.validar(subproceso, actor);
         if (ROLES_EJECUTORES.contains(actor.getRol())) {
             Usuario asignado = subproceso.getUsuarioAsignado();
             if (asignado == null || !actor.getIdUsuario().equals(asignado.getIdUsuario())) {
@@ -66,7 +74,7 @@ public class FormularioDocumentoService {
         // Formulario guardado en ese estado sería un callejón sin salida: no se puede guardar
         // porque está completado, y no se puede descargar porque nunca se guardó. Mientras sigue
         // en progreso, sí se exige (nudge para que guarde antes de descargar).
-        if (formulario == null && subproceso.getEstado() != EstadoAsignacion.COMPLETADO) {
+        if (formulario == null && !estaCongelado(subproceso.getEstado())) {
             throw new ApiException("Aún no se ha guardado el formulario de este subproceso.", HttpStatus.NOT_FOUND);
         }
 
@@ -74,12 +82,14 @@ public class FormularioDocumentoService {
         Candidato candidato = servicio != null ? servicio.getCandidato() : null;
         Cliente cliente = servicio != null ? servicio.getCliente() : null;
 
-        // Mismo criterio que FormularioService.obtener(): una sección agregada a la plantilla
-        // DESPUÉS de que este subproceso ya existía no debe aparecer en el documento generado,
-        // así como no aparece en pantalla.
+        // Mismo criterio que FormularioService.obtener(): el congelamiento por versión solo
+        // aplica una vez COMPLETADO — mientras sigue en progreso, el documento sigue la
+        // plantilla vigente igual que la pantalla.
         List<FormularioSeccion> secciones = seccionRepository
                 .findByTipoProgreso_IdTipoProgresoOrderByOrdenAsc(subproceso.getTipoProgreso().getIdTipoProgreso())
-                .stream().filter(s -> s.getVersionCreacion() <= subproceso.getVersionPlantilla()).toList();
+                .stream()
+                .filter(s -> !estaCongelado(subproceso.getEstado()) || s.getVersionCreacion() <= subproceso.getVersionPlantilla())
+                .toList();
         List<FormularioFila> filas = formulario != null
                 ? filaRepository.findByFormulario_IdFormularioOrderByOrdenAsc(formulario.getIdFormulario())
                 : List.of();
@@ -96,10 +106,24 @@ public class FormularioDocumentoService {
             else valoresPorFila.computeIfAbsent(d.getFila().getIdFila(), k -> new HashMap<>()).put(d.getColumna().getIdColumna(), d.getValor());
         }
 
-        FormularioPlantillaConfig config = configRepository.findById(subproceso.getTipoProgreso().getIdTipoProgreso()).orElse(null);
+        // Un subproceso ya cerrado (COMPLETADO/PUBLICADO) siempre se regenera con el MISMO Word
+        // que estaba activo cuando se completó (ver AsignacionService.completar(), que estampa
+        // rutaWordCongelada) — así no se mezcla con un .docx más nuevo que ya no tiene marcadores
+        // para campos viejos, o que trae marcadores nuevos que este subproceso nunca diligenció.
+        // rutaWordCongelada es null en subprocesos completados antes de que existiera esta
+        // columna, o si nunca hubo un Word subido al completarse — en esos casos se sigue usando
+        // el config vigente, igual que siempre (mejor esfuerzo, no hay forma de reconstruir cuál
+        // era el Word de ese momento).
+        FormularioPlantillaConfig config = (estaCongelado(subproceso.getEstado()) && subproceso.getRutaWordCongelada() != null)
+                ? FormularioPlantillaConfig.builder().plantillaWordRuta(subproceso.getRutaWordCongelada()).build()
+                : configRepository.findById(subproceso.getTipoProgreso().getIdTipoProgreso()).orElse(null);
         boolean actorPuedeEditarPlantilla = !ROLES_EJECUTORES.contains(actor.getRol());
+        var marcadores = servicio != null
+                ? calificacionRiesgoService.marcadoresWord(servicio.getIdServicio(), idServicioSubproceso)
+                : null;
         return plantillaWordService.generar(config, candidato, cliente, secciones, valoresCampos, filasPorSeccion, valoresPorFila,
-                actorPuedeEditarPlantilla);
+                actorPuedeEditarPlantilla, marcadores != null ? marcadores.riesgo() : null,
+                marcadores != null ? marcadores.calificacion() : null);
     }
 
     /** Vista previa de cómo quedaría el documento, generada directo desde la estructura que se

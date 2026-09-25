@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Link, useLocation, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import asignacionService from '../../services/asignacionService'
 import Toast from '../../components/Toast'
 import Paginacion from '../../components/ui/Paginacion'
+import MenuAcciones from '../../components/ui/MenuAcciones'
 
 const POR_PAGINA = 10
 
@@ -25,16 +26,30 @@ const SECCION_BREADCRUMB = {
   visitador: 'Mis Visitas',
 }
 
+// Mismo criterio de "semáforo" en las 3 pantallas de este módulo (Mis Asignaciones/Agenda de
+// gestor/programador): azul = en progreso, violeta = terminado pero pendiente de que gestor lo
+// revise, verde = ya aprobado y cerrado de verdad, rojo = cancelado.
 const BADGE = {
   ASIGNADO:   'bg-blue-100 text-blue-700',
-  COMPLETADO: 'bg-green-100 text-green-700',
+  COMPLETADO: 'bg-violet-100 text-violet-700',
+  PUBLICADO:  'bg-emerald-100 text-emerald-700',
   CANCELADO:  'bg-red-100 text-red-600',
 }
 
-const TABS = [
-  { estado: 'ASIGNADO',   label: 'Por hacer' },
-  { estado: 'COMPLETADO', label: 'Completadas' },
-  { estado: 'CANCELADO',  label: 'Canceladas' },
+const CAMPO_CONTEO = {
+  ASIGNADO:   'asignados',
+  COMPLETADO: 'completados',
+  PUBLICADO:  'publicados',
+  CANCELADO:  'cancelados',
+}
+
+// Mismas tarjetas de resumen que ya tienen gestor/programador en su Agenda — antes esta pantalla
+// solo tenía pestañas de texto, sin esa vista rápida de cuántas hay en cada estado.
+const TARJETAS_ESTADO = [
+  { estado: 'ASIGNADO',   label: 'Por hacer',   desc: 'Pendientes de diligenciar', border: 'border-blue-200',    dot: 'bg-blue-400',    texto: 'text-blue-600',    bgActivo: 'bg-blue-50/70',    ring: 'ring-blue-300' },
+  { estado: 'COMPLETADO', label: 'Por revisar', desc: 'Ya las diligenciaste',      border: 'border-violet-200',  dot: 'bg-violet-400',  texto: 'text-violet-600',  bgActivo: 'bg-violet-50/70',  ring: 'ring-violet-300' },
+  { estado: 'PUBLICADO',  label: 'Aprobadas',   desc: 'El gestor ya las aprobó',   border: 'border-emerald-200', dot: 'bg-emerald-400', texto: 'text-emerald-600', bgActivo: 'bg-emerald-50/70', ring: 'ring-emerald-300' },
+  { estado: 'CANCELADO',  label: 'Canceladas',  desc: 'No requieren acción',       border: 'border-red-200',     dot: 'bg-red-400',     texto: 'text-red-500',     bgActivo: 'bg-red-50/70',     ring: 'ring-red-300' },
 ]
 
 function formatFecha(iso) {
@@ -42,13 +57,21 @@ function formatFecha(iso) {
   return new Date(iso).toLocaleString('es-CO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
-// Días completos transcurridos desde la fecha programada hasta ahora — negativo si todavía no
-// llega (no es retraso). Solo tiene sentido para lo que sigue ASIGNADO (ya completado/cancelado no
-// "se atrasa" más).
-function diasDeRetraso(fechaProgramadaIso) {
-  if (!fechaProgramadaIso) return 0
+// Cuánto lleva vencido desde la fecha programada — en horas si todavía no llega a un día completo
+// (antes un retraso de unas horas no mostraba nada, igual que "sin retraso"), en días una vez pasa
+// las 24h. null si todavía no llega la fecha (no es retraso) o no tiene fecha. Solo tiene sentido
+// para lo que sigue ASIGNADO (ya completado/cancelado no "se atrasa" más).
+function textoRetraso(fechaProgramadaIso) {
+  if (!fechaProgramadaIso) return null
   const ms = Date.now() - new Date(fechaProgramadaIso).getTime()
-  return Math.floor(ms / (1000 * 60 * 60 * 24))
+  if (ms <= 0) return null
+  const horas = ms / (1000 * 60 * 60)
+  if (horas < 24) {
+    const h = Math.max(1, Math.floor(horas))
+    return `${h} ${h === 1 ? 'hora' : 'horas'} de retraso`
+  }
+  const dias = Math.floor(horas / 24)
+  return `${dias} ${dias === 1 ? 'día' : 'días'} de retraso`
 }
 
 function EstadoBadge({ estado }) {
@@ -68,15 +91,52 @@ function IconoHoja() {
     </svg>
   )
 }
-function IconoCheck() {
+function IconoMasMenos({ abierto }) {
   return (
-    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d={abierto ? 'M19.5 12h-15' : 'M12 4.5v15m7.5-7.5h-15'} />
     </svg>
   )
 }
 
+/* ─── Columna "Fechas": oculta por defecto, un "+" la despliega — evita que la tabla se vea
+   amontonada con fechas que la mayoría del tiempo nadie necesita mirar. Qué filas mostrar depende
+   del estado REAL de esa fila (no de la pestaña activa), así siempre es correcto sin importar
+   cómo se llegó a ver esa fila. */
+function CeldaFechas({ asignacion: a, abierta, onToggle }) {
+  if (!abierta) {
+    return (
+      <button onClick={onToggle}
+        className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-400 hover:text-primary-600 transition-colors">
+        <IconoMasMenos abierto={false} /> Fechas
+      </button>
+    )
+  }
+  return (
+    <div className="grid grid-cols-[3.2rem_auto] gap-x-1.5 gap-y-0.5">
+      <span className="font-medium text-blue-500">Asig.</span><span className="text-gray-600">{formatFecha(a.fechaAsignacion)}</span>
+      <span className="font-medium text-gray-400">Prog.</span><span className="text-gray-600">{formatFecha(a.fechaProgramada)}</span>
+      {(a.estado === 'COMPLETADO' || a.estado === 'PUBLICADO') && (
+        <>
+          <span className="font-medium text-violet-500">Compl.</span>
+          <span className="text-gray-600">{formatFecha(a.fechaCompletado)}</span>
+        </>
+      )}
+      {a.estado === 'PUBLICADO' && (
+        <>
+          <span className="font-medium text-emerald-500">Publ.</span>
+          <span className="text-gray-600">{formatFecha(a.fechaPublicado)}</span>
+        </>
+      )}
+      <button onClick={onToggle}
+        className="col-span-2 inline-flex items-center gap-1 text-[10px] text-gray-400 hover:text-gray-600 mt-0.5">
+        <IconoMasMenos abierto /> Ocultar
+      </button>
+    </div>
+  )
+}
 export default function MisAsignaciones() {
+  const navigate = useNavigate()
   const prefijo = useLocation().pathname.split('/')[1]
   const { titulo, subtitulo } = TITULOS[prefijo] ?? TITULOS.analista
 
@@ -90,7 +150,12 @@ export default function MisAsignaciones() {
   const [conteos, setConteos] = useState(null)
   const [error, setError] = useState(null)
   const [toast, setToast] = useState(null)
-  const [completandoId, setCompletandoId] = useState(null)
+  const [fechasAbiertas, setFechasAbiertas] = useState(() => new Set())
+  const toggleFechas = (id) => setFechasAbiertas(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return next
+  })
 
   const cargar = useCallback(() => {
     setAsignaciones(null)
@@ -108,19 +173,6 @@ export default function MisAsignaciones() {
 
   const cambiarEstado = (nuevoEstado) => { setEstado(nuevoEstado); setPagina(0) }
 
-  const completar = async (id) => {
-    setCompletandoId(id)
-    try {
-      await asignacionService.completar(id)
-      setToast({ mensaje: 'Marcada como completada', tipo: 'exito' })
-      cargar()
-    } catch (err) {
-      setToast({ mensaje: err.response?.data?.mensaje ?? 'No se pudo completar.', tipo: 'error' })
-    } finally {
-      setCompletandoId(null)
-    }
-  }
-
   return (
     <div>
       <div className="mb-5">
@@ -132,22 +184,23 @@ export default function MisAsignaciones() {
         <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{error}</div>
       )}
 
-      <div className="inline-flex gap-1 mb-4 p-1 bg-gray-100 rounded-xl">
-        {TABS.map(t => (
-          <button key={t.estado} onClick={() => cambiarEstado(t.estado)}
-            className={`px-3.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              estado === t.estado
-                ? 'bg-white text-primary-700 shadow-sm'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}>
-            {t.label}
-            {conteos && t.estado === 'ASIGNADO' && conteos.asignados > 0 && (
-              <span className={`ml-1.5 text-xs ${estado === t.estado ? 'text-primary-500' : 'text-gray-400'}`}>
-                ({conteos.asignados})
-              </span>
-            )}
-          </button>
-        ))}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+        {TARJETAS_ESTADO.map(t => {
+          const activo = estado === t.estado
+          return (
+            <button key={t.estado} type="button" onClick={() => cambiarEstado(t.estado)}
+              className={`text-left bg-white rounded-xl border shadow-sm p-4 cursor-pointer hover:shadow-md transition-shadow ${t.border} ${
+                activo ? `${t.bgActivo} ring-2 ${t.ring}` : ''
+              }`}>
+              <div className="flex items-center gap-2 mb-2">
+                <span className={`w-2 h-2 rounded-full ${t.dot}`} />
+                <span className="text-xs font-medium text-gray-500">{t.label}</span>
+              </div>
+              <p className={`text-3xl font-bold ${t.texto}`}>{conteos ? (conteos[CAMPO_CONTEO[t.estado]] ?? 0) : '—'}</p>
+              <p className="text-xs text-gray-400 mt-1">{t.desc}</p>
+            </button>
+          )
+        })}
       </div>
 
       <div className="bg-white rounded-2xl ring-1 ring-gray-900/5 shadow-sm overflow-hidden">
@@ -168,14 +221,14 @@ export default function MisAsignaciones() {
                       aplica en "Por hacer". */}
                   {['Evaluado', 'Subproceso', 'Estado', 'Fechas',
                     ...(estado === 'ASIGNADO' ? ['Retraso'] : []),
-                    'Acciones'].map(h => (
+                    '···'].map(h => (
                     <th key={h} className="px-4 py-3 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {asignaciones.map(a => {
-                  const retraso = a.estado === 'ASIGNADO' ? diasDeRetraso(a.fechaProgramada) : 0
+                  const retraso = a.estado === 'ASIGNADO' ? textoRetraso(a.fechaProgramada) : null
                   return (
                   <tr key={a.id} className="hover:bg-gray-50/70 transition-colors">
                     <td className="px-4 py-3">
@@ -189,42 +242,27 @@ export default function MisAsignaciones() {
                     <td className="px-4 py-3">
                       <EstadoBadge estado={a.estado} />
                     </td>
-                    <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
-                      <p>Asignado: {formatFecha(a.fechaAsignacion)}</p>
-                      <p>Programado: {formatFecha(a.fechaProgramada)}</p>
-                      {estado === 'COMPLETADO' && <p>Completado: {formatFecha(a.fechaCompletado)}</p>}
+                    <td className="px-4 py-3 text-xs whitespace-nowrap">
+                      <CeldaFechas asignacion={a} abierta={fechasAbiertas.has(a.id)} onToggle={() => toggleFechas(a.id)} />
                     </td>
                     {estado === 'ASIGNADO' && (
                       <td className="px-4 py-3 whitespace-nowrap">
-                        {retraso > 0 ? (
+                        {retraso ? (
                           <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-red-50 text-red-700 ring-1 ring-red-100">
-                            {retraso} {retraso === 1 ? 'día' : 'días'} de retraso
+                            {retraso}
                           </span>
                         ) : (
                           <span className="text-xs text-gray-300">—</span>
                         )}
                       </td>
                     )}
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1">
-                        {a.requiereDocumento && (
-                          <Link to={`/${prefijo}/formulario/${a.id}`} title="Formulario"
-                            state={{ origenSeccion: SECCION_BREADCRUMB[prefijo] }}
-                            className="p-1.5 rounded-lg text-primary-600 hover:bg-primary-50 hover:text-primary-800 transition-colors">
-                            <IconoHoja />
-                          </Link>
-                        )}
-                        {a.estado === 'ASIGNADO' && (
-                          <button onClick={() => completar(a.id)} disabled={completandoId === a.id} title="Completar"
-                            className="p-1.5 rounded-lg text-green-600 hover:bg-green-50 hover:text-green-800 disabled:opacity-50 transition-colors">
-                            {completandoId === a.id ? (
-                              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-green-600 border-t-transparent" />
-                            ) : (
-                              <IconoCheck />
-                            )}
-                          </button>
-                        )}
-                      </div>
+                    <td className="px-4 py-3 text-center">
+                      <MenuAcciones opciones={[
+                        a.requiereDocumento && {
+                          label: 'Formulario', icono: <IconoHoja />,
+                          onClick: () => navigate(`/${prefijo}/formulario/${a.id}`, { state: { origenSeccion: SECCION_BREADCRUMB[prefijo] } }),
+                        },
+                      ]} />
                     </td>
                   </tr>
                   )

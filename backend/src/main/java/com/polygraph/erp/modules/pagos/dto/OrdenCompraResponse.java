@@ -19,6 +19,7 @@ public record OrdenCompraResponse(
         String nombrePagador,
         String telefonoPagador,
         String emailPagador,
+        Integer idCliente,
         String nombreCliente,
         Integer idComprobante,
         String numeroComprobante,

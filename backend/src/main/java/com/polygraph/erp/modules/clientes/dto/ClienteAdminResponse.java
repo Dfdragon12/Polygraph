@@ -16,11 +16,16 @@ public record ClienteAdminResponse(
         String nombreComercial,
         String representanteLegal,
         String nit,
+        String dv,
         String emailPrincipal,
         String telefono,
         String direccion,
         Integer idCiudad,
         String nombreCiudad,
+        Integer idPais,
+        String nombrePais,
+        Integer idBarrio,
+        String nombreBarrio,
         String estado,
         LocalDateTime fechaRegistro,
         // Usuario principal asociado (ADMIN_CLIENTE)
@@ -82,7 +87,8 @@ public record ClienteAdminResponse(
     }
 
     public static ClienteAdminResponse from(Cliente c, Usuario u, List<Usuario> usuariosCliente, ClientePospago cp,
-                                             GestorInfo gestorAsignado, String nombreCiudad, DocumentosResumen documentosResumen) {
+                                             GestorInfo gestorAsignado, String nombreCiudad, String nombrePais,
+                                             String nombreBarrio, DocumentosResumen documentosResumen) {
         String nombreDisplay = "NATURAL".equals(c.getTipoPersona().name())
                 ? (c.getNombre() != null ? c.getNombre() : "") + (c.getApellido() != null ? " " + c.getApellido() : "")
                 : (c.getRazonSocial() != null ? c.getRazonSocial() : c.getNombreComercial());
@@ -106,11 +112,16 @@ public record ClienteAdminResponse(
                 c.getNombreComercial(),
                 c.getRepresentanteLegal(),
                 c.getNit(),
+                c.getDv(),
                 c.getEmailPrincipal(),
                 c.getTelefono(),
                 c.getDireccion(),
                 c.getIdCiudad(),
                 nombreCiudad,
+                c.getIdPais(),
+                nombrePais,
+                c.getIdBarrio(),
+                nombreBarrio,
                 c.getEstado(),
                 c.getFechaRegistro(),
                 u != null ? u.getIdUsuario() : null,

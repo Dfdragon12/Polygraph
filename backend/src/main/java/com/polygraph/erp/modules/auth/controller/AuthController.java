@@ -38,12 +38,6 @@ public class AuthController {
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 
-    @PostMapping("/activate")
-    public ResponseEntity<Void> activar(@RequestParam String token) {
-        authService.activarCuenta(token);
-        return ResponseEntity.ok().build();
-    }
-
     @PostMapping("/refresh")
     public ResponseEntity<LoginResponse> refresh(@Valid @RequestBody RefreshRequest request) {
         return ResponseEntity.ok(authService.refresh(request));

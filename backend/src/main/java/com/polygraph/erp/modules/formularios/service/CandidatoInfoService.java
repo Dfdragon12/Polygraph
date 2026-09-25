@@ -7,6 +7,7 @@ import com.polygraph.erp.modules.evaluados.entity.Candidato;
 import com.polygraph.erp.modules.evaluados.entity.HojaVidaEvaluado;
 import com.polygraph.erp.modules.evaluados.repository.HojaVidaEvaluadoRepository;
 import com.polygraph.erp.modules.formularios.dto.CampoCandidatoValorResponse;
+import com.polygraph.erp.modules.formularios.dto.FichaCandidatoResponse;
 import com.polygraph.erp.shared.enums.CampoCandidato;
 import com.polygraph.erp.shared.enums.CampoCliente;
 import com.polygraph.erp.shared.enums.TipoDatoFormulario;
@@ -17,6 +18,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -51,6 +53,32 @@ public class CandidatoInfoService {
     public String resolverUno(Candidato candidato, String clave) {
         CampoCandidato campo = parseCampo(clave);
         return campo == null ? "" : valorDe(candidato, campo);
+    }
+
+    /** Grupos fijos de la ficha del candidato que se consulta desde el formulario (ver
+     *  FormularioService.fichaCandidato). NOMBRES/APELLIDOS se omiten: ya van en NOMBRE_COMPLETO. */
+    private static final LinkedHashMap<String, List<CampoCandidato>> GRUPOS_FICHA = new LinkedHashMap<>();
+    static {
+        GRUPOS_FICHA.put("Identificación", List.of(CampoCandidato.NOMBRE_COMPLETO, CampoCandidato.TIPO_DOCUMENTO,
+                CampoCandidato.CEDULA, CampoCandidato.FECHA_EXPEDICION, CampoCandidato.FECHA_NACIMIENTO,
+                CampoCandidato.LUGAR_NACIMIENTO, CampoCandidato.CIUDAD_NACIMIENTO, CampoCandidato.ESTADO_CIVIL,
+                CampoCandidato.RH));
+        GRUPOS_FICHA.put("Contacto y residencia", List.of(CampoCandidato.CELULAR, CampoCandidato.TELEFONO_FIJO,
+                CampoCandidato.EMAIL_PRINCIPAL, CampoCandidato.CIUDAD_RESIDENCIA, CampoCandidato.DIRECCION_RESIDENCIA,
+                CampoCandidato.BARRIO_RESIDENCIA, CampoCandidato.SECTOR, CampoCandidato.ESTRATO));
+        GRUPOS_FICHA.put("Otros datos", List.of(CampoCandidato.NIVEL_EDUCATIVO, CampoCandidato.LIBRETA_MILITAR,
+                CampoCandidato.RUT, CampoCandidato.PASAPORTE, CampoCandidato.VISA, CampoCandidato.EPS,
+                CampoCandidato.FONDO_PENSIONES));
+    }
+
+    /** Todos los datos del candidato agrupados — el valor viene vacío ("") si no lo tiene. */
+    public List<FichaCandidatoResponse.GrupoDatos> resolverFicha(Candidato candidato) {
+        return GRUPOS_FICHA.entrySet().stream()
+                .map(e -> new FichaCandidatoResponse.GrupoDatos(e.getKey(),
+                        e.getValue().stream()
+                                .map(c -> new CampoCandidatoValorResponse(c.name(), c.getEtiqueta(), valorDe(candidato, c)))
+                                .toList()))
+                .toList();
     }
 
     /** Solo la etiqueta legible, sin resolver ningún candidato — para la vista previa de la
@@ -175,13 +203,18 @@ public class CandidatoInfoService {
      *  referencias personales) — siempre disponibles como marcadores de tabla fijos
      *  (${tablas['referencias']}, etc.), sin necesidad de configurarlas en el constructor, igual
      *  que los campos sueltos de "candidato". Candidato sin hoja de vida (o sin diligenciar
-     *  todavía) devuelve las cuatro listas vacías, nunca null. */
+     *  todavía) devuelve las cuatro listas vacías, nunca null. Cada fila incluye "id" (el id real
+     *  de esa fila en la tabla del candidato) — no es una columna fija más (no aparece en
+     *  COLUMNAS_TABLAS_FIJAS, así que ningún marcador de Word ni el formulario de solo lectura lo
+     *  muestra), solo sirve para correlacionar con la fila de VALIDACIÓN del analista/
+     *  poligrafista/visitador (ver FormularioFila.idOrigenFijo, FormularioService). */
     public Map<String, List<Map<String, String>>> resolverTablasFijas(Candidato candidato) {
         Map<String, List<Map<String, String>>> tablas = new HashMap<>();
         HojaVidaEvaluado hojaVida = hojaVidaDe(candidato).orElse(null);
 
         tablas.put("referencias", hojaVida == null ? List.of() : hojaVida.getReferencias().stream()
                 .map(r -> Map.of(
+                        "id", String.valueOf(r.getId()),
                         "nombre", val(r.getNombre()),
                         "parentesco", val(r.getParentesco()),
                         "telefono", val(r.getTelefono()),
@@ -190,6 +223,7 @@ public class CandidatoInfoService {
 
         tablas.put("educacion", hojaVida == null ? List.of() : hojaVida.getEducacion().stream()
                 .map(e -> Map.of(
+                        "id", String.valueOf(e.getId()),
                         "nivel", val(e.getNivel()),
                         "institucion", val(e.getInstitucion()),
                         "titulo", val(e.getTitulo()),
@@ -202,6 +236,7 @@ public class CandidatoInfoService {
         tablas.put("experiencia_laboral", hojaVida == null ? List.of() : hojaVida.getExperienciaLaboral().stream()
                 .map(e -> {
                     Map<String, String> fila = new HashMap<>();
+                    fila.put("id", String.valueOf(e.getId()));
                     fila.put("empresa", val(e.getEmpresa()));
                     fila.put("cargo", val(e.getCargo()));
                     fila.put("fecha_inicio", formatearFecha(e.getFechaInicio()));
@@ -218,6 +253,7 @@ public class CandidatoInfoService {
 
         tablas.put("inactividades", hojaVida == null ? List.of() : hojaVida.getInactividades().stream()
                 .map(i -> Map.of(
+                        "id", String.valueOf(i.getId()),
                         "fecha_inicio", formatearFecha(i.getFechaInicio()),
                         "fecha_fin", formatearFecha(i.getFechaFin()),
                         "dias_inactivo", i.getDiasInactivo() == null ? "" : String.valueOf(i.getDiasInactivo()),

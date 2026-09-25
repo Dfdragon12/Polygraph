@@ -13,7 +13,11 @@ public record SolicitudGestorResponse(
         LocalDate fechaSolicitud,
         LocalDate fechaEntregaEstimada,
         String proceso,
-        List<SubprocesoResumen> subprocesos
+        List<SubprocesoResumen> subprocesos,
+        // null = el servicio no tiene candidato asociado (no aplica ninguna restricción — ver
+        // AsignacionService.validarCandidatoCompleto); false = el candidato todavía no ha
+        // diligenciado su link, así que el frontend debe deshabilitar "Asignar"/"Asignar programador".
+        Boolean candidatoCompletado
 ) {
     // programadorAsignado: solo relevante para subprocesos de poligrafía/visita — si el gestor ya
     // le encargó a un PROGRAMADOR coordinarlo (ver ServicioSubproceso.programadorResponsable).

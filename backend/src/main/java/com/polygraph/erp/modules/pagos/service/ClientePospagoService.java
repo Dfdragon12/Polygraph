@@ -13,6 +13,8 @@ import com.polygraph.erp.modules.pagos.dto.FacturaPospagoDetalleResponse;
 import com.polygraph.erp.modules.pagos.dto.FacturaPospagoResponse;
 import com.polygraph.erp.modules.pagos.dto.IntentoPagoResponse;
 import com.polygraph.erp.modules.pagos.dto.MovimientoCreditoPospagoResponse;
+import com.polygraph.erp.modules.pagos.dto.PendienteFacturarPospagoResponse;
+import com.polygraph.erp.modules.pagos.dto.ResumenFacturasPospagoResponse;
 import com.polygraph.erp.modules.pagos.entity.FacturaPospago;
 import com.polygraph.erp.modules.pagos.entity.MovimientoCreditoPospago;
 import com.polygraph.erp.modules.pagos.entity.PagoWompi;
@@ -38,8 +40,12 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Crédito pospago tipo tarjeta: cada solicitud consume {@code creditoDisponible} (validado y
@@ -180,20 +186,68 @@ public class ClientePospagoService {
                 .toList();
     }
 
+    /** Consumo pospago sin facturar de TODOS los clientes a la vez, agrupado por cliente — panel
+     *  "Pospago: servicios pendientes de facturar" de Facturacion.jsx. Ordenado por monto
+     *  descendente para que el admin priorice los cortes más grandes. */
+    @Transactional(readOnly = true)
+    public List<PendienteFacturarPospagoResponse> listarPendientesGlobal() {
+        Map<Integer, List<MovimientoCreditoPospago>> porCliente = movimientoRepository
+                .findByFacturaIsNullOrderByFechaGeneradoAsc().stream()
+                .collect(Collectors.groupingBy(m -> m.getCliente().getIdCliente(), LinkedHashMap::new, Collectors.toList()));
+
+        return porCliente.values().stream()
+                .map(movimientos -> {
+                    Cliente cliente = movimientos.get(0).getCliente();
+                    BigDecimal total = movimientos.stream().map(MovimientoCreditoPospago::getMontoTotal).reduce(BigDecimal.ZERO, BigDecimal::add);
+                    return new PendienteFacturarPospagoResponse(
+                            cliente.getIdCliente(), cliente.getNit(), nombreCliente(cliente), movimientos.size(), total,
+                            movimientos.get(0).getFechaGenerado());
+                })
+                .sorted(Comparator.comparing(PendienteFacturarPospagoResponse::montoTotal).reversed())
+                .toList();
+    }
+
+    /** Sumas pospago para la barra "Pagado / Pendiente / Vencido" de Facturacion.jsx. */
+    @Transactional(readOnly = true)
+    public ResumenFacturasPospagoResponse resumenFacturas() {
+        return new ResumenFacturasPospagoResponse(
+                facturaPospagoRepository.sumMontoTotalByEstado(EstadoFacturaPospago.PAGADA),
+                facturaPospagoRepository.sumMontoTotalByEstado(EstadoFacturaPospago.PENDIENTE),
+                facturaPospagoRepository.sumMontoTotalByEstado(EstadoFacturaPospago.VENCIDA));
+    }
+
     // ---------- Facturas ----------
 
     @Transactional
-    public FacturaPospagoResponse generarFactura(Integer idCliente, LocalDate fechaVencimiento, String emailAdmin) {
+    public FacturaPospagoResponse generarFactura(Integer idCliente, LocalDate fechaVencimiento, List<Long> idsMovimientos, String emailAdmin) {
         Usuario admin = usuarioRepository.findByEmail(emailAdmin)
                 .orElseThrow(() -> new ApiException("Usuario no encontrado", HttpStatus.NOT_FOUND));
-        return generarFactura(idCliente, fechaVencimiento, admin);
+        return generarFactura(idCliente, fechaVencimiento, idsMovimientos, admin);
     }
 
+    /** Si idsMovimientos viene vacío o null, se factura TODO lo pendiente del cliente (comportamiento
+     *  de siempre). Si viene con ids puntuales, se factura solo esos — el resto del consumo queda
+     *  pendiente para un corte posterior, para que el admin pueda agrupar la facturación pospago
+     *  como necesite (ej. por mes, por proceso) en vez de un solo corte con todo junto. */
     @Transactional
-    public FacturaPospagoResponse generarFactura(Integer idCliente, LocalDate fechaVencimiento, Usuario admin) {
+    public FacturaPospagoResponse generarFactura(Integer idCliente, LocalDate fechaVencimiento, List<Long> idsMovimientos, Usuario admin) {
         Cliente cliente = obtenerPospago(idCliente).getCliente();
-        List<MovimientoCreditoPospago> pendientes = movimientoRepository
+        List<MovimientoCreditoPospago> todosPendientes = movimientoRepository
                 .findByCliente_IdClienteAndFacturaIsNullOrderByFechaGeneradoAsc(idCliente);
+
+        List<MovimientoCreditoPospago> pendientes;
+        if (idsMovimientos == null || idsMovimientos.isEmpty()) {
+            pendientes = todosPendientes;
+        } else {
+            java.util.Set<Long> idsValidos = todosPendientes.stream()
+                    .map(MovimientoCreditoPospago::getIdMovimiento).collect(Collectors.toSet());
+            if (!idsValidos.containsAll(idsMovimientos)) {
+                throw new ApiException(
+                        "Alguno de los movimientos seleccionados ya no está pendiente de facturar o no pertenece a este cliente",
+                        HttpStatus.CONFLICT);
+            }
+            pendientes = todosPendientes.stream().filter(m -> idsMovimientos.contains(m.getIdMovimiento())).toList();
+        }
 
         if (pendientes.isEmpty()) {
             throw new ApiException("Este cliente no tiene consumo pendiente de facturar", HttpStatus.BAD_REQUEST);
@@ -346,9 +400,6 @@ public class ClientePospagoService {
     }
 
     private FacturaPospagoResponse mapearFactura(FacturaPospago f, Cliente cliente) {
-        String nombreCliente = "NATURAL".equals(cliente.getTipoPersona() != null ? cliente.getTipoPersona().name() : null)
-                ? ((cliente.getNombre() != null ? cliente.getNombre() : "") + " " + (cliente.getApellido() != null ? cliente.getApellido() : "")).trim()
-                : (cliente.getRazonSocial() != null ? cliente.getRazonSocial() : cliente.getNombreComercial());
         return new FacturaPospagoResponse(
                 f.getIdFactura(),
                 cliente.getIdCliente(),
@@ -359,7 +410,15 @@ public class ClientePospagoService {
                 f.getEstado().name(),
                 f.getFechaGeneracion(),
                 f.getFechaPago(),
-                nombreCliente);
+                nombreCliente(cliente));
+    }
+
+    private String nombreCliente(Cliente cliente) {
+        if ("NATURAL".equals(cliente.getTipoPersona() != null ? cliente.getTipoPersona().name() : null)) {
+            String nombre = ((cliente.getNombre() != null ? cliente.getNombre() : "") + " " + (cliente.getApellido() != null ? cliente.getApellido() : "")).trim();
+            return nombre.isBlank() ? cliente.getEmailPrincipal() : nombre;
+        }
+        return cliente.getRazonSocial() != null ? cliente.getRazonSocial() : cliente.getNombreComercial();
     }
 
     private String generarReferencia() {

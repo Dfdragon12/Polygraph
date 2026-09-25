@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import api from '../../../services/api'
 import Paginacion from '../../../components/ui/Paginacion'
+import MenuAcciones from '../../../components/ui/MenuAcciones'
 
 const POR_PAGINA = 10
 
@@ -327,7 +328,7 @@ export default function Procesos() {
     { key: 'descripcion',   label: 'Descripción',        sortable: false },
     { key: 'totalPasos',    label: 'Pasos',              sortable: true  },
     { key: 'activo',        label: 'Estado',             sortable: true  },
-    { key: '_acciones',     label: 'Acciones',           sortable: false },
+    { key: '_acciones',     label: '···',                sortable: false },
   ]
 
   return (
@@ -385,7 +386,7 @@ export default function Procesos() {
         )}
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl ring-1 ring-gray-900/5 shadow-sm overflow-hidden">
         {cargando ? (
           <div className="flex items-center justify-center py-16">
             <div className="animate-spin rounded-full h-8 w-8 border-4 border-primary-600 border-t-transparent" />
@@ -397,14 +398,14 @@ export default function Procesos() {
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-100">
-              <thead className="bg-gray-50">
+              <thead className="bg-gray-50/80">
                 <tr>
                   {columnas.map(col => (
                     <th
                       key={col.key}
                       onClick={col.sortable ? () => manejarOrden(col.key) : undefined}
-                      className={`px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider select-none ${
-                        col.sortable ? 'cursor-pointer hover:text-gray-700' : ''
+                      className={`px-4 py-3 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider select-none whitespace-nowrap ${
+                        col.sortable ? 'cursor-pointer hover:text-gray-600' : ''
                       }`}
                     >
                       {col.label}
@@ -415,7 +416,7 @@ export default function Procesos() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {procesosPagina.map(p => (
-                  <tr key={p.idProceso} className="hover:bg-gray-50 transition-colors">
+                  <tr key={p.idProceso} className="hover:bg-gray-50/70 transition-colors">
                     <td className="px-4 py-3 text-sm text-gray-900 font-medium whitespace-nowrap">{p.nombreProceso}</td>
                     <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">{p.descripcion ?? '—'}</td>
                     <td className="px-4 py-3">
@@ -424,23 +425,17 @@ export default function Procesos() {
                       </span>
                     </td>
                     <td className="px-4 py-3"><Badge activo={p.activo} /></td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <button onClick={() => setConfigurando(p)} title="Pasos"
-                          className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-slate-800 transition-colors">
-                          <IconoPasos />
-                        </button>
-                        <button onClick={() => setEditando(p)} title="Editar"
-                          className="p-1.5 rounded-lg text-primary-600 hover:bg-primary-50 hover:text-primary-800 transition-colors">
-                          <IconoLapiz />
-                        </button>
-                        <button onClick={() => cambiarEstado(p)} title={p.activo ? 'Desactivar' : 'Activar'}
-                          className={`p-1.5 rounded-lg transition-colors ${
-                            p.activo ? 'text-red-600 hover:bg-red-50 hover:text-red-800' : 'text-green-700 hover:bg-green-50 hover:text-green-900'
-                          }`}>
-                          <IconoPower />
-                        </button>
-                      </div>
+                    <td className="px-4 py-3 text-center">
+                      <MenuAcciones opciones={[
+                        { label: 'Pasos', icono: <IconoPasos />, onClick: () => setConfigurando(p) },
+                        { label: 'Editar', icono: <IconoLapiz />, onClick: () => setEditando(p) },
+                        {
+                          label: p.activo ? 'Desactivar' : 'Activar',
+                          icono: <IconoPower />,
+                          destacado: p.activo ? 'text-red-600' : 'text-green-700',
+                          onClick: () => cambiarEstado(p),
+                        },
+                      ]} />
                     </td>
                   </tr>
                 ))}

@@ -9,5 +9,9 @@ public record MensajeResponse(
         LocalDateTime fechaEnvio,
         LocalDateTime fechaExpiracion,
         Boolean leido,
-        String nombreEmisor
+        String nombreEmisor,
+        // Quién lo escribió, específicamente — un cliente puede tener varios usuarios (admin +
+        // analistas) en el mismo hilo compartido; el frontend lo usa para saber si un mensaje del
+        // lado CLIENTE es del usuario que tiene la sesión abierta o de otro de su equipo.
+        Long idEmisor
 ) {}

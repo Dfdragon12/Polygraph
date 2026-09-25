@@ -32,4 +32,14 @@ public class FormularioFila {
 
     @Column(name = "orden", nullable = false)
     private Integer orden;
+
+    /** Solo para filas de una sección con origenFijo (ver FormularioSeccion.origenFijo): el id
+     *  real de la fila de la hoja de vida del candidato (ReferenciaPersonalEvaluado,
+     *  EducacionEvaluado, ExperienciaLaboralEvaluado o InactividadLaboralEvaluado) que esta fila
+     *  de VALIDACIÓN correlaciona — permite que analista/poligrafista/visitador agreguen sus
+     *  propias columnas por fila sin tocar la tabla original del candidato. Null para filas
+     *  normales de una sección TABLA manual (comportamiento de siempre). Sin FK real: apunta a
+     *  una de 4 tablas distintas según el origenFijo de la sección dueña. */
+    @Column(name = "id_origen_fijo")
+    private Long idOrigenFijo;
 }

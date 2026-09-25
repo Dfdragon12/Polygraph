@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import asignacionService from '../../services/asignacionService'
 import formulariosService from '../../services/formulariosService'
 import Toast from '../../components/Toast'
 import Paginacion from '../../components/ui/Paginacion'
+import MenuAcciones from '../../components/ui/MenuAcciones'
 import ModalAsignarSubproceso from '../../components/ModalAsignarSubproceso'
 import CronogramaDia from '../../components/CronogramaDia'
 import { toLocalDateTimeString, toLocalDateString, hoyLocalDateString, rangoDelDia } from '../../utils/fechas'
@@ -17,18 +18,20 @@ function BadgeProgresoFormulario({ idServicioSubproceso }) {
     formulariosService.progreso(idServicioSubproceso).then(setProgreso).catch(() => {})
   }, [idServicioSubproceso])
 
-  if (!progreso) return null
-  const { camposLlenos, camposTotal } = progreso
-  const completo = camposTotal > 0 && camposLlenos >= camposTotal
-  const color = completo
+  // porcentaje: avance por secciones (incluye tablas) — antes solo se contaban campos y una
+  // plantilla hecha solo de tablas salía "0/0". null = la plantilla no tiene secciones.
+  if (!progreso || progreso.porcentaje == null) return null
+  const { porcentaje, seccionesCompletas, seccionesTotal } = progreso
+  const color = porcentaje >= 100
     ? 'bg-green-100 text-green-700'
-    : camposLlenos > 0
+    : porcentaje > 0
       ? 'bg-amber-100 text-amber-700'
       : 'bg-gray-100 text-gray-500'
 
   return (
-    <span title="Campos llenos del formulario" className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full whitespace-nowrap ${color}`}>
-      📄 {camposLlenos}/{camposTotal}
+    <span title={`Formulario: ${seccionesCompletas} de ${seccionesTotal} secciones completas`}
+      className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full whitespace-nowrap ${color}`}>
+      📄 {porcentaje}%
     </span>
   )
 }
@@ -40,6 +43,50 @@ function IconoAsignar() {
       <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
       <path strokeLinecap="round" strokeLinejoin="round" d="M17.5 10.5l1.5 1.5 3-3" />
     </svg>
+  )
+}
+function IconoMasMenos({ abierto }) {
+  return (
+    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d={abierto ? 'M19.5 12h-15' : 'M12 4.5v15m7.5-7.5h-15'} />
+    </svg>
+  )
+}
+
+/* ─── Columna "Fechas": oculta por defecto, un "+" la despliega — evita que la tabla se vea
+   amontonada con fechas que la mayoría del tiempo nadie necesita mirar. Qué filas mostrar depende
+   del estado REAL de esa fila, no del filtro de tarjeta activo. ─── */
+function CeldaFechas({ asignacion: a, abierta, onToggle }) {
+  if (!abierta) {
+    return (
+      <button onClick={onToggle}
+        className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-400 hover:text-primary-600 transition-colors">
+        <IconoMasMenos abierto={false} /> Fechas
+      </button>
+    )
+  }
+  return (
+    <div className="grid grid-cols-[3.2rem_auto] gap-x-1.5 gap-y-0.5">
+      <span className="font-medium text-blue-500">Asig.</span><span className="text-gray-600">{formatFechaHora(a.fechaAsignacion)}</span>
+      <span className="font-medium text-gray-400">Prog.</span><span className="text-gray-600">{formatFechaHora(a.fechaProgramada)}</span>
+      <span className="font-medium text-gray-400">Listo</span><span className="text-gray-600">{formatHoraLimite(a.fechaProgramada, a.duracionMinutos)}</span>
+      {(a.estado === 'COMPLETADO' || a.estado === 'PUBLICADO') && (
+        <>
+          <span className="font-medium text-violet-500">Compl.</span>
+          <span className="text-gray-600">{formatFechaHora(a.fechaCompletado)}</span>
+        </>
+      )}
+      {a.estado === 'PUBLICADO' && (
+        <>
+          <span className="font-medium text-emerald-500">Publ.</span>
+          <span className="text-gray-600">{formatFechaHora(a.fechaPublicado)}</span>
+        </>
+      )}
+      <button onClick={onToggle}
+        className="col-span-2 inline-flex items-center gap-1 text-[10px] text-gray-400 hover:text-gray-600 mt-0.5">
+        <IconoMasMenos abierto /> Ocultar
+      </button>
+    </div>
   )
 }
 function IconoLapiz() {
@@ -63,27 +110,34 @@ const CAMPO_CONTEO = {
   PENDIENTE:  'pendientes',
   ASIGNADO:   'asignados',
   COMPLETADO: 'completados',
+  PUBLICADO:  'publicados',
   CANCELADO:  'cancelados',
 }
 
+// Semáforo: ámbar = pendiente de asignar, azul = en progreso, violeta = diligenciado pero
+// pendiente de que el gestor lo apruebe, verde = cerrado de verdad (publicado, ya aprobado), rojo
+// = cancelado.
 const TARJETAS_ESTADO = [
-  { estado: 'PENDIENTE',  label: 'Pendientes',  desc: 'Por asignar',      border: 'border-amber-200', dot: 'bg-amber-400', texto: 'text-amber-600', bgActivo: 'bg-amber-50/70', ring: 'ring-amber-300' },
-  { estado: 'ASIGNADO',   label: 'Asignados',   desc: 'Ya tienen fecha',  border: 'border-blue-200',  dot: 'bg-blue-400',  texto: 'text-blue-600',  bgActivo: 'bg-blue-50/70',  ring: 'ring-blue-300' },
-  { estado: 'COMPLETADO', label: 'Completados', desc: 'Ya se atendieron', border: 'border-green-200', dot: 'bg-green-400', texto: 'text-green-600', bgActivo: 'bg-green-50/70', ring: 'ring-green-300' },
-  { estado: 'CANCELADO',  label: 'Cancelados',  desc: 'No activos',      border: 'border-red-200',   dot: 'bg-red-400',   texto: 'text-red-500',   bgActivo: 'bg-red-50/70',   ring: 'ring-red-300' },
+  { estado: 'PENDIENTE',  label: 'Pendientes',  desc: 'Por asignar',        border: 'border-amber-200',  dot: 'bg-amber-400',  texto: 'text-amber-600',  bgActivo: 'bg-amber-50/70',  ring: 'ring-amber-300' },
+  { estado: 'ASIGNADO',   label: 'Asignados',   desc: 'Ya tienen fecha',    border: 'border-blue-200',   dot: 'bg-blue-400',   texto: 'text-blue-600',   bgActivo: 'bg-blue-50/70',   ring: 'ring-blue-300' },
+  { estado: 'COMPLETADO', label: 'Completados', desc: 'Por revisar',        border: 'border-violet-200', dot: 'bg-violet-400', texto: 'text-violet-600', bgActivo: 'bg-violet-50/70', ring: 'ring-violet-300' },
+  { estado: 'PUBLICADO',  label: 'Publicados',  desc: 'Aprobados',          border: 'border-emerald-200', dot: 'bg-emerald-400', texto: 'text-emerald-600', bgActivo: 'bg-emerald-50/70', ring: 'ring-emerald-300' },
+  { estado: 'CANCELADO',  label: 'Cancelados',  desc: 'No activos',         border: 'border-red-200',    dot: 'bg-red-400',    texto: 'text-red-500',    bgActivo: 'bg-red-50/70',    ring: 'ring-red-300' },
 ]
 
 const BADGE_ESTADO = {
   PENDIENTE:  'bg-amber-100 text-amber-700',
   ASIGNADO:   'bg-blue-100 text-blue-700',
-  COMPLETADO: 'bg-emerald-100 text-emerald-700',
+  COMPLETADO: 'bg-violet-100 text-violet-700',
+  PUBLICADO:  'bg-emerald-100 text-emerald-700',
   CANCELADO:  'bg-red-100 text-red-600',
 }
 
 const ACENTO_ESTADO = {
   PENDIENTE:  'border-l-amber-400',
   ASIGNADO:   'border-l-blue-500',
-  COMPLETADO: 'border-l-emerald-500',
+  COMPLETADO: 'border-l-violet-400',
+  PUBLICADO:  'border-l-emerald-500',
   CANCELADO:  'border-l-red-400',
 }
 
@@ -104,12 +158,21 @@ function formatHoraLimite(fechaProgramadaIso, duracionMinutos) {
   return limite.toLocaleString('es-CO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
-// Mismo cálculo que en MisAsignaciones.jsx (vista de analista/poligrafista/visitador) — días
-// completos vencidos desde la fecha programada, solo tiene sentido mientras sigue ASIGNADO.
-function diasDeRetraso(fechaProgramadaIso) {
-  if (!fechaProgramadaIso) return 0
+// Mismo cálculo que en MisAsignaciones.jsx (vista de analista/poligrafista/visitador) — en horas
+// si todavía no llega a un día completo de retraso (antes un retraso de unas horas no mostraba
+// nada), en días una vez pasa las 24h. null si todavía no llega la fecha o no tiene fecha. Solo
+// tiene sentido mientras sigue ASIGNADO.
+function textoRetraso(fechaProgramadaIso) {
+  if (!fechaProgramadaIso) return null
   const ms = Date.now() - new Date(fechaProgramadaIso).getTime()
-  return Math.floor(ms / (1000 * 60 * 60 * 24))
+  if (ms <= 0) return null
+  const horas = ms / (1000 * 60 * 60)
+  if (horas < 24) {
+    const h = Math.max(1, Math.floor(horas))
+    return `${h} ${h === 1 ? 'hora' : 'horas'} de retraso`
+  }
+  const dias = Math.floor(horas / 24)
+  return `${dias} ${dias === 1 ? 'día' : 'días'} de retraso`
 }
 
 function formatHora(iso) {
@@ -172,9 +235,16 @@ const DURACION_DISPONIBILIDAD_MIN = 15
    esto para GESTOR) — el gestor no agenda poligrafía ni visita domiciliaria, eso lo coordina el
    Programador. */
 export default function GestorAgenda() {
+  const navigate = useNavigate()
   const [seccion, setSeccion] = useState('servicios') // 'servicios' | 'cronograma' | 'disponibilidad'
   const [seleccionado, setSeleccionado] = useState(null)
   const [toast, setToast]               = useState(null)
+  const [fechasAbiertas, setFechasAbiertas] = useState(() => new Set())
+  const toggleFechas = (id) => setFechasAbiertas(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return next
+  })
 
   // ══════════════════════ Pestaña: Servicios ══════════════════════
   const [listaServicios, setListaServicios]         = useState([])
@@ -204,6 +274,9 @@ export default function GestorAgenda() {
           idTipoProgreso: subprocesoActual || undefined,
           idUsuarioAsignado: empleadoActual || undefined,
           page, size: POR_PAGINA,
+          // Más antiguo primero — igual que MisAsignaciones.jsx, lo que lleva más tiempo
+          // esperando queda arriba en vez de enterrado al final de la página.
+          sort: 'fechaAsignacion,asc',
         }),
         asignacionService.conteo(),
       ])
@@ -470,7 +543,7 @@ export default function GestorAgenda() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-4">
             {TARJETAS_ESTADO.map(t => {
               const activo = estadoServicios === t.estado
               return (
@@ -531,14 +604,14 @@ export default function GestorAgenda() {
                           la pestaña "Asignados" — menos columnas, menos amontonado. */}
                       {['Evaluado', 'Subproceso', 'Fechas', 'Asignado a',
                         ...(estadoServicios === 'ASIGNADO' ? ['Retraso'] : []),
-                        'Estado', 'Acciones'].map(h => (
+                        'Estado', '···'].map(h => (
                         <th key={h} className="px-4 py-3 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {serviciosFiltrados.map(a => {
-                      const retraso = a.estado === 'ASIGNADO' ? diasDeRetraso(a.fechaProgramada) : 0
+                      const retraso = a.estado === 'ASIGNADO' ? textoRetraso(a.fechaProgramada) : null
                       return (
                       <tr key={a.id} className="hover:bg-gray-50/70 transition-colors">
                         <td className="px-4 py-3">
@@ -546,18 +619,15 @@ export default function GestorAgenda() {
                           <p className="text-xs text-gray-400">{a.cedulaEvaluado ?? '—'} · Servicio #{a.idServicio}</p>
                         </td>
                         <td className="px-4 py-3 text-gray-700 whitespace-nowrap">{a.subproceso}</td>
-                        <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
-                          <p>Asignado: {formatFechaHora(a.fechaAsignacion)}</p>
-                          <p>Programado: {formatFechaHora(a.fechaProgramada)}</p>
-                          <p>Debe estar listo: {formatHoraLimite(a.fechaProgramada, a.duracionMinutos)}</p>
-                          {estadoServicios === 'COMPLETADO' && <p>Completado: {formatFechaHora(a.fechaCompletado)}</p>}
+                        <td className="px-4 py-3 text-xs whitespace-nowrap">
+                          <CeldaFechas asignacion={a} abierta={fechasAbiertas.has(a.id)} onToggle={() => toggleFechas(a.id)} />
                         </td>
                         <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{a.nombreAsignado ?? 'Sin asignar'}</td>
                         {estadoServicios === 'ASIGNADO' && (
                           <td className="px-4 py-3 whitespace-nowrap">
-                            {retraso > 0 ? (
+                            {retraso ? (
                               <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-red-50 text-red-700 ring-1 ring-red-100">
-                                {retraso} {retraso === 1 ? 'día' : 'días'} de retraso
+                                {retraso}
                               </span>
                             ) : (
                               <span className="text-xs text-gray-300">—</span>
@@ -571,22 +641,23 @@ export default function GestorAgenda() {
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-1.5">
-                            {a.requiereDocumento && (
-                              <>
-                                <BadgeProgresoFormulario idServicioSubproceso={a.id} />
-                                <Link to={`/gestor/formulario/${a.id}`} title="Formulario"
-                                  state={{ origenSeccion: 'Agenda' }}
-                                  className="p-1.5 rounded-lg text-primary-600 hover:bg-primary-50 hover:text-primary-800 transition-colors">
-                                  <IconoHoja />
-                                </Link>
-                              </>
-                            )}
-                            <button onClick={() => setSeleccionado(a)}
-                              title={a.estado === 'PENDIENTE' ? 'Asignar' : 'Ver / editar'}
-                              className="p-1.5 rounded-lg text-primary-600 hover:bg-primary-50 hover:text-primary-800 transition-colors">
-                              {a.estado === 'PENDIENTE' ? <IconoAsignar /> : <IconoLapiz />}
-                            </button>
+                          <div className="flex items-center gap-1.5 justify-end">
+                            {a.requiereDocumento && <BadgeProgresoFormulario idServicioSubproceso={a.id} />}
+                            {/* Aprobar/Devolver ya no son íconos sueltos acá — se hacen dentro del
+                                formulario (mismo criterio que "Marcar como completado" en
+                                analista/poligrafista/visitador), revisando de verdad lo
+                                diligenciado antes de aprobar o devolver. */}
+                            <MenuAcciones opciones={[
+                              a.requiereDocumento && {
+                                label: 'Formulario', icono: <IconoHoja />,
+                                onClick: () => navigate(`/gestor/formulario/${a.id}`, { state: { origenSeccion: 'Agenda' } }),
+                              },
+                              {
+                                label: a.estado === 'PENDIENTE' ? 'Asignar' : 'Ver / editar',
+                                icono: a.estado === 'PENDIENTE' ? <IconoAsignar /> : <IconoLapiz />,
+                                onClick: () => setSeleccionado(a),
+                              },
+                            ]} />
                           </div>
                         </td>
                       </tr>

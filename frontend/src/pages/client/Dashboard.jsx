@@ -12,6 +12,11 @@ function iniciales(nombre) {
   return (nombre?.[0] ?? '?').toUpperCase()
 }
 
+function formatFechaCorta(fecha) {
+  if (!fecha) return '—'
+  return new Date(fecha).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })
+}
+
 const ICONO_ACTIVOS = (
   <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -47,48 +52,108 @@ const ICONO_MAS = (
     <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
   </svg>
 )
+const ICONO_CHEVRON = (
+  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+  </svg>
+)
+const ICONO_ALERTA = (
+  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+  </svg>
+)
+const ICONO_VACIO = (
+  <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+  </svg>
+)
 
-function KpiCard({ titulo, valor, subtitulo, color, icono }) {
+function KpiCard({ titulo, valor, subtitulo, color, icono, retraso = 0 }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+    <div
+      style={{ animationDelay: `${retraso}ms` }}
+      className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 opacity-0 animate-fade-in [animation-fill-mode:forwards] hover:shadow-md hover:-translate-y-0.5 transition-[transform,box-shadow] duration-200">
       <div className="flex items-center gap-3">
         <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${color}`}>
           {icono}
         </div>
         <p className="text-sm text-gray-500">{titulo}</p>
       </div>
-      <p className="text-3xl font-bold text-gray-800 mt-3">{valor}</p>
+      <p className="text-3xl font-bold text-gray-800 mt-3 tabular-nums">{valor}</p>
       {subtitulo && <p className="text-xs text-gray-400 mt-1">{subtitulo}</p>}
     </div>
+  )
+}
+
+// Fila tipo "feed" para el listado reciente — reemplaza la tabla anterior: nada de scroll
+// horizontal en celular, y cada fila entra con una animación escalonada.
+function FilaSolicitud({ s, idx, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{ animationDelay: `${idx * 45}ms` }}
+      className="w-full flex items-center gap-3 px-4 sm:px-5 py-3.5 text-left opacity-0 animate-fade-in [animation-fill-mode:forwards] hover:bg-primary-50/50 active:bg-primary-50 transition-colors duration-150">
+      <span className="w-9 h-9 rounded-full bg-slate-100 text-slate-600 text-xs font-semibold flex items-center justify-center flex-shrink-0">
+        {iniciales(s.nombresEvaluado)}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-gray-800 truncate">{s.nombresEvaluado} {s.apellidosEvaluado}</p>
+        <p className="text-xs text-gray-400 truncate">
+          {s.proceso || 'Servicio'} · Sol. {formatFechaCorta(s.fechaSolicitud)}
+        </p>
+      </div>
+      <ServiceStatusBadge status={s.estado} />
+      <span className="text-gray-300 flex-shrink-0">{ICONO_CHEVRON}</span>
+    </button>
   )
 }
 
 export default function Dashboard() {
   const { usuario } = useAuth()
   const navigate = useNavigate()
-  const esPospago = usuario?.tipoCliente === 'POSPAGO'
   const [datos, setDatos] = useState(null)
   const [bolsa, setBolsa] = useState(null)
   const [credito, setCredito] = useState(null)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
+  // Error de la llamada secundaria (bolsa/cupo) — solo para fallas reales (red, etc). El caso ya
+  // conocido de "ANALISTA_CLIENTE sin acceso al cupo pospago" ni se intenta pedir (ver abajo), así
+  // que esto ya no dispara por eso.
+  const [errorSecundario, setErrorSecundario] = useState(null)
+  // Se deriva del dashboard recién cargado (tipoCliente en vivo desde BD), nunca del `usuario`
+  // cacheado en localStorage al login: si un admin cambia el tipo de cliente (ej. tras aprobar
+  // crédito pospago) mientras el JWT del cliente sigue vigente (hasta 24h), ese caché queda
+  // desactualizado y el dashboard mostraba el panel equivocado (carrito/bolsa vs. cupo de crédito).
+  const esPospago = datos?.tipoCliente === 'POSPAGO'
+  // El cupo de crédito pospago solo lo puede consultar ADMIN_CLIENTE (ver FacturaPospagoController
+  // en el backend) — un ANALISTA_CLIENTE de un cliente pospago no tiene nada que ver ahí, así que
+  // esa sección del dashboard se omite entera para él en vez de mostrarle un error.
+  const esAdminCliente = usuario?.rol === 'ADMIN_CLIENTE'
+  const puedeVerCupo = esPospago && esAdminCliente
 
   useEffect(() => {
-    // Pospago no compra saldo por adelantado — no tiene bolsa, tiene cupo de crédito.
-    Promise.all([
-      dashboardService.obtenerDashboard(),
-      esPospago
-        ? pospagoService.obtenerEstadoCuenta().catch(() => null)
-        : dashboardService.obtenerBolsaServicios().catch(() => []),
-    ])
-      .then(([dashData, segundoDato]) => {
+    let activo = true
+    dashboardService.obtenerDashboard()
+      .then((dashData) => {
+        if (!activo) return
         setDatos(dashData)
-        if (esPospago) setCredito(segundoDato)
-        else setBolsa(Array.isArray(segundoDato) ? segundoDato : [])
+        const esPospagoLocal = dashData.tipoCliente === 'POSPAGO'
+        if (esPospagoLocal && usuario?.rol !== 'ADMIN_CLIENTE') return
+        const segundo = esPospagoLocal
+          ? pospagoService.obtenerEstadoCuenta()
+          : dashboardService.obtenerBolsaServicios()
+        return segundo
+          .then((segundoDato) => {
+            if (!activo) return
+            if (esPospagoLocal) setCredito(segundoDato)
+            else setBolsa(Array.isArray(segundoDato) ? segundoDato : [])
+          })
+          .catch((err) => { if (activo) setErrorSecundario(err.response?.data?.mensaje ?? 'No se pudo cargar tu información de cupo/bolsa.') })
       })
-      .catch(() => setError('No se pudo cargar el dashboard. Intenta nuevamente.'))
-      .finally(() => setCargando(false))
-  }, [esPospago])
+      .catch(() => { if (activo) setError('No se pudo cargar el dashboard. Intenta nuevamente.') })
+      .finally(() => { if (activo) setCargando(false) })
+    return () => { activo = false }
+  }, [usuario?.rol])
 
   if (cargando) {
     return (
@@ -113,9 +178,32 @@ export default function Dashboard() {
   const limiteCredito = credito?.limiteCredito ?? 0
   const creditoDisponible = credito?.creditoDisponible ?? 0
   const pctCreditoUsado = limiteCredito > 0 ? Math.round(((limiteCredito - creditoDisponible) / limiteCredito) * 100) : 0
+  const enMora = puedeVerCupo && credito?.estadoMora && credito.estadoMora !== 'NORMAL'
+
+  // Cuarta tarjeta de KPI (bolsa o cupo) solo se muestra cuando hay algo real que mostrar ahí —
+  // para un ANALISTA_CLIENTE de un cliente pospago no hay nada, así que la grilla se acomoda a 3.
+  const mostrarCuartoKpi = !esPospago || puedeVerCupo
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
+      {enMora && (
+        <div className="flex items-center gap-3 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm opacity-0 animate-fade-in [animation-fill-mode:forwards]">
+          <span className="flex-shrink-0">{ICONO_ALERTA}</span>
+          <p>
+            Tu cuenta está <strong>{credito.estadoMora === 'SUSPENDIDO' ? 'suspendida' : 'en mora'}</strong> — ponte al día para poder seguir solicitando servicios.
+          </p>
+          <Link to="/cliente/pospago" className="ml-auto text-xs font-semibold whitespace-nowrap hover:underline">
+            Ver mi crédito →
+          </Link>
+        </div>
+      )}
+
+      {errorSecundario && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-700 text-sm px-4 py-3 rounded-lg">
+          {errorSecundario}
+        </div>
+      )}
+
       {/* Encabezado */}
       <div className="flex items-center justify-between flex-wrap gap-4 bg-white rounded-2xl border border-gray-100 shadow-sm px-6 py-5">
         <div className="flex items-center gap-4">
@@ -137,13 +225,14 @@ export default function Dashboard() {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 ${mostrarCuartoKpi ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
         <KpiCard
           titulo="Servicios activos"
           valor={datos?.serviciosActivos ?? 0}
           subtitulo="En proceso ahora mismo"
           color="bg-blue-50 text-blue-600"
           icono={ICONO_ACTIVOS}
+          retraso={0}
         />
         <KpiCard
           titulo="Pendientes"
@@ -151,6 +240,7 @@ export default function Dashboard() {
           subtitulo="Por programar"
           color="bg-amber-50 text-amber-600"
           icono={ICONO_PENDIENTES}
+          retraso={40}
         />
         <KpiCard
           titulo="Finalizados este mes"
@@ -158,133 +248,103 @@ export default function Dashboard() {
           subtitulo="Completados en el mes actual"
           color="bg-green-50 text-green-600"
           icono={ICONO_FINALIZADOS}
+          retraso={80}
         />
-        {esPospago ? (
-          <KpiCard
-            titulo="Cupo de crédito"
-            valor={formatearCOP(creditoDisponible)}
-            subtitulo={limiteCredito > 0 ? `De ${formatearCOP(limiteCredito)} totales` : 'Disponible'}
-            color="bg-purple-50 text-purple-600"
-            icono={ICONO_CREDITO}
-          />
-        ) : (
-          <KpiCard
-            titulo="Disponibles en bolsa"
-            valor={disponiblesBolsa}
-            subtitulo={totalBolsa > 0 ? `De ${totalBolsa} comprados` : 'Bolsa prepago'}
-            color="bg-purple-50 text-purple-600"
-            icono={ICONO_BOLSA}
-          />
-        )}
-      </div>
-
-      {/* Indicador bolsa / cupo de crédito */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-5 py-4">
-        {esPospago ? (
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="w-10 h-10 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center flex-shrink-0">
-              {ICONO_CREDITO}
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm text-gray-700">
-                Tienes <strong className="text-primary-700">{formatearCOP(creditoDisponible)}</strong> de cupo disponible
-                {limiteCredito > 0 ? ` de ${formatearCOP(limiteCredito)} totales` : ''}
-              </p>
-            </div>
-            <Link to="/cliente/pospago"
-              className="ml-auto text-xs font-semibold text-primary-600 hover:text-primary-800 border border-primary-200 px-3 py-1.5 rounded-lg hover:bg-primary-50 transition-colors whitespace-nowrap">
-              Ver mi crédito →
-            </Link>
-          </div>
-        ) : (
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="w-10 h-10 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center flex-shrink-0">
-              {ICONO_CARRITO}
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm text-gray-700">
-                Tienes <strong className="text-primary-700">{disponiblesBolsa}</strong> servicio{disponiblesBolsa !== 1 ? 's' : ''} disponible{disponiblesBolsa !== 1 ? 's' : ''}
-                {totalBolsa > 0 ? ` de ${totalBolsa} comprados` : ' en tu bolsa prepago'}
-              </p>
-            </div>
-            <Link to="/cliente/comprar-servicios"
-              className="ml-auto text-xs font-semibold text-primary-600 hover:text-primary-800 border border-primary-200 px-3 py-1.5 rounded-lg hover:bg-primary-50 transition-colors whitespace-nowrap">
-              Comprar más →
-            </Link>
-          </div>
-        )}
-        {esPospago ? (
-          limiteCredito > 0 && (
-            <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden mt-3">
-              <div className="h-full bg-primary-500 rounded-full transition-all duration-500" style={{ width: `${pctCreditoUsado}%` }} />
-            </div>
+        {mostrarCuartoKpi && (
+          puedeVerCupo ? (
+            <KpiCard
+              titulo="Cupo de crédito"
+              valor={formatearCOP(creditoDisponible)}
+              subtitulo={limiteCredito > 0 ? `De ${formatearCOP(limiteCredito)} totales` : 'Disponible'}
+              color="bg-purple-50 text-purple-600"
+              icono={ICONO_CREDITO}
+              retraso={120}
+            />
+          ) : (
+            <KpiCard
+              titulo="Disponibles en bolsa"
+              valor={disponiblesBolsa}
+              subtitulo={totalBolsa > 0 ? `De ${totalBolsa} comprados` : 'Bolsa prepago'}
+              color="bg-purple-50 text-purple-600"
+              icono={ICONO_BOLSA}
+              retraso={120}
+            />
           )
-        ) : totalBolsa > 0 && (
-          <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden mt-3">
-            <div className="h-full bg-primary-500 rounded-full transition-all duration-500" style={{ width: `${pctBolsa}%` }} />
-          </div>
         )}
       </div>
 
-      {/* Últimas 5 solicitudes */}
+      {/* Indicador bolsa / cupo de crédito — solo si hay algo que este usuario pueda ver ahí */}
+      {mostrarCuartoKpi && (
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-5 py-4">
+          {puedeVerCupo ? (
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="w-10 h-10 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center flex-shrink-0">
+                {ICONO_CREDITO}
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm text-gray-700">
+                  Tienes <strong className="text-primary-700">{formatearCOP(creditoDisponible)}</strong> de cupo disponible
+                  {limiteCredito > 0 ? ` de ${formatearCOP(limiteCredito)} totales` : ''}
+                </p>
+              </div>
+              <Link to="/cliente/pospago"
+                className="ml-auto text-xs font-semibold text-primary-600 hover:text-primary-800 border border-primary-200 px-3 py-1.5 rounded-lg hover:bg-primary-50 transition-colors whitespace-nowrap">
+                Ver mi crédito →
+              </Link>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="w-10 h-10 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center flex-shrink-0">
+                {ICONO_CARRITO}
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm text-gray-700">
+                  Tienes <strong className="text-primary-700">{disponiblesBolsa}</strong> servicio{disponiblesBolsa !== 1 ? 's' : ''} disponible{disponiblesBolsa !== 1 ? 's' : ''}
+                  {totalBolsa > 0 ? ` de ${totalBolsa} comprados` : ' en tu bolsa prepago'}
+                </p>
+              </div>
+              <Link to="/cliente/comprar-servicios"
+                className="ml-auto text-xs font-semibold text-primary-600 hover:text-primary-800 border border-primary-200 px-3 py-1.5 rounded-lg hover:bg-primary-50 transition-colors whitespace-nowrap">
+                Comprar más →
+              </Link>
+            </div>
+          )}
+          {puedeVerCupo ? (
+            limiteCredito > 0 && (
+              <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden mt-3">
+                <div className="h-full bg-primary-500 rounded-full transition-all duration-700 ease-out" style={{ width: `${pctCreditoUsado}%` }} />
+              </div>
+            )
+          ) : totalBolsa > 0 && (
+            <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden mt-3">
+              <div className="h-full bg-primary-500 rounded-full transition-all duration-700 ease-out" style={{ width: `${pctBolsa}%` }} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Actividad reciente — lista tipo feed, sin tabla ni scroll horizontal */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-800">Últimas solicitudes</h3>
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+          <h3 className="text-base font-semibold text-gray-800">Actividad reciente</h3>
           <Link to="/cliente/solicitudes" className="text-xs font-medium text-primary-600 hover:text-primary-700">
             Ver todas →
           </Link>
         </div>
 
         {!datos?.ultimasSolicitudes?.length ? (
-          <div className="flex flex-col items-center justify-center py-14 gap-2">
-            <p className="text-gray-400 text-sm">Sin solicitudes registradas.</p>
-            <Link to="/cliente/nueva-solicitud" className="text-xs text-primary-600 hover:underline">
+          <div className="flex flex-col items-center justify-center py-14 gap-3 text-gray-300">
+            {ICONO_VACIO}
+            <p className="text-gray-400 text-sm">Sin solicitudes registradas todavía.</p>
+            <Link to="/cliente/nueva-solicitud" className="text-xs text-primary-600 hover:underline font-medium">
               Crear la primera →
             </Link>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
-                <tr>
-                  <th className="px-5 py-3 text-left">Candidato</th>
-                  <th className="px-5 py-3 text-left">Servicio</th>
-                  <th className="px-5 py-3 text-left">Fecha solicitud</th>
-                  <th className="px-5 py-3 text-left">Entrega estimada</th>
-                  <th className="px-5 py-3 text-left">Estado</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {datos.ultimasSolicitudes.map((s) => (
-                  <tr key={s.idServicio} onClick={() => navigate(`/cliente/solicitudes/${s.idServicio}`)}
-                    className="hover:bg-primary-50/40 cursor-pointer transition-colors">
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-2.5">
-                        <span className="w-7 h-7 rounded-full bg-slate-100 text-slate-600 text-xs font-semibold flex items-center justify-center flex-shrink-0">
-                          {iniciales(s.nombresEvaluado)}
-                        </span>
-                        <div className="min-w-0">
-                          <p className="font-medium text-gray-800 truncate">{s.nombresEvaluado} {s.apellidosEvaluado}</p>
-                          {s.cedulaEvaluado && <p className="text-xs text-gray-400">{s.cedulaEvaluado}</p>}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-5 py-3 text-gray-600 max-w-[180px] truncate">
-                      {s.proceso || '—'}
-                    </td>
-                    <td className="px-5 py-3 text-gray-500 whitespace-nowrap">
-                      {s.fechaSolicitud
-                        ? new Date(s.fechaSolicitud).toLocaleDateString('es-CO')
-                        : '—'}
-                    </td>
-                    <td className="px-5 py-3 text-gray-500 whitespace-nowrap">{s.fechaEntregaEstimada ?? '—'}</td>
-                    <td className="px-5 py-3">
-                      <ServiceStatusBadge status={s.estado} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="divide-y divide-gray-50">
+            {datos.ultimasSolicitudes.map((s, idx) => (
+              <FilaSolicitud key={s.idServicio} s={s} idx={idx} onClick={() => navigate(`/cliente/solicitudes/${s.idServicio}`)} />
+            ))}
           </div>
         )}
       </div>

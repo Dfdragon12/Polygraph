@@ -10,6 +10,7 @@ import com.polygraph.erp.modules.pagos.service.AuditoriaPagoService;
 import com.polygraph.erp.modules.pagos.service.OrdenCompraService;
 import com.polygraph.erp.modules.pagos.service.PagoWompiWebhookService;
 import com.polygraph.erp.modules.pagos.service.WompiSignatureService;
+import com.polygraph.erp.modules.notificaciones.service.NotificacionService;
 import com.polygraph.erp.shared.enums.EstadoPago;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -61,6 +62,9 @@ class WompiWebhookControllerTest {
     @Mock
     private OrdenCompraService ordenCompraService;
 
+    @Mock
+    private NotificacionService notificacionService;
+
     private MockMvc mockMvc;
     private PagoWompi pago;
     private String ultimoChecksumGenerado;
@@ -72,7 +76,8 @@ class WompiWebhookControllerTest {
         WompiSignatureService signatureService = new WompiSignatureService(wompiProperties);
 
         PagoWompiWebhookService webhookService = new PagoWompiWebhookService(
-                new ObjectMapper(), signatureService, pagoWompiRepository, event -> { }, auditoriaPagoService, ordenCompraService);
+                new ObjectMapper(), signatureService, pagoWompiRepository, event -> { }, auditoriaPagoService,
+                ordenCompraService, notificacionService);
 
         mockMvc = MockMvcBuilders.standaloneSetup(new WompiWebhookController(webhookService)).build();
 

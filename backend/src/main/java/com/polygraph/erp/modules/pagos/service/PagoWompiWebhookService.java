@@ -2,11 +2,13 @@ package com.polygraph.erp.modules.pagos.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.polygraph.erp.modules.notificaciones.service.NotificacionService;
 import com.polygraph.erp.modules.pagos.dto.WompiEventDTO;
 import com.polygraph.erp.modules.pagos.entity.PagoWompi;
 import com.polygraph.erp.modules.pagos.event.PagoAprobadoEvent;
 import com.polygraph.erp.modules.pagos.repository.PagoWompiRepository;
 import com.polygraph.erp.shared.enums.EstadoPago;
+import com.polygraph.erp.shared.enums.TipoConceptoPago;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -35,6 +37,7 @@ public class PagoWompiWebhookService {
     private final ApplicationEventPublisher eventPublisher;
     private final AuditoriaPagoService auditoriaPagoService;
     private final OrdenCompraService ordenCompraService;
+    private final NotificacionService notificacionService;
 
     /** @return false únicamente cuando la firma es inválida (o el body no se puede parsear) — el controller responde 401 en ese caso. */
     @Transactional
@@ -125,6 +128,9 @@ public class PagoWompiWebhookService {
                     montoRemoto, pago.getMontoEnCentavos(), pago.getReferencia());
             auditoriaPagoService.registrarCambioEstado(pago, estadoAnterior, EstadoPago.ERROR, ipOrigen, checksumValido,
                     "Monto reportado por Wompi (" + montoRemoto + ") no coincide con el registrado (" + pago.getMontoEnCentavos() + ")");
+            notificacionService.crearParaAdmins("FACTURACION", "Pago con monto inconsistente",
+                    "Wompi reportó " + montoRemoto + " centavos y el registro esperaba " + pago.getMontoEnCentavos()
+                            + " para la referencia " + pago.getReferencia() + " — requiere revisión manual.");
             return;
         }
 
@@ -137,7 +143,23 @@ public class PagoWompiWebhookService {
 
         if (estadoNuevo == EstadoPago.APROBADO) {
             eventPublisher.publishEvent(new PagoAprobadoEvent(pago.getId(), pago.getCliente().getIdCliente()));
+            notificarClientePago(pago, true);
+        } else if (estadoNuevo == EstadoPago.RECHAZADO || estadoNuevo == EstadoPago.ANULADO) {
+            notificarClientePago(pago, false);
         }
+    }
+
+    /** Antes ningún pago (aprobado, rechazado o en error) generaba una señal para el cliente —
+     *  tenía que entrar a revisar su estado de cuenta a mano para saber si el cobro funcionó. */
+    private void notificarClientePago(PagoWompi pago, boolean aprobado) {
+        if (pago.getCliente() == null) return;
+        String concepto = pago.getTipoConcepto() == TipoConceptoPago.FACTURA_POSPAGO ? "el pago de tu factura" : "tu pago";
+        String titulo = aprobado ? "Pago aprobado" : "Pago rechazado";
+        String mensaje = aprobado
+                ? "Se confirmó " + concepto + " (" + pago.getReferencia() + ")."
+                : "No se pudo procesar " + concepto + " (" + pago.getReferencia() + ") — intenta de nuevo.";
+        notificacionService.crearParaCliente(pago.getCliente().getIdCliente(),
+                aprobado ? "PAGO_APROBADO" : "PAGO_RECHAZADO", titulo, mensaje);
     }
 
     private boolean esDuplicadoFinal(String idTransaccionWompi) {

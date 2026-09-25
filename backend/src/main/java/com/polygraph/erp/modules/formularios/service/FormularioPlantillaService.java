@@ -17,6 +17,7 @@ import com.polygraph.erp.modules.formularios.dto.PlantillaConfigResponse;
 import com.polygraph.erp.modules.formularios.dto.PlantillaVersionResponse;
 import com.polygraph.erp.modules.formularios.dto.SeccionPlantillaResponse;
 import com.polygraph.erp.modules.formularios.entity.FormularioColumna;
+import com.polygraph.erp.modules.formularios.entity.FormularioColumnaPuntaje;
 import com.polygraph.erp.modules.formularios.entity.FormularioFilaSugerida;
 import com.polygraph.erp.modules.formularios.entity.FormularioPlantillaConfig;
 import com.polygraph.erp.modules.formularios.entity.FormularioPlantillaWordHistorial;
@@ -38,7 +39,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -71,9 +76,11 @@ public class FormularioPlantillaService {
     private static final String CATEGORIA_ARCHIVOS = "plantillas";
 
     @Transactional(readOnly = true)
-    public List<SeccionPlantillaResponse> listarEstructura(Integer idTipoProgreso) {
+    /** incluirPuntajes: solo el administrador ve los puntos de riesgo de cada respuesta — esta
+     *  misma estructura la leen analista/poligrafista/visitador para saber qué mostrar. */
+    public List<SeccionPlantillaResponse> listarEstructura(Integer idTipoProgreso, boolean incluirPuntajes) {
         return seccionRepository.findByTipoProgreso_IdTipoProgresoAndActivoTrueOrderByOrdenAsc(idTipoProgreso)
-                .stream().map(this::toResponse).toList();
+                .stream().map(s -> toResponse(s, incluirPuntajes)).toList();
     }
 
     /** Genera un .docx de ejemplo (datos ficticios) a partir de la estructura que se está
@@ -283,6 +290,7 @@ public class FormularioPlantillaService {
                     columna.setClave(resolverClave(c.clave(), columna.getClave(), c.nombre(),
                             "campo_" + (columna.getOrden() + 1), clavesColumnas));
                     columna.setOpciones(resolverOpciones(columna.getTipoDato(), c.opciones(), c.nombre()));
+                    sincronizarPuntajes(columna, c, s.nombre());
                     columnasFinales.add(columna);
                 }
             }
@@ -320,7 +328,7 @@ public class FormularioPlantillaService {
         tipoProgreso.setVersionPlantilla(nuevaVersion);
         tipoProgresoRepository.save(tipoProgreso);
 
-        return seccionRepository.saveAll(resultado).stream().map(this::toResponse).toList();
+        return seccionRepository.saveAll(resultado).stream().map(s -> toResponse(s, true)).toList();
     }
 
     /** Secciones/columnas archivadas (activo = false) de este subproceso — para que el
@@ -487,16 +495,59 @@ public class FormularioPlantillaService {
         return unidas;
     }
 
+    /** Puntos de riesgo por respuesta (docs/modelo-calificacion-riesgo.md §3). Solo campos Lista
+     *  o Sí/No escritos a mano pueden calificar. Se guardan únicamente las respuestas que existen
+     *  hoy en el campo: si el admin renombró o quitó una opción, sus puntos se descartan (el
+     *  constructor ya le avisa antes de guardar). Muta la MISMA colección (orphanRemoval). */
+    private void sincronizarPuntajes(FormularioColumna columna, GuardarPlantillaRequest.ColumnaRequest c, String nombreSeccion) {
+        boolean pide = Boolean.TRUE.equals(c.calificaRiesgo());
+        boolean automatica = columna.getCampoCandidato() != null || columna.getCampoCliente() != null;
+        boolean tipoCalificable = columna.getTipoDato() == TipoDatoFormulario.LISTA || columna.getTipoDato() == TipoDatoFormulario.BOOLEANO;
+        String etiqueta = columna.getNombre() != null ? columna.getNombre() : columna.getClave();
+        if (pide && (automatica || !tipoCalificable)) {
+            throw new ApiException("\"" + etiqueta + "\" (sección \"" + nombreSeccion + "\") no puede calificar riesgo: "
+                    + "solo los campos Lista o Sí/No que llena quien diligencia.", HttpStatus.BAD_REQUEST);
+        }
+        columna.setCalificaRiesgo(pide);
+        List<FormularioColumnaPuntaje> manejados = columna.getPuntajes();
+        if (!pide) {
+            manejados.clear();
+            return;
+        }
+        List<String> validas = columna.getTipoDato() == TipoDatoFormulario.BOOLEANO
+                ? List.of("true", "false") : parseOpciones(columna.getOpciones());
+        Map<String, GuardarPlantillaRequest.PuntajeOpcionRequest> pedidos = new LinkedHashMap<>();
+        if (c.puntajes() != null) {
+            for (var pr : c.puntajes()) {
+                if (pr.opcion() != null && validas.contains(pr.opcion().trim())) pedidos.put(pr.opcion().trim(), pr);
+            }
+        }
+        Map<String, FormularioColumnaPuntaje> existentes = manejados.stream()
+                .collect(Collectors.toMap(FormularioColumnaPuntaje::getOpcion, p -> p, (a, b) -> a));
+        manejados.removeIf(p -> !pedidos.containsKey(p.getOpcion()));
+        for (var e : pedidos.entrySet()) {
+            BigDecimal puntos = e.getValue().puntos() != null ? e.getValue().puntos().setScale(2, RoundingMode.HALF_UP) : BigDecimal.ZERO;
+            boolean critico = Boolean.TRUE.equals(e.getValue().esCritico());
+            FormularioColumnaPuntaje p = existentes.get(e.getKey());
+            if (p == null) {
+                manejados.add(FormularioColumnaPuntaje.builder().columna(columna).opcion(e.getKey()).puntos(puntos).esCritico(critico).build());
+            } else {
+                p.setPuntos(puntos);
+                p.setEsCritico(critico);
+            }
+        }
+    }
+
     private List<String> parseOpciones(String opcionesCsv) {
         if (opcionesCsv == null || opcionesCsv.isBlank()) return List.of();
         return Arrays.stream(opcionesCsv.split(",")).map(String::trim).filter(o -> !o.isBlank()).toList();
     }
 
-    private SeccionPlantillaResponse toResponse(FormularioSeccion s) {
+    private SeccionPlantillaResponse toResponse(FormularioSeccion s, boolean incluirPuntajes) {
         List<ColumnaResponse> columnas = s.getColumnas().stream()
                 .filter(c -> Boolean.TRUE.equals(c.getActivo()))
                 .sorted((a, b) -> a.getOrden().compareTo(b.getOrden()))
-                .map(c -> new ColumnaResponse(c.getIdColumna(), c.getNombre(), c.getTipoDato().name(), c.getOrden(), c.getCampoCandidato(), c.getCampoCliente(), c.getClave(), parseOpciones(c.getOpciones())))
+                .map(c -> ColumnaResponse.de(c, parseOpciones(c.getOpciones()), incluirPuntajes))
                 .toList();
         List<FilaSugeridaResponse> filasSugeridas = s.getFilasSugeridas().stream()
                 .sorted((a, b) -> a.getOrden().compareTo(b.getOrden()))
@@ -556,7 +607,13 @@ public class FormularioPlantillaService {
                     .build());
         }
         Usuario usuario = emailUsuario != null ? usuarioRepository.findByEmail(emailUsuario).orElse(null) : null;
-        config.setPlantillaWordRuta(almacenamientoService.guardar(archivo, CATEGORIA_ARCHIVOS, String.valueOf(idTipoProgreso)));
+        // Se ignora el nombre con el que se subió el archivo desde el computador — queda guardado
+        // (y se descarga después) con el nombre del subproceso + la fecha de carga, para que se
+        // identifique de una vez de qué se trata sin tener que abrirlo, tanto en la config activa
+        // como en cada versión del historial.
+        String nombreDeseado = config.getTipoProgreso().getNombreProgreso() + "_"
+                + LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
+        config.setPlantillaWordRuta(almacenamientoService.guardar(archivo, CATEGORIA_ARCHIVOS, String.valueOf(idTipoProgreso), nombreDeseado));
         config.setFechaCarga(LocalDateTime.now());
         config.setUsuarioCarga(usuario);
         return toConfigResponse(idTipoProgreso, configRepository.save(config));
@@ -644,8 +701,10 @@ public class FormularioPlantillaService {
     }
 
     private PlantillaConfigResponse toConfigResponse(Integer idTipoProgreso, FormularioPlantillaConfig config) {
-        if (config == null) return new PlantillaConfigResponse(idTipoProgreso, null, null, null);
+        Integer versionPlantilla = tipoProgresoRepository.findById(idTipoProgreso)
+                .map(TipoProgreso::getVersionPlantilla).orElse(null);
+        if (config == null) return new PlantillaConfigResponse(idTipoProgreso, null, null, null, versionPlantilla);
         return new PlantillaConfigResponse(idTipoProgreso, config.getPlantillaWordRuta(), config.getFechaCarga(),
-                config.getUsuarioCarga() != null ? config.getUsuarioCarga().getNombre() : null);
+                config.getUsuarioCarga() != null ? config.getUsuarioCarga().getNombre() : null, versionPlantilla);
     }
 }

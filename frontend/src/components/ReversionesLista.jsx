@@ -3,6 +3,7 @@ import reversionService from '../services/reversionService'
 import Toast from './Toast'
 import { Modal } from './ui/Modal'
 import Paginacion from './ui/Paginacion'
+import MenuAcciones from './ui/MenuAcciones'
 
 const POR_PAGINA = 10
 
@@ -235,7 +236,7 @@ export default function ReversionesLista({ base, soloLectura = false }) {
                   <th className="px-4 py-3 text-left">Motivo</th>
                   <th className="px-4 py-3 text-left">Solicitado por</th>
                   <th className="px-4 py-3 text-left">Estado</th>
-                  {!soloLectura && <th className="px-4 py-3 text-center">Acciones</th>}
+                  {!soloLectura && <th className="px-4 py-3 text-center">···</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -271,20 +272,14 @@ export default function ReversionesLista({ base, soloLectura = false }) {
                       )}
                     </td>
                     {!soloLectura && (
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 text-center">
                         {r.estado === 'PENDIENTE' ? (
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button onClick={() => setRevisando({ item: r, accion: 'aprobar' })} title="Aprobar"
-                              className="p-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white transition-colors">
-                              <IconoCheck />
-                            </button>
-                            <button onClick={() => setRevisando({ item: r, accion: 'rechazar' })} title="Rechazar"
-                              className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 transition-colors">
-                              <IconoX />
-                            </button>
-                          </div>
+                          <MenuAcciones opciones={[
+                            { label: 'Aprobar', icono: <IconoCheck />, destacado: 'text-primary-600', onClick: () => setRevisando({ item: r, accion: 'aprobar' }) },
+                            { label: 'Rechazar', icono: <IconoX />, destacado: 'text-red-600', onClick: () => setRevisando({ item: r, accion: 'rechazar' }) },
+                          ]} />
                         ) : (
-                          <p className="text-xs text-gray-300 text-center">—</p>
+                          <p className="text-xs text-gray-300">—</p>
                         )}
                       </td>
                     )}

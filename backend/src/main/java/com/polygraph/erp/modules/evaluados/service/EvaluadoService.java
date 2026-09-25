@@ -2,6 +2,8 @@ package com.polygraph.erp.modules.evaluados.service;
 
 import com.polygraph.erp.modules.auth.entity.Usuario;
 import com.polygraph.erp.modules.auth.repository.UsuarioRepository;
+import com.polygraph.erp.modules.catalogo.dto.DocumentoRequeridoResponse;
+import com.polygraph.erp.modules.catalogo.repository.DocumentoRequeridoProcesoRepository;
 import com.polygraph.erp.modules.clientes.entity.Cliente;
 import com.polygraph.erp.modules.evaluados.dto.*;
 import com.polygraph.erp.modules.evaluados.entity.*;
@@ -46,6 +48,7 @@ public class EvaluadoService {
     private final UsuarioRepository usuarioRepository;
     private final NotificacionRepository notificacionRepository;
     private final DocumentoEvaluadoRepository documentoRepository;
+    private final DocumentoRequeridoProcesoRepository documentoRequeridoProcesoRepository;
     private final AlmacenamientoDocumentosService almacenamientoService;
     private final RecargoPendienteService recargoPendienteService;
     private final HistorialEstadoServicioRepository historialEstadoServicioRepository;
@@ -67,6 +70,12 @@ public class EvaluadoService {
                 .map(HojaVidaEvaluado::getCompletado)
                 .orElse(false);
 
+        List<DocumentoRequeridoResponse> documentosRequeridos = servicio.getProceso() != null
+                ? documentoRequeridoProcesoRepository
+                        .findByProceso_IdProcesoOrderByOrdenAscNombreAsc(servicio.getProceso().getIdProceso())
+                        .stream().map(DocumentoRequeridoResponse::from).toList()
+                : List.of();
+
         return new LinkValidacionResponse(
                 servicio.getIdServicio(),
                 candidato != null ? candidato.getCedula()     : null,
@@ -74,7 +83,8 @@ public class EvaluadoService {
                 candidato != null ? candidato.getApellidos() : null,
                 servicio.getCargo(),
                 servicio.getProceso() != null ? servicio.getProceso().getNombreProceso() : null,
-                completada);
+                completada,
+                documentosRequeridos);
     }
 
     @Transactional(readOnly = true)
@@ -87,6 +97,8 @@ public class EvaluadoService {
 
         Integer idCiudadNacimiento = candidato != null ? candidato.getIdCiudadNacimiento() : null;
         Integer idCiudadResidencia = candidato != null ? candidato.getIdCiudadResidencia() : null;
+        Integer idPaisNacimiento = candidato != null ? candidato.getIdPaisNacimiento() : null;
+        Integer idPaisResidencia = candidato != null ? candidato.getIdPaisResidencia() : null;
 
         return (idCandidato != null ? hojaVidaRepository.findByCandidato_IdCandidato(idCandidato) : java.util.Optional.<HojaVidaEvaluado>empty())
                 .map(hv -> new HojaVidaRequest(
@@ -130,14 +142,16 @@ public class EvaluadoService {
                                         i -> i.getFechaInicio() + "_" + i.getFechaFin(),
                                         InactividadLaboralEvaluado::getJustificacion,
                                         (a, b) -> a)),
-                        hv.getPasoActual()))
+                        hv.getPasoActual(),
+                        idPaisNacimiento, idPaisResidencia, hv.getIdBarrio()))
                 .orElse(new HojaVidaRequest(false, null, null,
                         idCiudadNacimiento, idCiudadResidencia,
                         null, null, null, null, null,
                         candidato != null ? candidato.getEmailPrincipal() : null,
                         candidato != null ? candidato.getCelular() : null,
                         null, null, null, null, null, null, null,
-                        List.of(), List.of(), List.of(), Map.of(), null));
+                        List.of(), List.of(), List.of(), Map.of(), null,
+                        idPaisNacimiento, idPaisResidencia, null));
     }
 
     public void guardarProgreso(String token, HojaVidaRequest request) {
@@ -244,10 +258,13 @@ public class EvaluadoService {
 
         HojaVidaEvaluado hojaVida = obtenerOCrearHojaVida(candidato);
 
-        if (request.idCiudadNacimiento() != null || request.idCiudadResidencia() != null) {
+        if (request.idCiudadNacimiento() != null || request.idCiudadResidencia() != null
+                || request.idPaisNacimiento() != null || request.idPaisResidencia() != null) {
             Integer idCiudadAnterior = candidato.getIdCiudadResidencia();
             candidato.setIdCiudadNacimiento(request.idCiudadNacimiento());
             candidato.setIdCiudadResidencia(request.idCiudadResidencia());
+            if (request.idPaisNacimiento() != null) candidato.setIdPaisNacimiento(request.idPaisNacimiento());
+            if (request.idPaisResidencia() != null) candidato.setIdPaisResidencia(request.idPaisResidencia());
             candidatoRepository.save(candidato);
 
             // El evaluado también puede cambiar su ciudad al llenar su hoja de vida (no solo el
@@ -274,6 +291,7 @@ public class EvaluadoService {
         hojaVida.setNivelEducativo(request.nivelEducativo());
         hojaVida.setDireccion(request.direccion());
         hojaVida.setBarrio(request.barrio());
+        if (request.idBarrio() != null) hojaVida.setIdBarrio(request.idBarrio());
         hojaVida.setEstrato(request.estrato());
         hojaVida.setEmail(request.email());
         hojaVida.setCelular(request.celular());

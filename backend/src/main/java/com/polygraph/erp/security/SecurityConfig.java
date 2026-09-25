@@ -50,6 +50,15 @@ public class SecurityConfig {
                 .requestMatchers("/api/v1/evaluees/link/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/ciudades", "/api/v1/ciudades/**").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/ciudades").permitAll()
+                // Barrios/departamentos/países: mismo criterio que ciudades — los formularios sin
+                // sesión (candidato vía link, registro de cliente) necesitan poder leerlos y, en el
+                // caso de barrios, crear uno nuevo si no está en el catálogo. Antes faltaban acá
+                // aunque sus propios controladores ya decían "Público" en el comentario — por eso
+                // devolvían 401 para cualquiera sin sesión.
+                .requestMatchers(HttpMethod.GET, "/api/v1/barrios", "/api/v1/barrios/**").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/v1/barrios").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/v1/departamentos").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/v1/paises").permitAll()
                 .requestMatchers(
                     "/api/v1/api-docs/**",
                     "/api/v1/swagger-ui/**",

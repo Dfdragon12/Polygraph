@@ -21,7 +21,7 @@ const TARJETAS_ESTADO = [
   { estado: 'PROGRAMANDO',  label: 'Programando',   desc: 'En preparación',         border: 'border-blue-200',    dot: 'bg-blue-400',    texto: 'text-blue-600',    bgActivo: 'bg-blue-50/70',    ring: 'ring-blue-300' },
   { estado: 'EN_EJECUCION', label: 'En ejecución',  desc: 'Siendo trabajados',      border: 'border-primary-200', dot: 'bg-primary-400', texto: 'text-primary-600', bgActivo: 'bg-primary-50/70', ring: 'ring-primary-300' },
   { estado: 'FINALIZADO',   label: 'Finalizados',   desc: 'Listos para revisar',    border: 'border-green-200',   dot: 'bg-green-400',   texto: 'text-green-600',   bgActivo: 'bg-green-50/70',   ring: 'ring-green-300' },
-  { estado: 'PUBLICADO',    label: 'Publicados',    desc: 'Entregados',             border: 'border-cyan-200',    dot: 'bg-cyan-400',    texto: 'text-cyan-600',    bgActivo: 'bg-cyan-50/70',    ring: 'ring-cyan-300' },
+  { estado: 'PUBLICADO',    label: 'Publicados',    desc: 'Entregados',             border: 'border-emerald-200', dot: 'bg-emerald-400', texto: 'text-emerald-600', bgActivo: 'bg-emerald-50/70', ring: 'ring-emerald-300' },
   { estado: 'CANCELADO',    label: 'Cancelados',    desc: 'No activos',             border: 'border-red-200',     dot: 'bg-red-400',     texto: 'text-red-500',     bgActivo: 'bg-red-50/70',     ring: 'ring-red-300' },
   { estado: 'REPROGRAMADO', label: 'Reprogramados', desc: 'Cambiaron de fecha',     border: 'border-orange-200',  dot: 'bg-orange-400',  texto: 'text-orange-600',  bgActivo: 'bg-orange-50/70',  ring: 'ring-orange-300' },
 ]
@@ -115,7 +115,7 @@ export default function Solicitudes() {
       </div>
 
       {/* Tabla */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl ring-1 ring-gray-900/5 shadow-sm overflow-hidden">
         {cargando ? (
           <div className="flex items-center justify-center h-40">
             <div className="animate-spin rounded-full h-6 w-6 border-4 border-primary-600 border-t-transparent" />
@@ -134,24 +134,20 @@ export default function Solicitudes() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="table-stack w-full text-sm">
-              <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
+            <table className="table-stack w-full text-sm divide-y divide-gray-100">
+              <thead className="bg-gray-50/80">
                 <tr>
-                  <th className="px-4 py-3 text-left">Cédula</th>
-                  <th className="px-4 py-3 text-left">Candidato</th>
-                  <th className="px-4 py-3 text-left">Cargo</th>
-                  <th className="px-4 py-3 text-left">Servicio</th>
-                  <th className="px-4 py-3 text-left">Fecha solicitud</th>
-                  <th className="px-4 py-3 text-left">Fecha límite</th>
-                  <th className="px-4 py-3 text-left">Estado</th>
+                  {['Cédula', 'Candidato', 'Cargo', 'Servicio', 'Fechas', 'Estado'].map(h => (
+                    <th key={h} className="px-4 py-3 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                  ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y divide-gray-100">
                 {solicitudes.map((s) => (
                   <tr
                     key={s.idServicio}
                     onClick={() => navigate(`/cliente/solicitudes/${s.idServicio}`)}
-                    className="hover:bg-primary-50 cursor-pointer transition-colors">
+                    className="hover:bg-primary-50/70 cursor-pointer transition-colors">
                     <td data-label="Cédula" className="px-4 py-3 text-gray-500 font-mono text-xs">{s.cedulaEvaluado}</td>
                     <td data-label="Candidato" className="px-4 py-3 font-medium text-gray-800">
                       {s.nombresEvaluado} {s.apellidosEvaluado}
@@ -160,13 +156,13 @@ export default function Solicitudes() {
                     <td data-label="Servicio" className="px-4 py-3 text-gray-600 max-w-[160px]">
                       <span className="truncate block">{s.proceso || '—'}</span>
                     </td>
-                    <td data-label="Fecha solicitud" className="px-4 py-3 text-gray-500 whitespace-nowrap">
-                      {s.fechaSolicitud
-                        ? new Date(s.fechaSolicitud).toLocaleDateString('es-CO')
-                        : '—'}
-                    </td>
-                    <td data-label="Fecha límite" className="px-4 py-3 text-gray-500 whitespace-nowrap">
-                      {s.fechaEntregaEstimada ?? '—'}
+                    <td data-label="Fechas" className="px-4 py-3 text-xs whitespace-nowrap">
+                      <div className="grid grid-cols-[3.2rem_auto] gap-x-1.5 gap-y-0.5">
+                        <span className="text-gray-400">Sol.</span>
+                        <span className="text-gray-600">{s.fechaSolicitud ? new Date(s.fechaSolicitud).toLocaleDateString('es-CO') : '—'}</span>
+                        <span className="text-gray-400">Entr.</span>
+                        <span className="text-gray-600">{s.fechaEntregaEstimada ?? '—'}</span>
+                      </div>
                     </td>
                     <td data-label="Estado" className="px-4 py-3">
                       <ServiceStatusBadge status={s.estado} />

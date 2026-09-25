@@ -10,13 +10,36 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Polygraph" />
     <link rel="manifest" href="/manifest.json" />
-    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="icon" type="image/png" href="/icon-192.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>Polygraph Service ERP</title>
     <script>
+      // El SW usa skipWaiting()+clients.claim() (ver src/sw.js) para tomar control apenas se
+      // activa una versión nueva — pero eso solo cambia quién CONTROLA la pestaña, no recarga el
+      // JS/CSS ya cargado en memoria. Sin este listener, una pestaña abierta (o un service worker
+      // viejo que quedó registrado de una sesión anterior) puede quedarse sirviendo una versión
+      // vieja de la app indefinidamente, sin ninguna señal de que hay una nueva — exactamente el
+      // bug de "no veo mis cambios" que reportó el usuario. `controllerchange` se dispara justo
+      // cuando el SW nuevo toma control, así que ese es el momento correcto para recargar (una
+      // sola vez, con el flag, para no entrar en loop).
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js').catch(() => {})
+          navigator.serviceWorker.register('/sw.js')
+            .then((registro) => {
+              // Revisa si hay una versión nueva cada vez que se vuelve a esta pestaña — una
+              // pestaña que se queda abierta horas/días nunca se enteraba de nada hasta cerrarla.
+              document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') registro.update().catch(() => {})
+              })
+            })
+            .catch(() => {})
+        })
+
+        let recargando = false
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (recargando) return
+          recargando = true
+          window.location.reload()
         })
       }
     </script>

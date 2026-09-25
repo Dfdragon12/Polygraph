@@ -30,6 +30,7 @@ const ETIQUETAS_RUTA = {
   formulario:   'Formulario',
   candidatos:   'Candidatos',
   asignaciones: 'Mis Asignaciones',
+  clientes:     'Clientes',
 }
 
 function Breadcrumb({ titulo }) {

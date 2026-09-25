@@ -62,6 +62,11 @@ public class HojaVidaEvaluado {
     @Column(name = "barrio", length = 100)
     private String barrio;
 
+    // Opcional — referencia al catálogo de barrios (ver BarrioService); reemplaza el texto libre
+    // de `barrio` como dato "vivo" hacia adelante, sin dejar de guardarlo.
+    @Column(name = "id_barrio")
+    private Integer idBarrio;
+
     @Column(name = "estrato", length = 1)
     private String estrato;
 

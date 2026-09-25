@@ -1,4 +1,23 @@
 import { createPortal } from 'react-dom'
+import { useEffect } from 'react'
+
+// Bloquea el scroll de la página de fondo mientras hay al menos un modal abierto — sin esto, al
+// llegar al final del contenido del modal el scroll "se filtra" hacia la página detrás (o el fondo
+// se mueve solo al hacer scroll cerca del borde del modal), que es justo la interacción poco
+// fluida que se reportó. Contador en el módulo (no por instancia) porque puede haber más de un
+// modal montado a la vez (ej. un ConfirmModal de eliminar sobre un Modal de edición) — el scroll
+// del fondo solo se restaura cuando se cierra el último.
+let modalesAbiertos = 0
+function useBloqueoScrollFondo() {
+  useEffect(() => {
+    modalesAbiertos += 1
+    document.body.style.overflow = 'hidden'
+    return () => {
+      modalesAbiertos -= 1
+      if (modalesAbiertos === 0) document.body.style.overflow = ''
+    }
+  }, [])
+}
 
 /**
  * Modal base — encabezado sólido color primario, usado en toda la plataforma
@@ -10,6 +29,7 @@ import { createPortal } from 'react-dom'
  * en consola aunque visualmente no se note (por el position: fixed).
  */
 export function Modal({ titulo, subtitulo, onClose, ancho = 'max-w-md', children }) {
+  useBloqueoScrollFondo()
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
       <div className={`bg-white rounded-2xl shadow-xl w-full ${ancho} max-h-[90vh] flex flex-col`}>
@@ -22,7 +42,7 @@ export function Modal({ titulo, subtitulo, onClose, ancho = 'max-w-md', children
             <button onClick={onClose} className="text-primary-100 hover:text-white text-xl leading-none flex-shrink-0 ml-3">×</button>
           )}
         </div>
-        <div className="overflow-y-auto flex-1 scrollbar-thin">{children}</div>
+        <div className="overflow-y-auto overscroll-contain flex-1 scrollbar-thin">{children}</div>
       </div>
     </div>,
     document.body
@@ -54,6 +74,7 @@ export function ConfirmModal({
   bloquearFondo = false, // evita cerrar con un click accidental fuera del modal, para acciones donde eso sería indeseado (ej. cerrar sesión)
   children,
 }) {
+  useBloqueoScrollFondo()
   const accent = danger
     ? { circulo: 'bg-red-100', icono: 'text-red-500', boton: 'bg-red-600 hover:bg-red-700' }
     : { circulo: 'bg-primary-100', icono: 'text-primary-600', boton: 'bg-primary-600 hover:bg-primary-700' }

@@ -6,6 +6,7 @@ import HeaderMensajesCliente from '../HeaderMensajesCliente'
 import CarritoDropdown from '../CarritoDropdown'
 import BuscadorGlobal from '../BuscadorGlobal'
 import SidebarSeccion from './SidebarSeccion'
+import { IconoDashboard, IconoCarpeta, IconoMas, IconoSubir, IconoCarrito, IconoEquipo, IconoInfo, IconoEstadisticas, IconoCuenta } from './IconosNav'
 
 const ETIQUETAS_ROL = {
   ADMIN_CLIENTE:    'Administrador',
@@ -26,6 +27,7 @@ const ETIQUETAS_RUTA = {
   catalogo:             'Catálogo',
   pospago:              'Mi Crédito',
   facturas:             'Factura',
+  equipo:               'Mi Equipo',
 }
 
 function Breadcrumb() {
@@ -67,23 +69,24 @@ const SECCIONES_ADMIN = [
   {
     titulo: 'General',
     items: [
-      { ruta: '/cliente/dashboard', etiqueta: 'Dashboard', icono: '📊' },
+      { ruta: '/cliente/dashboard', etiqueta: 'Dashboard', icono: <IconoDashboard /> },
     ],
   },
   {
     titulo: 'Solicitudes',
     items: [
-      { ruta: '/cliente/solicitudes',     etiqueta: 'Mis Solicitudes', icono: '📁' },
-      { ruta: '/cliente/nueva-solicitud', etiqueta: 'Nueva Solicitud', icono: '➕' },
-      { ruta: '/cliente/carga-masiva',    etiqueta: 'Carga Masiva',    icono: '📤' },
+      { ruta: '/cliente/solicitudes',     etiqueta: 'Mis Solicitudes', icono: <IconoCarpeta /> },
+      { ruta: '/cliente/nueva-solicitud', etiqueta: 'Nueva Solicitud', icono: <IconoMas /> },
+      { ruta: '/cliente/carga-masiva',    etiqueta: 'Carga Masiva',    icono: <IconoSubir /> },
     ],
   },
   {
     titulo: 'Cuenta',
     items: [
-      { ruta: '/cliente/comprar-servicios', etiqueta: 'Comprar Servicios',  icono: '🛒' },
-      { ruta: '/cliente/documentos',        etiqueta: 'Información',        icono: '🗂️' },
-      { ruta: '/cliente/estadisticas',      etiqueta: 'Estadísticas',       icono: '📈' },
+      { ruta: '/cliente/comprar-servicios', etiqueta: 'Comprar Servicios',  icono: <IconoCarrito /> },
+      { ruta: '/cliente/equipo',            etiqueta: 'Mi Equipo',          icono: <IconoEquipo /> },
+      { ruta: '/cliente/documentos',        etiqueta: 'Información',        icono: <IconoInfo /> },
+      { ruta: '/cliente/estadisticas',      etiqueta: 'Estadísticas',       icono: <IconoEstadisticas /> },
     ],
   },
 ]
@@ -92,14 +95,14 @@ const SECCIONES_ANALISTA = [
   {
     titulo: 'General',
     items: [
-      { ruta: '/cliente/dashboard', etiqueta: 'Dashboard', icono: '📊' },
+      { ruta: '/cliente/dashboard', etiqueta: 'Dashboard', icono: <IconoDashboard /> },
     ],
   },
   {
     titulo: 'Solicitudes',
     items: [
-      { ruta: '/cliente/solicitudes',     etiqueta: 'Mis Solicitudes', icono: '📁' },
-      { ruta: '/cliente/nueva-solicitud', etiqueta: 'Nueva Solicitud', icono: '➕' },
+      { ruta: '/cliente/solicitudes',     etiqueta: 'Mis Solicitudes', icono: <IconoCarpeta /> },
+      { ruta: '/cliente/nueva-solicitud', etiqueta: 'Nueva Solicitud', icono: <IconoMas /> },
     ],
   },
 ]
@@ -223,21 +226,44 @@ function AvatarUsuario({ usuario, cerrarSesion }) {
 }
 
 export default function ClientLayout() {
-  const { usuario, logout } = useAuth()
+  const { usuario, logout, refrescarUsuario } = useAuth()
   const navigate = useNavigate()
+
+  // El menú (Solicitudes, Mi Equipo, Comprar Servicios vs. Mi Crédito) depende de
+  // usuario.puedeSolicitar/tipoCliente, cacheados en localStorage desde el login — si un admin
+  // aprueba el crédito pospago (GestionCuentas → quita "requiere aprobación") o cambia el tipo de
+  // cliente MIENTRAS la sesión sigue abierta, ese caché queda desactualizado hasta que el JWT
+  // expire (hasta 24h) y el cliente sigue viendo el menú reducido de "cliente nuevo sin aprobar".
+  // refrescarUsuario() ya recalcula ambos campos en vivo contra la BD (AuthService.
+  // resolverPuedeSolicitar/resolverTipoCliente) — se llama una vez al entrar al portal cliente.
+  useEffect(() => {
+    refrescarUsuario()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const esPospago = usuario?.tipoCliente === 'POSPAGO'
   const esAdminCliente = usuario?.rol === 'ADMIN_CLIENTE'
+  // false explícito = cliente que se registró solo y todavía no completó su primera compra
+  // (prepago) ni tiene un acuerdo de crédito vigente (pospago) — se calcula solo, nadie lo
+  // "aprueba" a mano (ver AuthService.resolverPuedeSolicitar). undefined/true (roles internos,
+  // clientes ya habilitados, o sesiones de antes de que existiera este campo) no ocultan nada.
+  const noPuedeSolicitar = usuario?.puedeSolicitar === false
   const seccionesBase = esAdminCliente ? SECCIONES_ADMIN : SECCIONES_ANALISTA
   // Pospago solicita directo con cupo de crédito — no compra saldo por adelantado, ve "Mi
   // Crédito" en su lugar. El módulo de pagos (incluido el crédito pospago) solo lo ve ADMIN_CLIENTE.
-  const secciones = esPospago
-    ? seccionesBase.map((s) => {
-        if (s.titulo !== 'Cuenta') return s
-        const items = s.items.filter((i) => i.ruta !== '/cliente/comprar-servicios')
-        if (esAdminCliente) items.unshift({ ruta: '/cliente/pospago', etiqueta: 'Mi Crédito', icono: '💳' })
-        return { ...s, items }
-      })
-    : seccionesBase
+  const secciones = seccionesBase
+    .filter((s) => !(noPuedeSolicitar && s.titulo === 'Solicitudes'))
+    .map((s) => {
+      if (s.titulo !== 'Cuenta') return s
+      let items = s.items
+      // "Mi Equipo" tampoco tiene sentido antes de la primera compra/acuerdo — mismo criterio
+      // que "Solicitudes".
+      if (noPuedeSolicitar) items = items.filter((i) => i.ruta !== '/cliente/equipo')
+      if (esPospago) {
+        items = items.filter((i) => i.ruta !== '/cliente/comprar-servicios')
+        if (esAdminCliente) items = [{ ruta: '/cliente/pospago', etiqueta: 'Mi Crédito', icono: <IconoCuenta /> }, ...items]
+      }
+      return { ...s, items }
+    })
   const [menuMovil, setMenuMovil] = useState(false)
   const [collapsed, setCollapsed] = useState(() =>
     localStorage.getItem('client-sidebar-collapsed') === 'true'

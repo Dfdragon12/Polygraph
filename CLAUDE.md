@@ -125,6 +125,72 @@ Polygraph/
 - Soporta resumen de conversación, contador de no leídos y envío de mensajes.
 - Notificaciones asociadas vía `notificaciones` module.
 
+## Novedades de subproceso
+
+- Entidad `NovedadSubproceso` (tabla `novedades_subproceso`, V187): quien ejecuta el subproceso
+  (analista/poligrafista/visitador asignado) reporta algo fuera de lo normal, p.ej. "el candidato
+  no llegó". Estados `EstadoNovedad`: ABIERTA → RESUELTA (con respuesta obligatoria).
+- Tipos de novedad = catálogo administrable (V189, módulo `catalogo`), ya NO un enum:
+  `categorias_novedad` 1─N `tipos_novedad` 1─N `tipos_novedad_roles` (a qué rol ejecutor le
+  aparece), y `novedades_subproceso.id_tipo_novedad` FK → `tipos_novedad`. Pantalla
+  admin/catálogo → "Tipos de novedad" (`TiposNovedad.jsx`, `TipoNovedadController` en
+  `/api/v1/catalogo/novedades`). Lo usado no se borra, se desactiva (`activo=false`); la lista
+  que ve el ejecutor solo trae tipos y categorías activos que apliquen al `rolResponsable`.
+- Resuelven: ADMIN_POLYGRAPH, el GESTOR del cliente, o el PROGRAMADOR responsable (solo
+  poligrafía/visita). NO cambia el estado del subproceso ni bloquea completarlo.
+- Notificaciones: `NOVEDAD_REGISTRADA` (a gestor del cliente + programador responsable) y
+  `NOVEDAD_RESUELTA` (a quien reportó). Endpoints en `NovedadSubprocesoController`
+  (`/api/v1/gestor/asignaciones/{id}/novedades`).
+- Seguimiento (`NovedadSeguimiento`, tabla `novedad_seguimientos`, V188): mientras está ABIERTA,
+  quien la reportó o quien coordina agregan observaciones (`POST .../novedades/{id}/seguimientos`).
+  Al resolver, quien coordina puede mandar `nuevaFechaProgramada` y se corre la hora del
+  subproceso vía `AsignacionService.reprogramar` (valida agenda, historial `REPROGRAMADO`,
+  notificación `SUBPROCESO_REPROGRAMADO`); queda como entrada REPROGRAMACION del seguimiento.
+- Visibilidad: analista/poligrafista/visitador solo ven las novedades que ellos mismos
+  registraron; gestor/programador/admin ven todas. Orden: la más reciente primero.
+- Frontend: pasos de `pages/shared/Formulario.jsx`: 0 "Novedades" (`NovedadesSubproceso.jsx`),
+  1 "Candidato" (`FichaCandidato seccion="datos"`), 2 "Soportes" (`FichaCandidato
+  seccion="soportes"`), luego las secciones de la plantilla y al final "Revisión y envío" (solo
+  quien diligencia).
+
+## Motor de calificación de riesgo (en construcción)
+
+- Especificación y decisiones: `docs/modelo-calificacion-riesgo.md` — toda lógica de riesgo debe
+  cumplirla; si algo no está definido allí, preguntar antes de asumir.
+- Fase A (hecha, V190): peso por subproceso en `procesos_tipos_progreso.peso` (NULL = sin
+  configurar, 0 = no califica; el proceso califica solo si suman 100), `procesos.cobertura_minima`,
+  `criticidad_defecto`, `version_calificacion`; tablas `umbrales_riesgo` y `parametros_riesgo`.
+  Backend: `catalogo/service/CalificacionProcesoService` (`/catalogo/procesos/{id}/calificacion`) y
+  módulo `riesgo` (`ParametrosRiesgoService`, `/catalogo/riesgo/parametros`). Frontend: bloque
+  "Calificación de riesgo" en el modal de subprocesos de `Catalogo.jsx` y
+  `pages/admin/riesgo/ParametrosRiesgo.jsx`.
+- Fase B (hecha, V191): puntos por respuesta en `formulario_columna_puntajes` (campos Lista/Sí-No
+  con `formulario_columnas.califica_riesgo`); `ColumnaResponse.de(...)` es el ÚNICO lugar que arma
+  columnas — `puntajes` solo va al admin (`/estructura` los oculta al resto), `opcionesCriticas` va
+  a todos. Respuesta crítica exige `formulario_datos.justificacion` para completar el subproceso.
+- Fase C (hecha): motor puro en `modules/riesgo/motor` (sin Spring/JPA) — `MotorCalificacionRiesgo.calcular`
+  orquesta `CalificadorServicio` → `DetectorCriticos` → `CalculadorPonderado` → `EvaluadorPisos` →
+  `EvaluadorRevisionManual`. Pruebas de aceptación de la especificación en
+  `MotorCalificacionRiesgoAceptacionTest`: si una no da, se revisa el motor, NO se cambia el valor esperado.
+- Fase D (hecha, V192): `riesgo/service/CalificacionRiesgoService` arma la entrada del motor (catálogo +
+  respuestas) y guarda `calificaciones_riesgo` (una fila vigente + historial; solo inserta si el
+  resultado cambió). Se recalcula por evento `RecalculoRiesgoSolicitado` DESPUÉS del commit (lo
+  publican `FormularioService.guardar` y `AsignacionService.recalcularEstadoServicio`) — un error ahí
+  nunca revierte lo guardado. "No realizado" = CANCELADO + `no_realizado` (desde resolver una novedad,
+  `AsignacionService.marcarNoRealizado`). El nivel final es automático (= recomendación del motor);
+  el gestor puede cambiarlo con justificación o volver al automático. Publicar solo exige cálculo
+  `CALCULADO` y bloquea el cálculo; si el servicio sale de PUBLICADO, se
+  desbloquea y se recalcula (`CalificacionRiesgoService.recalcular`).
+- Fase E (hecha): marcadores Word `${riesgo['nivel'|'puntaje']}` (estudio, nivel que vale) y
+  `${calificacion['nivel'|'puntaje']}` (subproceso del documento), vía
+  `CalificacionRiesgoService.marcadoresWord` → `ContextoPlantillaWord`. Sin cálculo: "En proceso" /
+  "Sin calificar" y puntaje vacío (nunca rompen la generación).
+- Encabezado del formulario (`FranjaRiesgo` en `Formulario.jsx`): el ejecutor ve nivel/puntaje de su
+  subproceso (parcial mientras lo llena); gestor del cliente/admin ven además el estudio.
+  `GET /api/v1/riesgo/subprocesos/{id}/resumen` (`RiesgoSubprocesoController`).
+  Endpoints `/api/v1/riesgo/servicios/{id}` (GET, PUT /criticidad, PUT /decision); frontend
+  `components/RiesgoServicio.jsx` (pestaña "Riesgo" de `pages/gestor/Solicitudes.jsx`).
+
 ## Módulo Enlaces Externos
 
 - Entidad `EnlaceExterno`: directorio de entidades externas (categoría, URL,
@@ -210,6 +276,20 @@ original del 22 de agosto):** Swagger/OpenAPI quedaba público sin login (ahora 
 defecto, `SWAGGER_ENABLED=false`); `GET /requests/bulk/template` no tenía `@PreAuthorize`; y
 `/api/v1/auth/login` y `/forgot-password` no tenían ningún límite de intentos (nuevo
 `RateLimitFilter`, 10 intentos/minuto por IP).
+
+**Corregido 2026-09-24:** `PATCH /api/v1/gestor/asignaciones/{id}/completar` y
+`GET .../{id}/historial` solo validaban el ROL del subproceso, no a quién estaba asignado — un
+analista/poligrafista/visitador podía completar o ver el historial del subproceso de un colega
+llamando la API directo. Ahora `AsignacionService.validarEsDelEjecutor` exige que sea el
+`usuarioAsignado` (403 si no).
+
+**Corregido 2026-09-25:** un GESTOR podía abrir, guardar, aprobar, devolver, asignar, desasignar,
+cancelar o ver el historial de subprocesos de clientes de OTRO gestor (solo se validaba el rol), y
+también su ficha de candidato, documento Word/PDF, novedades y hoja de vida. Ahora
+`shared/utils/AccesoGestor.validar` exige `Cliente.idGestor == gestor` (403 si no) en
+`FormularioService`, `FormularioDocumentoService`, `FichaCandidatoService`,
+`NovedadSubprocesoService`, `AsignacionService` y `CandidatoHojaVidaService`. Todo endpoint nuevo
+que reciba un subproceso/servicio y lo abra a GESTOR debe llamarlo.
 
 **Documentación nueva generada por la auditoría** (no reemplaza este archivo, lo
 complementa): `docs/DICCIONARIO.md` (glosario de negocio↔código↔BD), `docs/adr/`

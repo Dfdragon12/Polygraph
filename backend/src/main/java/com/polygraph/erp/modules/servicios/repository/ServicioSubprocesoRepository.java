@@ -35,6 +35,9 @@ public interface ServicioSubprocesoRepository
      *  real — ver CandidatoHojaVidaService. */
     boolean existsByServicio_Candidato_IdCandidatoAndUsuarioAsignado_IdUsuario(Long idCandidato, Long idUsuario);
 
+    /** ¿El candidato tiene algún servicio con un cliente de este gestor? (ver AccesoGestor) */
+    boolean existsByServicio_Candidato_IdCandidatoAndServicio_Cliente_IdGestor(Long idCandidato, Long idGestor);
+
     /** Para el buscador global de ANALISTA_INTERNO/POLIGRAFISTA/VISITADOR/PROGRAMADOR — solo SUS
      *  propios subprocesos (asignado a ejecutarlo, o a cargo de coordinarlo si es programador),
      *  nunca los de otro empleado. Busca por nombre del proceso o del candidato; navega directo

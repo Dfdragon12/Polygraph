@@ -39,8 +39,11 @@ public class FormularioPlantillaController {
      *  VISITADOR) para saber qué secciones mostrar. */
     @GetMapping("/estructura")
     @PreAuthorize("hasAnyRole('ADMIN_POLYGRAPH', 'GESTOR', 'ANALISTA_INTERNO', 'POLIGRAFISTA', 'VISITADOR')")
-    public ResponseEntity<List<SeccionPlantillaResponse>> estructura(@PathVariable Integer idTipoProgreso) {
-        return ResponseEntity.ok(service.listarEstructura(idTipoProgreso));
+    public ResponseEntity<List<SeccionPlantillaResponse>> estructura(@PathVariable Integer idTipoProgreso,
+                                                                     org.springframework.security.core.Authentication auth) {
+        boolean esAdmin = auth != null && auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN_POLYGRAPH".equals(a.getAuthority()));
+        return ResponseEntity.ok(service.listarEstructura(idTipoProgreso, esAdmin));
     }
 
     @PutMapping("/estructura")

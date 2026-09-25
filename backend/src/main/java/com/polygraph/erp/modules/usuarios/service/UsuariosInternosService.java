@@ -191,7 +191,16 @@ public class UsuariosInternosService {
      *  subprocesos) también pase su validación — si esas quedaron incompletas por cualquier
      *  motivo, el administrador debe poder resetear la contraseña igual, sin que un campo sin
      *  relación se lo bloquee. */
-    public UsuarioInternoResponse cambiarPassword(Long idUsuario, String nuevaPassword) {
+    /** claveAdmin es la contraseña del admin que hace el cambio (no la del usuario al que se le
+     *  resetea) — se exige para no dejar que baste con tener la sesión abierta para tomar el
+     *  control de cualquier cuenta interna. */
+    public UsuarioInternoResponse cambiarPassword(Long idUsuario, String nuevaPassword, String claveAdmin, String emailAdmin) {
+        Usuario admin = usuarioRepository.findByEmail(emailAdmin)
+                .orElseThrow(() -> new ApiException("Usuario no encontrado", HttpStatus.NOT_FOUND));
+        if (!passwordEncoder.matches(claveAdmin, admin.getPassword())) {
+            throw new ApiException("Tu contraseña no es correcta", HttpStatus.UNAUTHORIZED);
+        }
+
         Usuario usuario = usuarioRepository.findById(idUsuario)
                 .orElseThrow(() -> new ApiException("Usuario no encontrado", HttpStatus.NOT_FOUND));
         if (!ROLES_INTERNOS.contains(usuario.getRol())) {
@@ -199,6 +208,7 @@ public class UsuariosInternosService {
         }
         usuario.setPassword(passwordEncoder.encode(nuevaPassword));
         usuario.setRequiereCambioPassword(true);
+        usuario.setFechaUltimoCambioPassword(LocalDateTime.now());
         log.info("Contraseña reseteada por un administrador para: {}", usuario.getEmail());
         UsuariosInternos emp = usuario.getIdEmpleado() != null
                 ? empleadoRepository.findById(usuario.getIdEmpleado()).orElse(null)

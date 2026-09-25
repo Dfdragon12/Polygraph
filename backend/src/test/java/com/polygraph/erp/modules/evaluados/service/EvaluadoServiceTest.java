@@ -173,7 +173,7 @@ class EvaluadoServiceTest {
                 true, null, null, null, null, null, null, null, null, null,
                 "pedro@test.com", "3001234567",
                 null, null, null, null, null, null, null,
-                List.of(), List.of(), List.of(), Map.of(), null);
+                List.of(), List.of(), List.of(), Map.of(), null, null, null, null);
 
         when(linkCandidatoRepository.findByToken("token-valido-abc123")).thenReturn(Optional.of(linkActivo));
         when(hojaVidaRepository.findByCandidato_IdCandidato(anyLong())).thenReturn(Optional.empty());
@@ -193,7 +193,7 @@ class EvaluadoServiceTest {
         HojaVidaRequest request = new HojaVidaRequest(
                 false, null, null, null, null, null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null,
-                List.of(), List.of(), List.of(), Map.of(), null);
+                List.of(), List.of(), List.of(), Map.of(), null, null, null, null);
 
         when(linkCandidatoRepository.findByToken("token-valido-abc123")).thenReturn(Optional.of(linkActivo));
 
@@ -211,7 +211,7 @@ class EvaluadoServiceTest {
                 false, null, "Bogotá", null, null, "Soltero", "Universitario",
                 "Calle 123", "Chapinero", "3", "pedro@test.com", "3001234567",
                 null, null, null, null, null, null, null,
-                List.of(), List.of(), List.of(), Map.of(), null);
+                List.of(), List.of(), List.of(), Map.of(), null, null, null, null);
 
         when(linkCandidatoRepository.findByToken("token-valido-abc123")).thenReturn(Optional.of(linkActivo));
         when(hojaVidaRepository.findByCandidato_IdCandidato(20L)).thenReturn(Optional.empty());
@@ -241,7 +241,7 @@ class EvaluadoServiceTest {
                 true, null, null, null, null, "Casado", null, null, null, null,
                 "pedro@test.com", "3001234567",
                 null, null, null, null, null, null, null,
-                List.of(), List.of(), List.of(), Map.of(), null);
+                List.of(), List.of(), List.of(), Map.of(), null, null, null, null);
 
         when(linkCandidatoRepository.findByToken("token-valido-abc123")).thenReturn(Optional.of(linkActivo));
         when(hojaVidaRepository.findByCandidato_IdCandidato(20L)).thenReturn(Optional.of(hojaExistente));

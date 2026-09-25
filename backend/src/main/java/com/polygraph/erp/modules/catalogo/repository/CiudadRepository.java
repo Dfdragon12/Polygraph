@@ -2,6 +2,7 @@ package com.polygraph.erp.modules.catalogo.repository;
 
 import com.polygraph.erp.modules.catalogo.entity.Ciudad;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -11,6 +12,17 @@ public interface CiudadRepository extends JpaRepository<Ciudad, Integer> {
     List<Ciudad> findAllByOrderByNombreCiudadAsc();
 
     long countByPendienteConfirmacionTrue();
+
+    // Ciudad.departamento es texto denormalizado (no FK a Departamento) — se usa para bloquear el
+    // borrado de un departamento en uso y para saber si conviene ofrecer "eliminar" en su fila.
+    boolean existsByDepartamentoIgnoreCase(String departamento);
+
+    // Al renombrar un departamento (DepartamentoService.actualizar), se propaga el nombre nuevo a
+    // todas las ciudades que ya tenían guardado el nombre viejo — si no, quedarían con un
+    // departamento "fantasma" que ya no existe en el catálogo.
+    @Modifying
+    @Query("update Ciudad c set c.departamento = :nuevo, c.codigoDaneDepto = :codigoDane where lower(c.departamento) = lower(:viejo)")
+    void renombrarDepartamento(@Param("viejo") String viejo, @Param("nuevo") String nuevo, @Param("codigoDane") String codigoDane);
 
     // Ids de ciudades referenciadas por FK desde clientes/candidatos/visitas/empleados/recargos —
     // se usa para no ofrecer "Eliminar" en el catálogo cuando la ciudad ya está en uso.

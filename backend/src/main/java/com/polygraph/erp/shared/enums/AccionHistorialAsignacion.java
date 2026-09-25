@@ -5,5 +5,10 @@ public enum AccionHistorialAsignacion {
     REASIGNADO,
     DESASIGNADO,
     COMPLETADO,
-    CANCELADO
+    CANCELADO,
+    DEVUELTO,
+    PUBLICADO,
+    /** La hora del subproceso se corrió sin cambiar de responsable — p.ej. al resolver una
+     *  novedad (ver AsignacionService.reprogramar). */
+    REPROGRAMADO
 }

@@ -10,6 +10,7 @@ import com.polygraph.erp.modules.mensajes.dto.NoLeidosResponse;
 import com.polygraph.erp.modules.mensajes.entity.MensajeClienteGestor;
 import com.polygraph.erp.modules.mensajes.repository.MensajeClienteGestorRepository;
 import com.polygraph.erp.shared.enums.OrigenMensaje;
+import com.polygraph.erp.shared.enums.Rol;
 import com.polygraph.erp.shared.exceptions.ApiException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -36,91 +37,112 @@ public class MensajeService {
     private int retencionDias;
 
     // ---------- Lado CLIENTE ----------
+    // Cada usuario (ADMIN_CLIENTE o ANALISTA_CLIENTE) tiene su PROPIO hilo con el gestor — ya no
+    // es una sola conversación compartida por toda la empresa.
 
     @Transactional
-    public List<MensajeResponse> listarParaCliente(Integer idCliente) {
-        mensajeRepository.marcarLeidos(idCliente, OrigenMensaje.GESTOR);
-        return obtenerHilo(idCliente);
+    public List<MensajeResponse> listarParaCliente(Long idUsuarioCliente) {
+        mensajeRepository.marcarLeidos(idUsuarioCliente, OrigenMensaje.GESTOR);
+        return obtenerHilo(idUsuarioCliente);
     }
 
     @Transactional(readOnly = true)
-    public NoLeidosResponse noLeidosParaCliente(Integer idCliente) {
-        long total = mensajeRepository.countByCliente_IdClienteAndOrigenAndLeidoFalseAndFechaExpiracionAfter(
-                idCliente, OrigenMensaje.GESTOR, LocalDateTime.now());
+    public NoLeidosResponse noLeidosParaCliente(Long idUsuarioCliente) {
+        long total = mensajeRepository.countByUsuarioCliente_IdUsuarioAndOrigenAndLeidoFalseAndFechaExpiracionAfter(
+                idUsuarioCliente, OrigenMensaje.GESTOR, LocalDateTime.now());
         return new NoLeidosResponse(total);
     }
 
     @Transactional
-    public MensajeResponse enviarComoCliente(Integer idCliente, String emailEmisor, String texto) {
-        Cliente cliente = clienteRepository.findById(idCliente)
-                .orElseThrow(() -> new ApiException("Cliente no encontrado", HttpStatus.NOT_FOUND));
+    public MensajeResponse enviarComoCliente(Usuario usuarioCliente, String texto) {
+        Cliente cliente = clienteDe(usuarioCliente);
         if (cliente.getIdGestor() == null) {
             throw new ApiException("Tu empresa aún no tiene un gestor asignado.", HttpStatus.CONFLICT);
         }
-        Usuario emisor = obtenerUsuario(emailEmisor);
-        return guardar(cliente, emisor, OrigenMensaje.CLIENTE, texto);
+        return guardar(cliente, usuarioCliente, usuarioCliente, OrigenMensaje.CLIENTE, texto);
     }
 
     // ---------- Lado GESTOR ----------
 
+    /** Un hilo por cada usuario (ADMIN_CLIENTE + cada ANALISTA_CLIENTE) de los clientes asignados
+     *  a este gestor — incluye a los que todavía no han escrito nada (para que el gestor pueda
+     *  iniciar la conversación), igual que antes se veían todos los clientes asignados aunque no
+     *  hubiera mensajes todavía. */
     @Transactional(readOnly = true)
     public List<ConversacionResumenResponse> misConversaciones(Long idGestor) {
         LocalDateTime ahora = LocalDateTime.now();
         return clienteRepository.findByIdGestor(idGestor).stream()
-                .map(c -> {
-                    var ultimo = mensajeRepository
-                            .findTopByCliente_IdClienteAndFechaExpiracionAfterOrderByFechaEnvioDesc(c.getIdCliente(), ahora)
-                            .orElse(null);
-                    long noLeidos = mensajeRepository.countByCliente_IdClienteAndOrigenAndLeidoFalseAndFechaExpiracionAfter(
-                            c.getIdCliente(), OrigenMensaje.CLIENTE, ahora);
-                    return new ConversacionResumenResponse(
-                            c.getIdCliente(),
-                            nombreCliente(c),
-                            ultimo != null ? ultimo.getMensaje() : null,
-                            ultimo != null ? ultimo.getFechaEnvio() : null,
-                            noLeidos);
-                })
+                .flatMap(c -> usuarioRepository.findByIdCliente(c.getIdCliente()).stream()
+                        .filter(u -> u.getRol() == Rol.ADMIN_CLIENTE || u.getRol() == Rol.ANALISTA_CLIENTE)
+                        .map(u -> resumenDe(c, u, ahora)))
                 .sorted(Comparator.comparing(
                         ConversacionResumenResponse::fechaUltimoMensaje,
                         Comparator.nullsLast(Comparator.reverseOrder())))
                 .toList();
     }
 
-    @Transactional
-    public List<MensajeResponse> listarParaGestor(Integer idCliente, Long idGestor) {
-        validarPertenencia(idCliente, idGestor);
-        mensajeRepository.marcarLeidos(idCliente, OrigenMensaje.CLIENTE);
-        return obtenerHilo(idCliente);
+    private ConversacionResumenResponse resumenDe(Cliente cliente, Usuario usuarioCliente, LocalDateTime ahora) {
+        var ultimo = mensajeRepository
+                .findTopByUsuarioCliente_IdUsuarioAndFechaExpiracionAfterOrderByFechaEnvioDesc(usuarioCliente.getIdUsuario(), ahora)
+                .orElse(null);
+        long noLeidos = mensajeRepository.countByUsuarioCliente_IdUsuarioAndOrigenAndLeidoFalseAndFechaExpiracionAfter(
+                usuarioCliente.getIdUsuario(), OrigenMensaje.CLIENTE, ahora);
+        return new ConversacionResumenResponse(
+                cliente.getIdCliente(),
+                nombreCliente(cliente),
+                usuarioCliente.getIdUsuario(),
+                nombreCompleto(usuarioCliente),
+                usuarioCliente.getRol().name(),
+                ultimo != null ? ultimo.getMensaje() : null,
+                ultimo != null ? ultimo.getFechaEnvio() : null,
+                noLeidos);
     }
 
     @Transactional
-    public MensajeResponse enviarComoGestor(Integer idCliente, Long idGestor, String emailEmisor, String texto) {
-        Cliente cliente = validarPertenencia(idCliente, idGestor);
+    public List<MensajeResponse> listarParaGestor(Long idUsuarioCliente, Long idGestor) {
+        validarPertenencia(idUsuarioCliente, idGestor);
+        mensajeRepository.marcarLeidos(idUsuarioCliente, OrigenMensaje.CLIENTE);
+        return obtenerHilo(idUsuarioCliente);
+    }
+
+    @Transactional
+    public MensajeResponse enviarComoGestor(Long idUsuarioCliente, Long idGestor, String emailEmisor, String texto) {
+        Usuario usuarioCliente = validarPertenencia(idUsuarioCliente, idGestor);
         Usuario emisor = obtenerUsuario(emailEmisor);
-        return guardar(cliente, emisor, OrigenMensaje.GESTOR, texto);
+        return guardar(clienteDe(usuarioCliente), usuarioCliente, emisor, OrigenMensaje.GESTOR, texto);
     }
 
     // ---------- Comunes ----------
 
-    private List<MensajeResponse> obtenerHilo(Integer idCliente) {
+    private List<MensajeResponse> obtenerHilo(Long idUsuarioCliente) {
         return mensajeRepository
-                .findByCliente_IdClienteAndFechaExpiracionAfterOrderByFechaEnvioAsc(idCliente, LocalDateTime.now())
+                .findByUsuarioCliente_IdUsuarioAndFechaExpiracionAfterOrderByFechaEnvioAsc(idUsuarioCliente, LocalDateTime.now())
                 .stream().map(this::toResponse).toList();
     }
 
-    private Cliente validarPertenencia(Integer idCliente, Long idGestor) {
-        Cliente cliente = clienteRepository.findById(idCliente)
+    private Cliente clienteDe(Usuario usuarioCliente) {
+        if (usuarioCliente.getIdCliente() == null) {
+            throw new ApiException("Usuario no asociado a ningún cliente", HttpStatus.FORBIDDEN);
+        }
+        return clienteRepository.findById(usuarioCliente.getIdCliente())
                 .orElseThrow(() -> new ApiException("Cliente no encontrado", HttpStatus.NOT_FOUND));
+    }
+
+    private Usuario validarPertenencia(Long idUsuarioCliente, Long idGestor) {
+        Usuario usuarioCliente = usuarioRepository.findById(idUsuarioCliente)
+                .orElseThrow(() -> new ApiException("Usuario no encontrado", HttpStatus.NOT_FOUND));
+        Cliente cliente = clienteDe(usuarioCliente);
         if (!idGestor.equals(cliente.getIdGestor())) {
             throw new ApiException("No tienes acceso a las conversaciones de este cliente.", HttpStatus.FORBIDDEN);
         }
-        return cliente;
+        return usuarioCliente;
     }
 
-    private MensajeResponse guardar(Cliente cliente, Usuario emisor, OrigenMensaje origen, String texto) {
+    private MensajeResponse guardar(Cliente cliente, Usuario usuarioCliente, Usuario emisor, OrigenMensaje origen, String texto) {
         LocalDateTime ahora = LocalDateTime.now();
         MensajeClienteGestor mensaje = MensajeClienteGestor.builder()
                 .cliente(cliente)
+                .usuarioCliente(usuarioCliente)
                 .emisor(emisor)
                 .origen(origen)
                 .mensaje(texto.trim())
@@ -129,8 +151,8 @@ public class MensajeService {
                 .leido(false)
                 .build();
         mensaje = mensajeRepository.save(mensaje);
-        log.info("Mensaje {} enviado por {} (origen={}) en conversación cliente={}",
-                mensaje.getId(), emisor.getEmail(), origen, cliente.getIdCliente());
+        log.info("Mensaje {} enviado por {} (origen={}) en el hilo de usuario={} (cliente={})",
+                mensaje.getId(), emisor.getEmail(), origen, usuarioCliente.getIdUsuario(), cliente.getIdCliente());
         return toResponse(mensaje);
     }
 
@@ -146,6 +168,10 @@ public class MensajeService {
         return (nombre + apellido).trim();
     }
 
+    private String nombreCompleto(Usuario u) {
+        return (u.getNombre() + (u.getApellido() != null ? " " + u.getApellido() : "")).trim();
+    }
+
     private MensajeResponse toResponse(MensajeClienteGestor m) {
         Usuario emisor = m.getEmisor();
         String nombreEmisor = emisor != null
@@ -158,7 +184,8 @@ public class MensajeService {
                 m.getFechaEnvio(),
                 m.getFechaExpiracion(),
                 m.getLeido(),
-                nombreEmisor
+                nombreEmisor,
+                emisor != null ? emisor.getIdUsuario() : null
         );
     }
 

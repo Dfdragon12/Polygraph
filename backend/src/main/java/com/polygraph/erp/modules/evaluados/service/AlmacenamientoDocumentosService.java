@@ -37,6 +37,16 @@ public class AlmacenamientoDocumentosService {
      * decidida por quien llama.
      */
     public String guardar(MultipartFile archivo, String categoria, String carpeta) {
+        return guardar(archivo, categoria, carpeta, null);
+    }
+
+    /** Igual que guardar(archivo, categoria, carpeta), pero con "nombreDeseado" se ignora el
+     *  nombre con el que la persona subió el archivo desde su computador y se guarda/muestra con
+     *  ese nombre en su lugar (conservando la extensión real del archivo) — usado por la plantilla
+     *  Word de admin/catálogo → Plantilla, para que el nombre identifique el subproceso en vez de
+     *  quedar con lo que sea que se llamaba en el computador de quien lo subió. null se comporta
+     *  igual que el método de 3 argumentos (conserva el nombre original). */
+    public String guardar(MultipartFile archivo, String categoria, String carpeta, String nombreDeseado) {
         if (archivo == null || archivo.isEmpty()) {
             throw new ApiException("El archivo está vacío", HttpStatus.BAD_REQUEST);
         }
@@ -47,9 +57,12 @@ public class AlmacenamientoDocumentosService {
                     "Tipo de archivo no permitido. Solo se aceptan: " + String.join(", ", EXTENSIONES_PERMITIDAS),
                     HttpStatus.BAD_REQUEST);
         }
+        String nombreFinal = (nombreDeseado == null || nombreDeseado.isBlank())
+                ? nombreOriginal
+                : sanitizarNombre(nombreDeseado) + "." + extension;
 
         String rutaRelativa = sanitizarCarpeta(categoria) + "/" + sanitizarCarpeta(carpeta) + "/"
-                + UUID.randomUUID() + "_" + nombreOriginal;
+                + UUID.randomUUID() + "_" + nombreFinal;
         Path destino = directorioBase.resolve(rutaRelativa).normalize();
         if (!destino.startsWith(directorioBase)) {
             throw new ApiException("Ruta de archivo inválida", HttpStatus.BAD_REQUEST);

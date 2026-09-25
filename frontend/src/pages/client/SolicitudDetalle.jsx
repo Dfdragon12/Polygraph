@@ -6,11 +6,14 @@ import ServiceStatusBadge from '../../components/ServiceStatusBadge'
 const formatearCOP = (valor) =>
   new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(valor ?? 0)
 
+// Mismo semáforo que gestor/programador → Agenda: COMPLETADO en violeta (el gestor todavía no lo
+// aprueba) y PUBLICADO es el único verde de verdad.
 const BADGE_SUBPROCESO = {
-  PENDIENTE:  { color: 'bg-amber-100 text-amber-700',  dot: 'bg-amber-400',  texto: 'Pendiente' },
-  ASIGNADO:   { color: 'bg-blue-100 text-blue-700',    dot: 'bg-blue-400',   texto: 'Programado' },
-  COMPLETADO: { color: 'bg-green-100 text-green-700',  dot: 'bg-green-400',  texto: 'Completado' },
-  CANCELADO:  { color: 'bg-red-100 text-red-600',      dot: 'bg-red-400',    texto: 'Cancelado' },
+  PENDIENTE:  { color: 'bg-amber-100 text-amber-700',   dot: 'bg-amber-400',   texto: 'Pendiente' },
+  ASIGNADO:   { color: 'bg-blue-100 text-blue-700',     dot: 'bg-blue-400',    texto: 'Programado' },
+  COMPLETADO: { color: 'bg-violet-100 text-violet-700', dot: 'bg-violet-400',  texto: 'Por revisar' },
+  PUBLICADO:  { color: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-400', texto: 'Aprobado' },
+  CANCELADO:  { color: 'bg-red-100 text-red-600',       dot: 'bg-red-400',     texto: 'Cancelado' },
 }
 
 function formatFechaHoraCorta(iso) {

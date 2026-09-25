@@ -1,6 +1,7 @@
 package com.polygraph.erp.modules.servicios.repository;
 
 import com.polygraph.erp.modules.servicios.entity.Servicio;
+import com.polygraph.erp.shared.enums.EstadoAsignacion;
 import com.polygraph.erp.shared.enums.EstadoServicio;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -50,6 +51,62 @@ public interface ServicioRepository extends JpaRepository<Servicio, Integer> {
 
     List<Servicio> findByCliente_IdGestorAndEstadoInOrderByFechaEntregaEstimadaAsc(
             Long idGestor, List<EstadoServicio> estados, Pageable pageable);
+
+    /** Semáforo de Solicitudes (gestor) para los 3 estados que SÍ se derivan de subprocesos
+     *  (PENDIENTE/EN_EJECUCION/FINALIZADO — ver AsignacionService.recalcularEstadoServicio): un
+     *  servicio entra al filtro si su estado agregado coincide, O si tiene al menos un subproceso
+     *  en el "bucket" de EstadoAsignacion correspondiente a ese estado — así un servicio con
+     *  subprocesos en estados distintos aparece en cada filtro que aplique, no solo en uno.
+     *  El `OR s.estado = :estado` es necesario para el caso sin subprocesos todavía (servicio
+     *  recién creado, estado PENDIENTE por defecto, cero filas en servicio_subprocesos): sin él,
+     *  desaparecería de todos los filtros hasta que se le genere el primer subproceso.
+     *  countQuery explícito porque Spring Data no siempre deriva bien el conteo de un `distinct`
+     *  combinado con `exists`. */
+    @Query(value = """
+            select distinct s from Servicio s
+            where s.cliente.idGestor = :idGestor
+              and (
+                s.estado = :estado
+                or exists (
+                  select 1 from ServicioSubproceso sp
+                  where sp.servicio = s and sp.estado in :estadosSubproceso
+                )
+              )
+            order by s.fechaSolicitud desc, s.horaSolicitud desc
+            """,
+           countQuery = """
+            select count(distinct s) from Servicio s
+            where s.cliente.idGestor = :idGestor
+              and (
+                s.estado = :estado
+                or exists (
+                  select 1 from ServicioSubproceso sp
+                  where sp.servicio = s and sp.estado in :estadosSubproceso
+                )
+              )
+            """)
+    Page<Servicio> findByCliente_IdGestorAndEstadoOSubprocesoEstadoIn(
+            @Param("idGestor") Long idGestor,
+            @Param("estado") EstadoServicio estado,
+            @Param("estadosSubproceso") List<EstadoAsignacion> estadosSubproceso,
+            Pageable pageable);
+
+    /** Mismo criterio que el método de arriba, para las tarjetas de conteo del semáforo. */
+    @Query("""
+            select count(distinct s) from Servicio s
+            where s.cliente.idGestor = :idGestor
+              and (
+                s.estado = :estado
+                or exists (
+                  select 1 from ServicioSubproceso sp
+                  where sp.servicio = s and sp.estado in :estadosSubproceso
+                )
+              )
+            """)
+    long countDistinctByCliente_IdGestorAndEstadoOSubprocesoEstadoIn(
+            @Param("idGestor") Long idGestor,
+            @Param("estado") EstadoServicio estado,
+            @Param("estadosSubproceso") List<EstadoAsignacion> estadosSubproceso);
 
     List<Servicio> findByCandidato_CedulaAndIdServicioNot(String cedula, Integer idServicio);
 

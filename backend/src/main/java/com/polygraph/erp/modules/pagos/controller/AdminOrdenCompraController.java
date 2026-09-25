@@ -2,6 +2,7 @@ package com.polygraph.erp.modules.pagos.controller;
 
 import com.polygraph.erp.modules.pagos.dto.ComprobanteResponse;
 import com.polygraph.erp.modules.pagos.dto.OrdenCompraResponse;
+import com.polygraph.erp.modules.pagos.dto.ResumenPagosOrdenesResponse;
 import com.polygraph.erp.modules.pagos.service.OrdenCompraService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -29,6 +30,23 @@ public class AdminOrdenCompraController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         return ResponseEntity.ok(ordenCompraService.listarTodasLasOrdenes(estado, idCliente, PageRequest.of(page, size)));
+    }
+
+    @GetMapping("/sin-facturar")
+    public ResponseEntity<Page<OrdenCompraResponse>> listarSinFacturar(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ResponseEntity.ok(ordenCompraService.listarOrdenesSinFacturar(PageRequest.of(page, size)));
+    }
+
+    @GetMapping("/resumen")
+    public ResponseEntity<ResumenPagosOrdenesResponse> resumen() {
+        return ResponseEntity.ok(ordenCompraService.resumenPagos());
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<OrdenCompraResponse> obtener(@PathVariable Long id) {
+        return ResponseEntity.ok(ordenCompraService.obtenerOrdenAdmin(id));
     }
 
     @DeleteMapping("/{id}")

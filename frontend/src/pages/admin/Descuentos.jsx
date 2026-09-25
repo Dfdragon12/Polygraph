@@ -3,6 +3,7 @@ import api from '../../services/api'
 import Toast from '../../components/Toast'
 import { Modal } from '../../components/ui/Modal'
 import Paginacion from '../../components/ui/Paginacion'
+import MenuAcciones from '../../components/ui/MenuAcciones'
 
 const POR_PAGINA = 10
 
@@ -532,7 +533,7 @@ export default function Descuentos() {
             <table className="min-w-full divide-y divide-gray-100">
               <thead className="bg-gray-50">
                 <tr>
-                  {['Nombre', 'Código', 'Valor', 'Aplica a', 'Dirigido a', 'Usos', 'Vigencia', 'Estado', 'Acciones'].map(h => (
+                  {['Nombre', 'Código', 'Valor', 'Aplica a', 'Dirigido a', 'Usos', 'Vigencia', 'Estado', '···'].map(h => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>
                   ))}
                 </tr>
@@ -541,7 +542,7 @@ export default function Descuentos() {
                 {descuentosPagina.map(d => {
                   const estado = estadoDescuento(d)
                   return (
-                  <tr key={d.idDescuento} className="hover:bg-gray-50 transition-colors">
+                  <tr key={d.idDescuento} className="hover:bg-gray-50/70 transition-colors">
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">{d.nombre}</td>
                     <td className="px-4 py-3 text-sm">
                       {d.codigo
@@ -573,11 +574,10 @@ export default function Descuentos() {
                         {estado.label}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
-                      <button onClick={() => setViendoDetalle(d.idDescuento)} title="Ver desglose"
-                        className="p-1.5 rounded-full border border-gray-200 text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors">
-                        <IconoOjo className="h-3.5 w-3.5" />
-                      </button>
+                    <td className="px-4 py-3 text-center">
+                      <MenuAcciones opciones={[
+                        { label: 'Ver desglose', icono: <IconoOjo className="h-3.5 w-3.5" />, onClick: () => setViendoDetalle(d.idDescuento) },
+                      ]} />
                     </td>
                   </tr>
                   )

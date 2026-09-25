@@ -43,6 +43,15 @@ const formulariosService = {
   progreso: (idServicioSubproceso) =>
     api.get(`/gestor/formularios/subproceso/${idServicioSubproceso}/progreso`).then(r => r.data),
 
+  // Ficha del candidato del subproceso: datos agrupados + soportes que cargó (cruzados con los que
+  // pide el proceso) — { grupos: [{ nombre, campos }], soportes: [...] }.
+  fichaCandidato: (idServicioSubproceso) =>
+    api.get(`/gestor/formularios/subproceso/${idServicioSubproceso}/candidato`).then(r => r.data),
+
+  descargarSoporte: (idServicioSubproceso, idDocumento) =>
+    api.get(`/gestor/formularios/subproceso/${idServicioSubproceso}/soportes/${idDocumento}`, { responseType: 'blob' })
+      .then(r => r.data),
+
   // Columnas tipo ARCHIVO — el analista sube el archivo apenas lo selecciona; la "ruta" que
   // devuelve se guarda como el valor de esa columna, igual que cualquier otro dato.
   subirArchivo: (idServicioSubproceso, archivo) => {

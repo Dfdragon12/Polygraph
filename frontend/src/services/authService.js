@@ -23,11 +23,6 @@ const authService = {
     return data
   },
 
-  activarCuenta: async (token) => {
-    const { data } = await api.post(`/auth/activate?token=${encodeURIComponent(token)}`)
-    return data
-  },
-
   refresh: async (refreshToken) => {
     const { data } = await api.post('/auth/refresh', { refreshToken })
     return data

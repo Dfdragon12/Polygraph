@@ -7,6 +7,7 @@ import com.polygraph.erp.modules.gestor.dto.AsignarMasivoRequest;
 import com.polygraph.erp.modules.gestor.dto.AsignarRequest;
 import com.polygraph.erp.modules.gestor.dto.ConfirmarAsistenciaRequest;
 import com.polygraph.erp.modules.gestor.dto.ConteoAsignacionesResponse;
+import com.polygraph.erp.modules.gestor.dto.DevolverSubprocesoRequest;
 import com.polygraph.erp.modules.gestor.dto.EmpleadoAsignableResponse;
 import com.polygraph.erp.modules.gestor.dto.FranjaHorariaResponse;
 import com.polygraph.erp.modules.gestor.dto.HistorialAsignacionResponse;
@@ -155,6 +156,21 @@ public class AsignacionController {
         return ResponseEntity.ok(asignacionService.completar(id, actor, rolesPermitidos(actor)));
     }
 
+    @PatchMapping("/{id}/aprobar")
+    @PreAuthorize("hasAnyRole('GESTOR', 'PROGRAMADOR')")
+    public ResponseEntity<AsignacionResponse> aprobar(@PathVariable Long id, Authentication auth) {
+        Usuario actor = resolverUsuario(auth);
+        return ResponseEntity.ok(asignacionService.aprobar(id, actor, rolesPermitidos(actor)));
+    }
+
+    @PatchMapping("/{id}/devolver")
+    @PreAuthorize("hasAnyRole('GESTOR', 'PROGRAMADOR')")
+    public ResponseEntity<AsignacionResponse> devolver(
+            @PathVariable Long id, @Valid @RequestBody DevolverSubprocesoRequest request, Authentication auth) {
+        Usuario actor = resolverUsuario(auth);
+        return ResponseEntity.ok(asignacionService.devolver(id, request, actor, rolesPermitidos(actor)));
+    }
+
     @PatchMapping("/{id}/desasignar")
     @PreAuthorize("hasAnyRole('GESTOR', 'PROGRAMADOR')")
     public ResponseEntity<AsignacionResponse> desasignar(@PathVariable Long id, Authentication auth) {
@@ -195,7 +211,8 @@ public class AsignacionController {
 
     @GetMapping("/{id}/historial")
     public ResponseEntity<List<HistorialAsignacionResponse>> historial(@PathVariable Long id, Authentication auth) {
-        return ResponseEntity.ok(asignacionService.historial(id, rolesPermitidos(resolverUsuario(auth))));
+        Usuario actor = resolverUsuario(auth);
+        return ResponseEntity.ok(asignacionService.historial(id, actor, rolesPermitidos(actor)));
     }
 
     @GetMapping("/{id}/historial-llamadas")

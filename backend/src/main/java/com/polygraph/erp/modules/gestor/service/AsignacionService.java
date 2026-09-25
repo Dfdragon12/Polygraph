@@ -6,11 +6,14 @@ import com.polygraph.erp.modules.catalogo.entity.Ciudad;
 import com.polygraph.erp.modules.catalogo.entity.TipoProgreso;
 import com.polygraph.erp.modules.catalogo.repository.CiudadRepository;
 import com.polygraph.erp.modules.catalogo.repository.TipoProgresoRepository;
+import com.polygraph.erp.modules.evaluados.entity.HojaVidaEvaluado;
+import com.polygraph.erp.modules.evaluados.repository.HojaVidaEvaluadoRepository;
 import com.polygraph.erp.modules.gestor.dto.AsignacionResponse;
 import com.polygraph.erp.modules.gestor.dto.AsignarMasivoRequest;
 import com.polygraph.erp.modules.gestor.dto.AsignarRequest;
 import com.polygraph.erp.modules.gestor.dto.ConfirmarAsistenciaRequest;
 import com.polygraph.erp.modules.gestor.dto.ConteoAsignacionesResponse;
+import com.polygraph.erp.modules.gestor.dto.DevolverSubprocesoRequest;
 import com.polygraph.erp.modules.gestor.dto.EmpleadoAsignableResponse;
 import com.polygraph.erp.modules.gestor.dto.FranjaHorariaResponse;
 import com.polygraph.erp.modules.gestor.dto.HistorialAsignacionResponse;
@@ -20,6 +23,7 @@ import com.polygraph.erp.modules.gestor.dto.SubprocesoOpcionResponse;
 import com.polygraph.erp.modules.formularios.entity.Formulario;
 import com.polygraph.erp.modules.formularios.repository.FormularioDatoRepository;
 import com.polygraph.erp.modules.formularios.repository.FormularioFilaRepository;
+import com.polygraph.erp.modules.formularios.repository.FormularioPlantillaConfigRepository;
 import com.polygraph.erp.modules.formularios.repository.FormularioRepository;
 import com.polygraph.erp.modules.formularios.repository.FormularioSeccionRepository;
 import com.polygraph.erp.modules.servicios.entity.HistorialEstadoServicio;
@@ -87,6 +91,10 @@ public class AsignacionService {
     private final FormularioRepository formularioRepository;
     private final FormularioDatoRepository formularioDatoRepository;
     private final FormularioFilaRepository formularioFilaRepository;
+    private final FormularioPlantillaConfigRepository formularioPlantillaConfigRepository;
+    private final HojaVidaEvaluadoRepository hojaVidaEvaluadoRepository;
+    private final com.polygraph.erp.modules.formularios.service.FormularioService formularioService;
+    private final org.springframework.context.ApplicationEventPublisher eventos;
 
     @Transactional(readOnly = true)
     public Page<AsignacionResponse> listar(EstadoAsignacion estado, Integer idTipoProgreso,
@@ -115,10 +123,11 @@ public class AsignacionService {
         long pendientes  = contarEstado(EstadoAsignacion.PENDIENTE, idGestor, idUsuarioAsignado, rolesPermitidos, idProgramadorResponsable);
         long asignados   = contarEstado(EstadoAsignacion.ASIGNADO, idGestor, idUsuarioAsignado, rolesPermitidos, idProgramadorResponsable);
         long completados = contarEstado(EstadoAsignacion.COMPLETADO, idGestor, idUsuarioAsignado, rolesPermitidos, idProgramadorResponsable);
+        long publicados  = contarEstado(EstadoAsignacion.PUBLICADO, idGestor, idUsuarioAsignado, rolesPermitidos, idProgramadorResponsable);
         long cancelados  = contarEstado(EstadoAsignacion.CANCELADO, idGestor, idUsuarioAsignado, rolesPermitidos, idProgramadorResponsable);
         return new ConteoAsignacionesResponse(
-                pendientes, asignados, completados, cancelados,
-                pendientes + asignados + completados + cancelados);
+                pendientes, asignados, completados, publicados, cancelados,
+                pendientes + asignados + completados + publicados + cancelados);
     }
 
     private long contarEstado(EstadoAsignacion estado, Long idGestor, Long idUsuarioAsignado, Set<Rol> rolesPermitidos,
@@ -297,11 +306,31 @@ public class AsignacionService {
         }
     }
 
+    /** El candidato debe terminar de diligenciar su hoja de vida (link temporal) ANTES de que se
+     *  pueda asignar cualquiera de sus subprocesos a un ANALISTA_INTERNO, POLIGRAFISTA/VISITADOR,
+     *  o encargárselo a un PROGRAMADOR — evita repartir trabajo sobre datos que todavía no existen
+     *  (el gestor podía asignar sin que el candidato hubiera diligenciado nada). Si el servicio no
+     *  tiene candidato asociado (otros tipos de servicio sin ese flujo) no aplica restricción. */
+    private void validarCandidatoCompleto(Servicio servicio) {
+        if (servicio == null || servicio.getCandidato() == null) return;
+        boolean completado = hojaVidaEvaluadoRepository
+                .findByCandidato_IdCandidato(servicio.getCandidato().getIdCandidato())
+                .map(HojaVidaEvaluado::getCompletado)
+                .orElse(false);
+        if (!Boolean.TRUE.equals(completado)) {
+            throw new ApiException(
+                    "El candidato todavía no ha diligenciado su información (link pendiente) — no se puede asignar hasta que termine.",
+                    HttpStatus.CONFLICT);
+        }
+    }
+
     @Transactional
     public AsignacionResponse asignar(Long id, AsignarRequest req, Usuario actor, Set<Rol> rolesPermitidos) {
         ServicioSubproceso asignacion = asignacionRepository.findById(id)
                 .orElseThrow(() -> new ApiException("Asignación no encontrada", HttpStatus.NOT_FOUND));
         validarAlcance(asignacion.getTipoProgreso(), rolesPermitidos);
+        com.polygraph.erp.shared.utils.AccesoGestor.validar(asignacion, actor);
+        validarCandidatoCompleto(asignacion.getServicio());
 
         Usuario usuario = usuarioRepository.findById(req.idUsuarioAsignado())
                 .orElseThrow(() -> new ApiException("Usuario no encontrado", HttpStatus.NOT_FOUND));
@@ -336,10 +365,32 @@ public class AsignacionService {
         historialAsignacionService.registrar(asignacion,
                 usuarioAnterior == null ? AccionHistorialAsignacion.ASIGNADO : AccionHistorialAsignacion.REASIGNADO,
                 usuarioAnterior, usuario, fechaAnterior, req.fechaProgramada(), actor, req.observaciones());
-        avanzarAEnEjecucionSiCorresponde(asignacion.getServicio(), actor);
+        recalcularEstadoServicio(asignacion.getServicio(), actor, "Subproceso asignado.");
+        notificarSubprocesoAsignado(asignacion);
 
         log.info("Asignación {} -> usuario {} (subproceso {})", id, usuario.getEmail(), asignacion.getTipoProgreso().getNombreProgreso());
         return toResponse(asignacion);
+    }
+
+    /** Antes solo se notificaba al devolver/aprobar un subproceso — quien recibía trabajo nuevo
+     *  no tenía ninguna señal salvo entrar manualmente a "Mis Asignaciones". Se reutiliza en
+     *  asignar() y asignarMasivo(). */
+    private void notificarSubprocesoAsignado(ServicioSubproceso asignacion) {
+        Usuario usuario = asignacion.getUsuarioAsignado();
+        if (usuario == null) return;
+        String cuando = asignacion.getFechaProgramada() != null
+                ? " para el " + asignacion.getFechaProgramada().format(FORMATO_HORA)
+                : "";
+        notificacionRepository.save(Notificacion.builder()
+                .usuario(usuario)
+                .tipo("SUBPROCESO_ASIGNADO")
+                .titulo(asignacion.getTipoProgreso().getNombreProgreso() + " asignado")
+                .mensaje("Te asignaron \"" + asignacion.getTipoProgreso().getNombreProgreso() + "\"" + cuando + ".")
+                .leida(false)
+                .fechaCreacion(LocalDateTime.now())
+                .referenciaTipo("SERVICIO_SUBPROCESO")
+                .referenciaId(asignacion.getId())
+                .build());
     }
 
     /** Asigna en bloque varios subprocesos del MISMO tipo de progreso a un solo empleado. */
@@ -368,6 +419,10 @@ public class AsignacionService {
                 throw new ApiException("No tienes acceso a alguno de los subprocesos seleccionados.", HttpStatus.FORBIDDEN);
             }
         }
+
+        // Se valida ANTES de mutar nada (todo o nada): un lote puede mezclar subprocesos de
+        // distintos candidatos/servicios, así que se revisa cada uno.
+        asignaciones.forEach(a -> validarCandidatoCompleto(a.getServicio()));
 
         Usuario usuario = usuarioRepository.findById(req.idUsuarioAsignado())
                 .orElseThrow(() -> new ApiException("Usuario no encontrado", HttpStatus.NOT_FOUND));
@@ -404,7 +459,8 @@ public class AsignacionService {
             historialAsignacionService.registrar(a,
                     usuarioAnterior == null ? AccionHistorialAsignacion.ASIGNADO : AccionHistorialAsignacion.REASIGNADO,
                     usuarioAnterior, usuario, fechaAnterior, req.fechaProgramada(), actor, req.observaciones());
-            avanzarAEnEjecucionSiCorresponde(a.getServicio(), actor);
+            recalcularEstadoServicio(a.getServicio(), actor, "Subproceso asignado.");
+            notificarSubprocesoAsignado(a);
         }
 
         log.info("Asignación masiva: {} subprocesos ({}) -> usuario {}",
@@ -413,46 +469,293 @@ public class AsignacionService {
         return asignaciones.stream().map(this::toResponse).toList();
     }
 
-    /** Apenas un subproceso queda con alguien asignado, el servicio ya está "en marcha" — pasa
-     *  automáticamente de PENDIENTE/PROGRAMANDO a EN_EJECUCION, sin esperar a que alguien lo
-     *  cambie a mano. No toca servicios que ya avanzaron más (EN_EJECUCION, FINALIZADO, etc.) ni
-     *  los cancelados/reprogramados. Se atribuye a quien hizo la asignación (mismo mecanismo que
-     *  SolicitudService.cambiarEstado). */
-    private void avanzarAEnEjecucionSiCorresponde(Servicio servicio, Usuario actor) {
+    /** Recalcula Servicio.estado a partir del estado de TODOS sus subprocesos, no solo el que
+     *  acaba de cambiar. Reemplaza el criterio anterior ("avanzarAEnEjecucionSiCorresponde"), que
+     *  con UN solo subproceso asignado ya saltaba el servicio completo a EN_EJECUCION aunque los
+     *  demás siguieran PENDIENTE — la tarjeta del gestor mostraba "en ejecución" con 3 de 4
+     *  subprocesos sin arrancar (bug reportado). No toca servicios en CANCELADO/REPROGRAMADO
+     *  (estados manuales, fuera de este ciclo automático) ni si no hay ningún subproceso activo
+     *  (todos cancelados, o el servicio no tiene subprocesos todavía). */
+    private void recalcularEstadoServicio(Servicio servicio, Usuario actor, String motivo) {
         if (servicio == null) return;
+        // Todo cambio de estado de un subproceso puede cambiar el riesgo del caso (realizado /
+        // pendiente / no realizado) — se recalcula después del commit.
+        if (eventos != null) {
+            eventos.publishEvent(new com.polygraph.erp.modules.riesgo.service.RecalculoRiesgoSolicitado(
+                    servicio.getIdServicio(), actor != null ? actor.getIdUsuario() : null));
+        }
         EstadoServicio estadoAnterior = servicio.getEstado();
-        if (estadoAnterior != EstadoServicio.PENDIENTE && estadoAnterior != EstadoServicio.PROGRAMANDO) return;
+        if (estadoAnterior == EstadoServicio.CANCELADO || estadoAnterior == EstadoServicio.REPROGRAMADO) return;
 
-        servicio.setEstado(EstadoServicio.EN_EJECUCION);
+        List<ServicioSubproceso> activos = asignacionRepository
+                .findByServicio_IdServicioOrderByTipoProgreso_OrdenAsc(servicio.getIdServicio()).stream()
+                .filter(sp -> sp.getEstado() != EstadoAsignacion.CANCELADO)
+                .toList();
+        if (activos.isEmpty()) return;
 
+        EstadoServicio nuevoEstado;
+        if (activos.stream().allMatch(sp -> sp.getEstado() == EstadoAsignacion.PUBLICADO)) {
+            nuevoEstado = EstadoServicio.FINALIZADO;
+        } else if (activos.stream().anyMatch(sp -> sp.getEstado() != EstadoAsignacion.PENDIENTE)) {
+            nuevoEstado = EstadoServicio.EN_EJECUCION;
+        } else {
+            // Todos los subprocesos activos volvieron a PENDIENTE (ej. se desasignó el último) —
+            // si el servicio ya estaba EN_EJECUCION/FINALIZADO, retrocede a PENDIENTE; si seguía en
+            // PENDIENTE/PROGRAMANDO, se deja tal cual (PROGRAMANDO señala que el candidato ya
+            // diligenció el link — este método no le quita esa marca).
+            nuevoEstado = (estadoAnterior == EstadoServicio.EN_EJECUCION || estadoAnterior == EstadoServicio.FINALIZADO)
+                    ? EstadoServicio.PENDIENTE
+                    : estadoAnterior;
+        }
+
+        if (nuevoEstado == estadoAnterior) return;
+
+        servicio.setEstado(nuevoEstado);
         historialEstadoServicioRepository.save(HistorialEstadoServicio.builder()
                 .servicio(servicio)
                 .estadoAnterior(estadoAnterior)
-                .estadoNuevo(EstadoServicio.EN_EJECUCION)
+                .estadoNuevo(nuevoEstado)
                 .usuario(actor)
                 .fechaCambio(LocalDateTime.now())
-                .observacion("Cambio automático: un subproceso quedó asignado.")
+                .observacion(motivo)
                 .build());
 
-        log.info("Servicio {} pasó automáticamente de {} a EN_EJECUCION (subproceso asignado)",
-                servicio.getIdServicio(), estadoAnterior);
+        log.info("Servicio {} recalculado: {} -> {} ({})", servicio.getIdServicio(), estadoAnterior, nuevoEstado, motivo);
     }
 
     @Transactional
     public AsignacionResponse completar(Long id, Usuario actor, Set<Rol> rolesPermitidos) {
         ServicioSubproceso asignacion = obtenerOFallar(id);
         validarAlcance(asignacion.getTipoProgreso(), rolesPermitidos);
+        validarEsDelEjecutor(asignacion, actor);
         if (asignacion.getEstado() != EstadoAsignacion.ASIGNADO) {
             throw new ApiException("Solo se puede completar una asignación en estado ASIGNADO", HttpStatus.CONFLICT);
         }
         validarFormularioDiligenciado(asignacion);
+        List<String> sinJustificar = formularioService.respuestasCriticasSinJustificar(asignacion.getId());
+        if (!sinJustificar.isEmpty()) {
+            throw new ApiException("Hay respuestas determinantes sin explicación: " + String.join("; ", sinJustificar)
+                    + ". Explica en qué te basas antes de enviarlo.", HttpStatus.CONFLICT);
+        }
         asignacion.setEstado(EstadoAsignacion.COMPLETADO);
         asignacion.setFechaCompletado(LocalDateTime.now());
+        // Se congela AQUÍ, al completar — no en generarSubprocesos() — porque mientras sigue
+        // ASIGNADO el subproceso debe seguir la plantilla vigente (si admin agrega una sección
+        // mientras alguien todavía lo está llenando, sí debe verla). Recién al completarse deja
+        // de importar qué le pase a la plantilla después — ver FormularioService.obtener().
+        asignacion.setVersionPlantilla(asignacion.getTipoProgreso().getVersionPlantilla());
+        // Mismo criterio para el documento Word: se congela el archivo que esté activo justo en
+        // este momento, para que generar/descargar el documento de este subproceso ya no cambie
+        // aunque el administrador suba un Word distinto después (ver FormularioDocumentoService.
+        // generar()). null si todavía no se ha subido ningún Word para este tipo de subproceso.
+        formularioPlantillaConfigRepository.findById(asignacion.getTipoProgreso().getIdTipoProgreso())
+                .ifPresent(config -> asignacion.setRutaWordCongelada(config.getPlantillaWordRuta()));
 
         historialAsignacionService.registrar(asignacion, AccionHistorialAsignacion.COMPLETADO,
                 asignacion.getUsuarioAsignado(), asignacion.getUsuarioAsignado(),
                 asignacion.getFechaProgramada(), asignacion.getFechaProgramada(), actor, null);
+        recalcularEstadoServicio(asignacion.getServicio(), actor, "Subproceso completado.");
+        notificarRevisorCompletado(asignacion, actor);
 
+        return toResponse(asignacion);
+    }
+
+    /** Al completar, el subproceso queda esperando que alguien lo apruebe o lo devuelva — antes
+     *  nadie se enteraba y quedaba COMPLETADO indefinidamente hasta que el gestor/programador
+     *  entrara a revisar por su cuenta. Poligrafía/visita: lo revisa el programador responsable
+     *  (si no hay, el gestor del cliente); analista: el gestor del cliente. */
+    private void notificarRevisorCompletado(ServicioSubproceso asignacion, Usuario actor) {
+        Rol rolResponsable = asignacion.getTipoProgreso().getRolResponsable();
+        Servicio servicio = asignacion.getServicio();
+        Long idGestor = servicio != null && servicio.getCliente() != null ? servicio.getCliente().getIdGestor() : null;
+        Usuario programador = asignacion.getProgramadorResponsable();
+        boolean presencial = rolResponsable == Rol.POLIGRAFISTA || rolResponsable == Rol.VISITADOR;
+        Long idRevisor = presencial && programador != null ? programador.getIdUsuario() : idGestor;
+        if (idRevisor == null || idRevisor.equals(actor.getIdUsuario())) return;
+
+        var candidato = servicio != null ? servicio.getCandidato() : null;
+        String evaluado = candidato != null
+                ? (candidato.getNombres() + " " + (candidato.getApellidos() != null ? candidato.getApellidos() : "")).trim()
+                : "";
+        String nombreActor = (actor.getNombre() + " " + (actor.getApellido() != null ? actor.getApellido() : "")).trim();
+        String nombreProceso = asignacion.getTipoProgreso().getNombreProgreso();
+
+        usuarioRepository.findById(idRevisor)
+                .filter(u -> Boolean.TRUE.equals(u.getActivo()))
+                .ifPresent(revisor -> notificacionRepository.save(Notificacion.builder()
+                        .usuario(revisor)
+                        .tipo("SUBPROCESO_COMPLETADO")
+                        .titulo(nombreProceso + " listo para revisar")
+                        .mensaje(nombreActor + " completó \"" + nombreProceso + "\""
+                                + (evaluado.isBlank() ? "" : " de " + evaluado) + " — revísalo para aprobarlo o devolverlo.")
+                        .leida(false)
+                        .fechaCreacion(LocalDateTime.now())
+                        .realizadoPor(actor)
+                        .referenciaTipo("SERVICIO_SUBPROCESO")
+                        .referenciaId(asignacion.getId())
+                        .build()));
+    }
+
+    /** Gestor/programador devuelve un subproceso COMPLETADO a quien lo diligenció — vuelve a
+     *  ASIGNADO (misma persona, mismo horario) con la observación de qué corregir, y le llega
+     *  una notificación. No borra lo ya guardado en el formulario: quien lo recibe de vuelta
+     *  sigue viendo sus propias respuestas y las corrige desde ahí. */
+    @Transactional
+    public AsignacionResponse devolver(Long id, DevolverSubprocesoRequest req, Usuario actor, Set<Rol> rolesPermitidos) {
+        ServicioSubproceso asignacion = obtenerOFallar(id);
+        validarAlcance(asignacion.getTipoProgreso(), rolesPermitidos);
+        com.polygraph.erp.shared.utils.AccesoGestor.validar(asignacion, actor);
+        if (asignacion.getEstado() != EstadoAsignacion.COMPLETADO) {
+            throw new ApiException("Solo se puede devolver un subproceso que esté completado.", HttpStatus.CONFLICT);
+        }
+        Usuario usuarioAsignado = asignacion.getUsuarioAsignado();
+        if (usuarioAsignado == null) {
+            throw new ApiException("Este subproceso no tiene un usuario asignado al cual devolvérselo.", HttpStatus.CONFLICT);
+        }
+
+        asignacion.setEstado(EstadoAsignacion.ASIGNADO);
+        asignacion.setFechaCompletado(null);
+        asignacion.setObservaciones(req.observacion());
+
+        historialAsignacionService.registrar(asignacion, AccionHistorialAsignacion.DEVUELTO,
+                usuarioAsignado, usuarioAsignado,
+                asignacion.getFechaProgramada(), asignacion.getFechaProgramada(), actor, req.observacion());
+        recalcularEstadoServicio(asignacion.getServicio(), actor, "Subproceso devuelto para corrección.");
+
+        String nombreActor = actor.getNombre() != null ? actor.getNombre() : "Tu gestor";
+        notificacionRepository.save(Notificacion.builder()
+                .usuario(usuarioAsignado)
+                .tipo("SUBPROCESO_DEVUELTO")
+                .titulo(asignacion.getTipoProgreso().getNombreProgreso() + " devuelto")
+                .mensaje(nombreActor + " te devolvió \"" + asignacion.getTipoProgreso().getNombreProgreso()
+                        + "\" para que lo corrijas: " + req.observacion())
+                .leida(false)
+                .fechaCreacion(LocalDateTime.now())
+                // Mismo criterio que FORMULARIO_ACTUALIZADO (ver FormularioService): el id del
+                // SUBPROCESO, no del servicio — es lo que espera /formulario/:idServicioSubproceso
+                // en el frontend (ver RUTA_POR_TIPO en Campana.jsx).
+                .referenciaTipo("SERVICIO_SUBPROCESO")
+                .referenciaId(asignacion.getId())
+                .build());
+
+        log.info("Subproceso devuelto: id={}, actor={}, usuarioAsignado={}", id, actor.getIdUsuario(), usuarioAsignado.getIdUsuario());
+        return toResponse(asignacion);
+    }
+
+    /** Corre la hora de un subproceso en curso sin cambiar de responsable — lo usa quien coordina
+     *  al resolver una novedad (ej. "el candidato no llegó" -> se reprograma para mañana), ver
+     *  NovedadSubprocesoService.resolver(). Mismas reglas que asignar(): no en el pasado y sin
+     *  cruzarse con la agenda de quien lo ejecuta. Deja rastro en el historial (REPROGRAMADO) y
+     *  le avisa a quien lo ejecuta. Devuelve la fecha programada anterior (puede ser null). */
+    @Transactional
+    public LocalDateTime reprogramar(ServicioSubproceso asignacion, LocalDateTime nuevaFecha, Usuario actor, String motivo) {
+        if (asignacion.getEstado() != EstadoAsignacion.ASIGNADO) {
+            throw new ApiException("Solo se puede reprogramar un subproceso que esté en curso (asignado).", HttpStatus.CONFLICT);
+        }
+        if (nuevaFecha == null) {
+            throw new ApiException("Indica la nueva fecha y hora.", HttpStatus.BAD_REQUEST);
+        }
+        validarNoEnElPasado(nuevaFecha);
+        Usuario ejecutor = asignacion.getUsuarioAsignado();
+        if (ejecutor != null) {
+            validarSinChoqueDeHorario(ejecutor, duracionEfectiva(asignacion), nuevaFecha, Set.of(asignacion.getId()));
+        }
+
+        LocalDateTime anterior = asignacion.getFechaProgramada();
+        asignacion.setFechaProgramada(nuevaFecha);
+        historialAsignacionService.registrar(asignacion, AccionHistorialAsignacion.REPROGRAMADO,
+                ejecutor, ejecutor, anterior, nuevaFecha, actor, motivo);
+
+        if (ejecutor != null && !ejecutor.getIdUsuario().equals(actor.getIdUsuario())) {
+            String nombreProceso = asignacion.getTipoProgreso().getNombreProgreso();
+            notificacionRepository.save(Notificacion.builder()
+                    .usuario(ejecutor)
+                    .tipo("SUBPROCESO_REPROGRAMADO")
+                    .titulo(nombreProceso + " reprogramado")
+                    .mensaje("\"" + nombreProceso + "\" quedó para el " + nuevaFecha.format(FORMATO_HORA)
+                            + (motivo != null && !motivo.isBlank() ? " — " + motivo : ""))
+                    .leida(false)
+                    .fechaCreacion(LocalDateTime.now())
+                    .realizadoPor(actor)
+                    .referenciaTipo("SERVICIO_SUBPROCESO")
+                    .referenciaId(asignacion.getId())
+                    .build());
+        }
+        log.info("Subproceso {} reprogramado: {} -> {} (actor {})", asignacion.getId(), anterior, nuevaFecha, actor.getIdUsuario());
+        return anterior;
+    }
+
+    /** Quien coordina marca un subproceso como "No realizado" al resolver una novedad (ej. el
+     *  candidato no aceptó la poligrafía, que es voluntaria). Queda CANCELADO con la marca y el
+     *  motivo: para el motor no penaliza — su peso se reparte (docs/modelo-calificacion-riesgo.md §4).
+     *  Solo mientras siga sin completarse (PENDIENTE o ASIGNADO). */
+    @Transactional
+    public void marcarNoRealizado(ServicioSubproceso asignacion, String motivo, Usuario actor) {
+        if (asignacion.getEstado() != EstadoAsignacion.ASIGNADO && asignacion.getEstado() != EstadoAsignacion.PENDIENTE) {
+            throw new ApiException("Solo se puede marcar como No realizado un subproceso que todavía no se ha completado.",
+                    HttpStatus.CONFLICT);
+        }
+        Usuario ejecutor = asignacion.getUsuarioAsignado();
+        asignacion.setEstado(EstadoAsignacion.CANCELADO);
+        asignacion.setNoRealizado(true);
+        asignacion.setMotivoNoRealizado(motivo);
+        asignacion.setUsuarioNoRealizado(actor);
+        asignacion.setFechaNoRealizado(LocalDateTime.now());
+        historialAsignacionService.registrar(asignacion, AccionHistorialAsignacion.CANCELADO,
+                ejecutor, ejecutor, asignacion.getFechaProgramada(), asignacion.getFechaProgramada(), actor,
+                "No realizado: " + motivo);
+        recalcularEstadoServicio(asignacion.getServicio(), actor, "Subproceso marcado como no realizado.");
+
+        if (ejecutor != null && !ejecutor.getIdUsuario().equals(actor.getIdUsuario())) {
+            String nombreProceso = asignacion.getTipoProgreso().getNombreProgreso();
+            notificacionRepository.save(Notificacion.builder()
+                    .usuario(ejecutor)
+                    .tipo("SUBPROCESO_CANCELADO")
+                    .titulo(nombreProceso + " no realizado")
+                    .mensaje("\"" + nombreProceso + "\" quedó como no realizado — ya no tienes que hacerlo. Motivo: " + motivo)
+                    .leida(false)
+                    .fechaCreacion(LocalDateTime.now())
+                    .realizadoPor(actor)
+                    .build());
+        }
+        log.info("Subproceso {} marcado como no realizado por {}", asignacion.getId(), actor.getIdUsuario());
+    }
+
+    /** Gestor/programador aprueba un subproceso COMPLETADO — pasa a PUBLICADO, estado final de
+     *  verdad (a diferencia de COMPLETADO, que solo dice que quien lo diligenció ya terminó, sin
+     *  que nadie más lo haya revisado todavía). No modifica el formulario ni sus datos. */
+    @Transactional
+    public AsignacionResponse aprobar(Long id, Usuario actor, Set<Rol> rolesPermitidos) {
+        ServicioSubproceso asignacion = obtenerOFallar(id);
+        validarAlcance(asignacion.getTipoProgreso(), rolesPermitidos);
+        com.polygraph.erp.shared.utils.AccesoGestor.validar(asignacion, actor);
+        if (asignacion.getEstado() != EstadoAsignacion.COMPLETADO) {
+            throw new ApiException("Solo se puede aprobar un subproceso que esté completado.", HttpStatus.CONFLICT);
+        }
+
+        asignacion.setEstado(EstadoAsignacion.PUBLICADO);
+        asignacion.setFechaPublicado(LocalDateTime.now());
+
+        historialAsignacionService.registrar(asignacion, AccionHistorialAsignacion.PUBLICADO,
+                asignacion.getUsuarioAsignado(), asignacion.getUsuarioAsignado(),
+                asignacion.getFechaProgramada(), asignacion.getFechaProgramada(), actor, null);
+        recalcularEstadoServicio(asignacion.getServicio(), actor, "Subproceso aprobado.");
+
+        Usuario usuarioAsignado = asignacion.getUsuarioAsignado();
+        if (usuarioAsignado != null) {
+            notificacionRepository.save(Notificacion.builder()
+                    .usuario(usuarioAsignado)
+                    .tipo("SUBPROCESO_PUBLICADO")
+                    .titulo(asignacion.getTipoProgreso().getNombreProgreso() + " aprobado")
+                    .mensaje("Tu trabajo en \"" + asignacion.getTipoProgreso().getNombreProgreso() + "\" quedó aprobado.")
+                    .leida(false)
+                    .fechaCreacion(LocalDateTime.now())
+                    .referenciaTipo("SERVICIO_SUBPROCESO")
+                    .referenciaId(asignacion.getId())
+                    .build());
+        }
+
+        log.info("Subproceso aprobado/publicado: id={}, actor={}", id, actor.getIdUsuario());
         return toResponse(asignacion);
     }
 
@@ -483,6 +786,7 @@ public class AsignacionService {
     public AsignacionResponse desasignar(Long id, Usuario actor, Set<Rol> rolesPermitidos) {
         ServicioSubproceso asignacion = obtenerOFallar(id);
         validarAlcance(asignacion.getTipoProgreso(), rolesPermitidos);
+        com.polygraph.erp.shared.utils.AccesoGestor.validar(asignacion, actor);
 
         Usuario usuarioAnterior = asignacion.getUsuarioAsignado();
         LocalDateTime fechaAnterior = asignacion.getFechaProgramada();
@@ -494,6 +798,18 @@ public class AsignacionService {
 
         historialAsignacionService.registrar(asignacion, AccionHistorialAsignacion.DESASIGNADO,
                 usuarioAnterior, null, fechaAnterior, null, actor, null);
+        recalcularEstadoServicio(asignacion.getServicio(), actor, "Subproceso desasignado.");
+
+        if (usuarioAnterior != null) {
+            notificacionRepository.save(Notificacion.builder()
+                    .usuario(usuarioAnterior)
+                    .tipo("SUBPROCESO_DESASIGNADO")
+                    .titulo(asignacion.getTipoProgreso().getNombreProgreso() + " desasignado")
+                    .mensaje("Ya no tienes a cargo \"" + asignacion.getTipoProgreso().getNombreProgreso() + "\" — te lo quitaron de tu agenda.")
+                    .leida(false)
+                    .fechaCreacion(LocalDateTime.now())
+                    .build());
+        }
 
         return toResponse(asignacion);
     }
@@ -502,11 +818,25 @@ public class AsignacionService {
     public AsignacionResponse cancelar(Long id, Usuario actor, Set<Rol> rolesPermitidos) {
         ServicioSubproceso asignacion = obtenerOFallar(id);
         validarAlcance(asignacion.getTipoProgreso(), rolesPermitidos);
+        com.polygraph.erp.shared.utils.AccesoGestor.validar(asignacion, actor);
+        Usuario usuarioAsignado = asignacion.getUsuarioAsignado();
         asignacion.setEstado(EstadoAsignacion.CANCELADO);
 
         historialAsignacionService.registrar(asignacion, AccionHistorialAsignacion.CANCELADO,
                 asignacion.getUsuarioAsignado(), asignacion.getUsuarioAsignado(),
                 asignacion.getFechaProgramada(), asignacion.getFechaProgramada(), actor, null);
+        recalcularEstadoServicio(asignacion.getServicio(), actor, "Subproceso cancelado.");
+
+        if (usuarioAsignado != null) {
+            notificacionRepository.save(Notificacion.builder()
+                    .usuario(usuarioAsignado)
+                    .tipo("SUBPROCESO_CANCELADO")
+                    .titulo(asignacion.getTipoProgreso().getNombreProgreso() + " cancelado")
+                    .mensaje("\"" + asignacion.getTipoProgreso().getNombreProgreso() + "\" fue cancelado — ya no tienes que hacerlo.")
+                    .leida(false)
+                    .fechaCreacion(LocalDateTime.now())
+                    .build());
+        }
 
         return toResponse(asignacion);
     }
@@ -519,6 +849,7 @@ public class AsignacionService {
     public AsignacionResponse confirmarAsistencia(Long id, ConfirmarAsistenciaRequest req, Usuario actor, Set<Rol> rolesPermitidos) {
         ServicioSubproceso asignacion = obtenerOFallar(id);
         validarAlcance(asignacion.getTipoProgreso(), rolesPermitidos);
+        com.polygraph.erp.shared.utils.AccesoGestor.validar(asignacion, actor);
         if (asignacion.getEstado() == EstadoAsignacion.CANCELADO) {
             throw new ApiException("No se puede registrar la confirmación de un subproceso cancelado.", HttpStatus.CONFLICT);
         }
@@ -546,9 +877,11 @@ public class AsignacionService {
     }
 
     @Transactional(readOnly = true)
-    public List<HistorialAsignacionResponse> historial(Long id, Set<Rol> rolesPermitidos) {
+    public List<HistorialAsignacionResponse> historial(Long id, Usuario actor, Set<Rol> rolesPermitidos) {
         ServicioSubproceso asignacion = obtenerOFallar(id);
         validarAlcance(asignacion.getTipoProgreso(), rolesPermitidos);
+        com.polygraph.erp.shared.utils.AccesoGestor.validar(asignacion, actor);
+        validarEsDelEjecutor(asignacion, actor);
         return historialAsignacionService.listar(id);
     }
 
@@ -576,6 +909,7 @@ public class AsignacionService {
                 throw new ApiException("No tienes acceso a este servicio.", HttpStatus.FORBIDDEN);
             }
         }
+        validarCandidatoCompleto(servicio);
 
         Usuario programador = usuarioRepository.findById(idProgramador)
                 .orElseThrow(() -> new ApiException("Usuario no encontrado", HttpStatus.NOT_FOUND));
@@ -660,6 +994,22 @@ public class AsignacionService {
         }
     }
 
+    private static final Set<Rol> ROLES_EJECUTORES = Set.of(Rol.ANALISTA_INTERNO, Rol.POLIGRAFISTA, Rol.VISITADOR);
+
+    /** validarAlcance solo mira el ROL del subproceso — para analista/poligrafista/visitador eso
+     *  no basta: un poligrafista podía completar (o ver el historial de) el subproceso de OTRO
+     *  poligrafista con solo conocer su id, llamando la API directo. Estos roles solo actúan
+     *  sobre lo que tienen asignado a su nombre. GESTOR/PROGRAMADOR no se ven afectados. */
+    private void validarEsDelEjecutor(ServicioSubproceso asignacion, Usuario actor) {
+        if (actor == null || !ROLES_EJECUTORES.contains(actor.getRol())) return;
+        Usuario asignado = asignacion.getUsuarioAsignado();
+        if (asignado == null || !asignado.getIdUsuario().equals(actor.getIdUsuario())) {
+            log.warn("Acceso denegado: usuario {} ({}) intentó operar el subproceso {} asignado a {}",
+                    actor.getIdUsuario(), actor.getRol(), asignacion.getId(), asignado != null ? asignado.getIdUsuario() : null);
+            throw new ApiException("Este subproceso no está asignado a ti.", HttpStatus.FORBIDDEN);
+        }
+    }
+
     /** PROGRAMADOR solo puede ver/actuar sobre subprocesos de poligrafía/visita; GESTOR solo sobre
      *  subprocesos de ANALISTA_INTERNO (no asigna poligrafía ni visita — eso es de PROGRAMADOR). */
     private void validarAlcance(TipoProgreso tipo, Set<Rol> rolesPermitidos) {
@@ -710,6 +1060,7 @@ public class AsignacionService {
                 a.getFechaProgramada(),
                 a.getFechaAsignacion(),
                 a.getFechaCompletado(),
+                a.getFechaPublicado(),
                 servicio != null ? servicio.getFechaEntregaEstimada() : null,
                 a.getObservaciones(),
                 idCiudad,

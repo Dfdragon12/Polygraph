@@ -10,10 +10,25 @@ import java.util.Map;
  *  inconsistentes. */
 public record GuardarFormularioRequest(List<SeccionDatosRequest> secciones) {
 
+    /** justificaciones: idColumna -> explicación de una respuesta CRÍTICA (campo calificable). */
     public record SeccionDatosRequest(
             @NotNull Integer idSeccion,
             Map<Integer, String> valores,
-            List<FilaDatosRequest> filas) {}
+            List<FilaDatosRequest> filas,
+            Map<Integer, String> justificaciones) {
+        public SeccionDatosRequest(Integer idSeccion, Map<Integer, String> valores, List<FilaDatosRequest> filas) {
+            this(idSeccion, valores, filas, null);
+        }
+    }
 
-    public record FilaDatosRequest(String etiqueta, Map<Integer, String> valores) {}
+    // idOrigenFijo: null = fila manual normal de una sección TABLA (comportamiento de siempre).
+    // No null = esta fila es la VALIDACIÓN de analista/poligrafista/visitador correlacionada con
+    // esa fila real de la hoja de vida del candidato (ver FormularioFila.idOrigenFijo) — solo
+    // aplica a secciones con origenFijo.
+    public record FilaDatosRequest(String etiqueta, Map<Integer, String> valores, Long idOrigenFijo,
+                                   Map<Integer, String> justificaciones) {
+        public FilaDatosRequest(String etiqueta, Map<Integer, String> valores, Long idOrigenFijo) {
+            this(etiqueta, valores, idOrigenFijo, null);
+        }
+    }
 }

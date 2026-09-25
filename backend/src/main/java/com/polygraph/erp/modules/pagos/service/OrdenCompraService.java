@@ -5,6 +5,7 @@ import com.polygraph.erp.modules.auth.entity.Usuario;
 import com.polygraph.erp.modules.auth.repository.UsuarioRepository;
 import com.polygraph.erp.modules.clientes.entity.Cliente;
 import com.polygraph.erp.modules.clientes.repository.ClienteRepository;
+import com.polygraph.erp.modules.notificaciones.service.NotificacionService;
 import com.polygraph.erp.modules.pagos.dto.*;
 import com.polygraph.erp.modules.pagos.entity.ComprobanteCompra;
 import com.polygraph.erp.modules.pagos.entity.OrdenCompra;
@@ -58,6 +59,7 @@ public class OrdenCompraService {
     private final SaldoServicioClienteService saldoServicioClienteService;
     private final DescuentoService descuentoService;
     private final RecargoPendienteService recargoPendienteService;
+    private final NotificacionService notificacionService;
 
     public OrdenCompraResponse crearOrden(CrearOrdenRequest request, String emailUsuario) {
         Usuario usuario = resolverUsuario(emailUsuario);
@@ -403,6 +405,10 @@ public class OrdenCompraService {
         recargoPendienteService.saldarPendientes(orden.getCliente(), orden);
 
         log.info("Orden aprobada: id={}, cliente={}, saldo acreditado", orden.getIdOrdenCompra(), orden.getCliente().getIdCliente());
+        // Antes el cliente nunca se enteraba de que su compra se acreditó — tenía que entrar a
+        // revisar su bolsa de servicios por su cuenta.
+        notificacionService.crearParaCliente(orden.getCliente().getIdCliente(), "PAGO_APROBADO", "Compra acreditada",
+                "Tu compra " + orden.getReferencia() + " fue aprobada — ya tienes el saldo disponible en tu bolsa.");
     }
 
     private void rechazarOrden(OrdenCompra orden) {
@@ -414,6 +420,8 @@ public class OrdenCompraService {
         orden.setFechaActualizacion(LocalDateTime.now());
         ordenCompraRepository.save(orden);
         log.info("Orden rechazada: id={}", orden.getIdOrdenCompra());
+        notificacionService.crearParaCliente(orden.getCliente().getIdCliente(), "PAGO_RECHAZADO", "Compra rechazada",
+                "Tu compra " + orden.getReferencia() + " no pudo procesarse — intenta de nuevo.");
     }
 
     /** Precio por unidad según el tramo de volumen aplicable (el de mayor cantidadMinima que la cantidad alcance); si ninguno aplica, usa el precio base del proceso. */
@@ -477,6 +485,7 @@ public class OrdenCompraService {
                 orden.getNombrePagador(),
                 orden.getTelefonoPagador(),
                 orden.getEmailPagador(),
+                orden.getCliente().getIdCliente(),
                 nombreClienteDisplay(orden.getCliente()),
                 idComprobante,
                 numeroComprobante,
@@ -512,6 +521,32 @@ public class OrdenCompraService {
             ordenes = ordenCompraRepository.findAllByOrderByFechaCreacionDesc(pageable);
         }
         return ordenes.map(orden -> construirRespuesta(orden, ordenCompraItemRepository.findByOrdenCompra_IdOrdenCompra(orden.getIdOrdenCompra())));
+    }
+
+    /** Órdenes prepago aprobadas (ya cobradas) sin comprobante generado todavía — panel "sin
+     *  facturar" de Facturacion.jsx, cruzando todos los clientes prepago a la vez. */
+    @Transactional(readOnly = true)
+    public Page<OrdenCompraResponse> listarOrdenesSinFacturar(Pageable pageable) {
+        return ordenCompraRepository.findAprobadasSinComprobante(pageable)
+                .map(orden -> construirRespuesta(orden, ordenCompraItemRepository.findByOrdenCompra_IdOrdenCompra(orden.getIdOrdenCompra())));
+    }
+
+    /** Detalle de una orden para el modal "Ver detalle" de la tabla unificada de
+     *  Facturacion.jsx — a diferencia de obtenerOrden(id, email), este no valida dueño porque lo
+     *  llama un admin, no el cliente. */
+    @Transactional(readOnly = true)
+    public OrdenCompraResponse obtenerOrdenAdmin(Long idOrden) {
+        OrdenCompra orden = ordenCompraRepository.findById(idOrden)
+                .orElseThrow(() -> new ApiException("Orden no encontrada", HttpStatus.NOT_FOUND));
+        return construirRespuesta(orden, ordenCompraItemRepository.findByOrdenCompra_IdOrdenCompra(orden.getIdOrdenCompra()));
+    }
+
+    /** Sumas prepago para la barra "Pagado / Pendiente / Vencido" de Facturacion.jsx. */
+    @Transactional(readOnly = true)
+    public ResumenPagosOrdenesResponse resumenPagos() {
+        return new ResumenPagosOrdenesResponse(
+                ordenCompraRepository.sumMontoTotalByEstado(EstadoOrdenCompra.APROBADA),
+                ordenCompraRepository.sumMontoTotalByEstado(EstadoOrdenCompra.PENDIENTE));
     }
 
     /** Solo se puede borrar una orden mientras siga PENDIENTE — para limpiar pruebas o intentos

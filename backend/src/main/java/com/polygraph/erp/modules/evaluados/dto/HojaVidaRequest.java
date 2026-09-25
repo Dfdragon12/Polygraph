@@ -67,5 +67,16 @@ public record HojaVidaRequest(
         // Clave "fechaInicio_fechaFin" (yyyy-MM-dd) -> texto de justificación del tiempo muerto laboral
         Map<String, String> justificacionesInactividad,
 
-        Integer pasoActual
+        Integer pasoActual,
+
+        // Los tres siguientes van al final a propósito (no intercalados con el resto) para no
+        // romper otros lugares que construyen este record por posición al agregarlos.
+        // Opcionales — solo aplican si el candidato nació o vive fuera de Colombia; si vienen
+        // null, la ciudad de nacimiento/residencia ya alcanza a ubicarlo (caso normal, Colombia).
+        Integer idPaisNacimiento,
+        Integer idPaisResidencia,
+
+        // Opcional — referencia al catálogo de barrios (ver BarrioService); si viene, reemplaza
+        // el texto libre de `barrio` como dato "vivo" hacia adelante, sin dejar de guardar `barrio`.
+        Integer idBarrio
 ) {}

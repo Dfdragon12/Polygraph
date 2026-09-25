@@ -5,6 +5,8 @@ import com.polygraph.erp.modules.pagos.dto.FacturaPospagoDetalleResponse;
 import com.polygraph.erp.modules.pagos.dto.FacturaPospagoResponse;
 import com.polygraph.erp.modules.pagos.dto.GenerarFacturaPospagoRequest;
 import com.polygraph.erp.modules.pagos.dto.MovimientoCreditoPospagoResponse;
+import com.polygraph.erp.modules.pagos.dto.PendienteFacturarPospagoResponse;
+import com.polygraph.erp.modules.pagos.dto.ResumenFacturasPospagoResponse;
 import com.polygraph.erp.modules.pagos.service.ClientePospagoService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -37,6 +39,18 @@ public class AdminFacturaPospagoController {
         return ResponseEntity.ok(clientePospagoService.listarMovimientosPendientesDeFacturar(idCliente));
     }
 
+    /** Consumo pospago sin facturar de todos los clientes a la vez — panel "Pospago: servicios
+     *  pendientes de facturar" en Facturacion.jsx. */
+    @GetMapping("/pendientes")
+    public ResponseEntity<List<PendienteFacturarPospagoResponse>> pendientesGlobal() {
+        return ResponseEntity.ok(clientePospagoService.listarPendientesGlobal());
+    }
+
+    @GetMapping("/facturas/resumen")
+    public ResponseEntity<ResumenFacturasPospagoResponse> resumenFacturas() {
+        return ResponseEntity.ok(clientePospagoService.resumenFacturas());
+    }
+
     @GetMapping("/clientes/{idCliente}/facturas")
     public ResponseEntity<List<FacturaPospagoResponse>> facturasDelCliente(@PathVariable Integer idCliente) {
         return ResponseEntity.ok(clientePospagoService.listarFacturas(idCliente));
@@ -46,7 +60,7 @@ public class AdminFacturaPospagoController {
     public ResponseEntity<FacturaPospagoResponse> generarFactura(
             @PathVariable Integer idCliente, @Valid @RequestBody GenerarFacturaPospagoRequest request, Authentication auth) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(clientePospagoService.generarFactura(idCliente, request.fechaVencimiento(), auth.getName()));
+                .body(clientePospagoService.generarFactura(idCliente, request.fechaVencimiento(), request.idsMovimientos(), auth.getName()));
     }
 
     @GetMapping("/facturas")

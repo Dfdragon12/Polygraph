@@ -16,8 +16,23 @@ const catalogoService = {
     return data
   },
 
-  async crearCiudad({ nombreCiudad, departamento, codigoDaneCiudad, codigoDaneDepto }) {
-    const { data } = await api.post('/ciudades', { nombreCiudad, departamento, codigoDaneCiudad, codigoDaneDepto })
+  async listarDepartamentos() {
+    const { data } = await api.get('/departamentos')
+    return data
+  },
+
+  async crearCiudad({ nombreCiudad, departamento, codigoDaneCiudad }) {
+    const { data } = await api.post('/ciudades', { nombreCiudad, departamento, codigoDaneCiudad })
+    return data
+  },
+
+  async listarBarrios(idCiudad) {
+    const { data } = await api.get('/barrios', { params: { idCiudad } })
+    return data
+  },
+
+  async crearBarrio({ nombre, idCiudad }) {
+    const { data } = await api.post('/barrios', { nombre, idCiudad })
     return data
   },
 }

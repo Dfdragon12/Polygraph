@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import api from '../../../services/api'
 import Paginacion from '../../../components/ui/Paginacion'
+import MenuAcciones from '../../../components/ui/MenuAcciones'
 
 const POR_PAGINA = 10
 
@@ -219,7 +220,7 @@ export default function TiposProgreso() {
     { key: 'descripcion',   label: 'Descripción',  sortable: false },
     { key: 'rolResponsable',label: 'Rol responsable', sortable: true },
     { key: 'activo',        label: 'Estado',       sortable: true  },
-    { key: '_acciones',     label: 'Acciones',     sortable: false },
+    { key: '_acciones',     label: '···',          sortable: false },
   ]
 
   return (
@@ -277,7 +278,7 @@ export default function TiposProgreso() {
         )}
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl ring-1 ring-gray-900/5 shadow-sm overflow-hidden">
         {cargando ? (
           <div className="flex items-center justify-center py-16">
             <div className="animate-spin rounded-full h-8 w-8 border-4 border-primary-600 border-t-transparent" />
@@ -289,14 +290,14 @@ export default function TiposProgreso() {
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-100">
-              <thead className="bg-gray-50">
+              <thead className="bg-gray-50/80">
                 <tr>
                   {columnas.map(col => (
                     <th
                       key={col.key}
                       onClick={col.sortable ? () => manejarOrden(col.key) : undefined}
-                      className={`px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider select-none ${
-                        col.sortable ? 'cursor-pointer hover:text-gray-700' : ''
+                      className={`px-4 py-3 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider select-none whitespace-nowrap ${
+                        col.sortable ? 'cursor-pointer hover:text-gray-600' : ''
                       }`}
                     >
                       {col.label}
@@ -307,25 +308,22 @@ export default function TiposProgreso() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {tiposPagina.map(t => (
-                  <tr key={t.idTipoProgreso} className="hover:bg-gray-50 transition-colors">
+                  <tr key={t.idTipoProgreso} className="hover:bg-gray-50/70 transition-colors">
                     <td className="px-4 py-3 text-sm text-gray-500 text-center w-16">{t.orden ?? 0}</td>
                     <td className="px-4 py-3 text-sm text-gray-900 font-medium">{t.nombreProgreso}</td>
                     <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">{t.descripcion ?? '—'}</td>
                     <td className="px-4 py-3"><BadgeRol rol={t.rolResponsable} /></td>
                     <td className="px-4 py-3"><Badge activo={t.activo} /></td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => abrirEditar(t)} title="Editar"
-                          className="p-1.5 rounded-lg text-primary-600 hover:bg-primary-50 hover:text-primary-800 transition-colors">
-                          <IconoLapiz />
-                        </button>
-                        <button onClick={() => cambiarEstado(t)} title={t.activo ? 'Desactivar' : 'Activar'}
-                          className={`p-1.5 rounded-lg transition-colors ${
-                            t.activo ? 'text-red-600 hover:bg-red-50 hover:text-red-800' : 'text-green-700 hover:bg-green-50 hover:text-green-900'
-                          }`}>
-                          <IconoPower />
-                        </button>
-                      </div>
+                    <td className="px-4 py-3 text-center">
+                      <MenuAcciones opciones={[
+                        { label: 'Editar', icono: <IconoLapiz />, onClick: () => abrirEditar(t) },
+                        {
+                          label: t.activo ? 'Desactivar' : 'Activar',
+                          icono: <IconoPower />,
+                          destacado: t.activo ? 'text-red-600' : 'text-green-700',
+                          onClick: () => cambiarEstado(t),
+                        },
+                      ]} />
                     </td>
                   </tr>
                 ))}

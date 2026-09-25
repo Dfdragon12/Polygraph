@@ -4,6 +4,7 @@ import api from '../../services/api'
 import Toast from '../../components/Toast'
 import { Modal } from '../../components/ui/Modal'
 import Paginacion from '../../components/ui/Paginacion'
+import MenuAcciones from '../../components/ui/MenuAcciones'
 import CiudadSelect from '../../components/CiudadSelect'
 import catalogoService from '../../services/catalogoService'
 
@@ -335,7 +336,7 @@ function ModalDetalleEmpleado({ usuario, onClose }) {
         {/* Footer */}
         <div className="px-5 py-4 border-t border-gray-100 flex-shrink-0">
           <button onClick={onClose}
-            className="w-full py-2.5 text-sm text-gray-600 hover:text-gray-800 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
+            className="w-full py-2.5 text-sm text-gray-600 hover:text-gray-800 border border-gray-200 rounded-xl hover:bg-gray-50/70 transition-colors">
             Cerrar
           </button>
         </div>
@@ -408,12 +409,12 @@ function TablaInternos({ usuarios, cargando, onCambiarEstado, onEditar, onDetall
             <Th cls="hidden lg:table-cell">Teléfono</Th>
             <Th cls="hidden lg:table-cell">Ciudad</Th>
             <Th sortable onClick={() => onOrdenar('activo')} ordenCol={ordenCol} col="activo" ordenDir={ordenDir}>Estado</Th>
-            <Th>Acciones</Th>
+            <Th>···</Th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
           {usuarios.map(u => (
-            <tr key={u.idUsuario} className="hover:bg-gray-50 transition-colors">
+            <tr key={u.idUsuario} className="hover:bg-gray-50/70 transition-colors">
               <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">
                 {u.nombre} {u.apellido ?? ''}
                 <p className="sm:hidden text-xs font-normal text-gray-500 mt-0.5">{u.email}</p>
@@ -424,28 +425,18 @@ function TablaInternos({ usuarios, cargando, onCambiarEstado, onEditar, onDetall
               <td className="hidden lg:table-cell px-4 py-3 text-gray-500">{u.telefono ?? '—'}</td>
               <td className="hidden lg:table-cell px-4 py-3 text-gray-500 whitespace-nowrap">{u.nombreCiudad ?? '—'}</td>
               <td className="px-4 py-3"><Badge activo={u.activo} /></td>
-              <td className="px-4 py-3">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <button onClick={() => onDetalle(u)} title="Detalle"
-                    className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-slate-800 transition-colors">
-                    <IconoOjo />
-                  </button>
-                  <button onClick={() => onEditar(u)} title="Editar"
-                    className="p-1.5 rounded-lg text-primary-600 hover:bg-primary-50 hover:text-primary-800 transition-colors">
-                    <IconoLapiz />
-                  </button>
-                  <button onClick={() => onCambiarPassword(u)} title="Cambiar contraseña"
-                    className="p-1.5 rounded-lg text-amber-600 hover:bg-amber-50 hover:text-amber-800 transition-colors">
-                    <IconoLlave />
-                  </button>
-                  <button onClick={() => onCambiarEstado(u.idUsuario, !u.activo)}
-                    title={u.activo ? 'Desactivar' : 'Activar'}
-                    className={`p-1.5 rounded-lg transition-colors ${
-                      u.activo ? 'text-red-600 hover:bg-red-50 hover:text-red-800' : 'text-green-700 hover:bg-green-50 hover:text-green-900'
-                    }`}>
-                    <IconoPower />
-                  </button>
-                </div>
+              <td className="px-4 py-3 text-center">
+                <MenuAcciones opciones={[
+                  { label: 'Detalle', icono: <IconoOjo />, onClick: () => onDetalle(u) },
+                  { label: 'Editar', icono: <IconoLapiz />, onClick: () => onEditar(u) },
+                  { label: 'Cambiar contraseña', icono: <IconoLlave />, onClick: () => onCambiarPassword(u) },
+                  {
+                    label: u.activo ? 'Desactivar' : 'Activar',
+                    icono: <IconoPower />,
+                    destacado: u.activo ? 'text-red-600' : 'text-green-700',
+                    onClick: () => onCambiarEstado(u.idUsuario, !u.activo),
+                  },
+                ]} />
               </td>
             </tr>
           ))}
@@ -637,55 +628,53 @@ function FormularioUsuario({ form, onChange, onSubmit, onCancel, guardando, erro
 
       <Campo label="Email" name="email" type="email" value={form.email} onChange={onChange} required />
 
-      {/* Contraseña con toggle show/hide */}
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">
-            Contraseña
-            {esEdicion
-              ? <span className="text-gray-400 font-normal text-[10px]"> (vacío = sin cambios)</span>
-              : <span className="text-gray-400 font-normal text-[10px]"> (vacío = usa N.° documento)</span>
-            }
-          </label>
-          <div className="relative">
-            <input
-              name="password" type={mostrarPwd ? 'text' : 'password'}
-              value={form.password} onChange={onChange}
-              required={!esEdicion} minLength={form.password ? 8 : undefined}
-              placeholder={esEdicion ? '••••••••' : 'Mín. 8 caracteres'}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-            />
-            <button type="button" onClick={() => setMostrarPwd(v => !v)}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-              <OjoIcon visible={mostrarPwd} />
-            </button>
+      {/* Contraseña con toggle show/hide — solo al crear. Para un usuario existente, la
+          contraseña se cambia aparte desde el botón "Cambiar contraseña" de la tabla, que exige
+          confirmar con la clave del propio admin. */}
+      {!esEdicion && (
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Contraseña <span className="text-gray-400 font-normal text-[10px]">(vacío = usa N.° documento)</span>
+            </label>
+            <div className="relative">
+              <input
+                name="password" type={mostrarPwd ? 'text' : 'password'}
+                value={form.password} onChange={onChange}
+                minLength={form.password ? 8 : undefined}
+                placeholder="Mín. 8 caracteres"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+              <button type="button" onClick={() => setMostrarPwd(v => !v)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                <OjoIcon visible={mostrarPwd} />
+              </button>
+            </div>
           </div>
-        </div>
 
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">
-            Confirmar {!esEdicion && <span className="text-red-500">*</span>}
-          </label>
-          <div className="relative">
-            <input
-              type={mostrarConfirm ? 'text' : 'password'}
-              value={confirmPwd}
-              onChange={e => setConfirmPwd(e.target.value)}
-              placeholder="Repite la contraseña"
-              className={`w-full border rounded-lg px-3 py-2 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 ${
-                confirmPwd && confirmPwd !== form.password ? 'border-red-300 bg-red-50' : 'border-gray-200'
-              }`}
-            />
-            <button type="button" onClick={() => setMostrarConfirm(v => !v)}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-              <OjoIcon visible={mostrarConfirm} />
-            </button>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Confirmar</label>
+            <div className="relative">
+              <input
+                type={mostrarConfirm ? 'text' : 'password'}
+                value={confirmPwd}
+                onChange={e => setConfirmPwd(e.target.value)}
+                placeholder="Repite la contraseña"
+                className={`w-full border rounded-lg px-3 py-2 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 ${
+                  confirmPwd && confirmPwd !== form.password ? 'border-red-300 bg-red-50' : 'border-gray-200'
+                }`}
+              />
+              <button type="button" onClick={() => setMostrarConfirm(v => !v)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                <OjoIcon visible={mostrarConfirm} />
+              </button>
+            </div>
+            {confirmPwd && confirmPwd !== form.password && (
+              <p className="text-xs text-red-500 mt-0.5">No coinciden</p>
+            )}
           </div>
-          {confirmPwd && confirmPwd !== form.password && (
-            <p className="text-xs text-red-500 mt-0.5">No coinciden</p>
-          )}
         </div>
-      </div>
+      )}
 
       {/* Rol */}
       <div>
@@ -812,7 +801,9 @@ function FormularioUsuario({ form, onChange, onSubmit, onCancel, guardando, erro
 function ModalCambiarPassword({ usuario, onClose, onGuardado }) {
   const [password, setPassword] = useState('')
   const [confirmPwd, setConfirmPwd] = useState('')
+  const [claveAdmin, setClaveAdmin] = useState('')
   const [mostrarPwd, setMostrarPwd] = useState(false)
+  const [mostrarClaveAdmin, setMostrarClaveAdmin] = useState(false)
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState(null)
 
@@ -830,9 +821,13 @@ function ModalCambiarPassword({ usuario, onClose, onGuardado }) {
       setError('Las contraseñas no coinciden')
       return
     }
+    if (!claveAdmin) {
+      setError('Confirma con tu propia contraseña para continuar')
+      return
+    }
     setGuardando(true)
     try {
-      await api.patch(`/usuarios-internos/${usuario.idUsuario}/password`, { password })
+      await api.patch(`/usuarios-internos/${usuario.idUsuario}/password`, { password, claveAdmin })
       onGuardado()
       onClose()
     } catch (err) {
@@ -890,12 +885,30 @@ function ModalCambiarPassword({ usuario, onClose, onGuardado }) {
           />
           {noCoinciden && <p className="text-xs text-red-500 mt-1">Las contraseñas no coinciden</p>}
         </div>
+        <div className="pt-1 border-t border-gray-100">
+          <label className="block text-sm font-medium text-gray-700 mb-1.5 mt-3">
+            Tu contraseña <span className="text-red-500">*</span>
+          </label>
+          <p className="text-xs text-gray-400 mb-1.5">Confirma con tu propia clave para autorizar este cambio.</p>
+          <div className="relative">
+            <input
+              type={mostrarClaveAdmin ? 'text' : 'password'} value={claveAdmin}
+              onChange={e => setClaveAdmin(e.target.value)} required
+              placeholder="Tu contraseña actual"
+              className="w-full border border-gray-300 rounded-lg px-4 py-2.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+            <button type="button" onClick={() => setMostrarClaveAdmin(v => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+              <OjoIcon visible={mostrarClaveAdmin} />
+            </button>
+          </div>
+        </div>
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={onClose}
             className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
             Cancelar
           </button>
-          <button type="submit" disabled={guardando || noCoinciden || !esFuerte}
+          <button type="submit" disabled={guardando || noCoinciden || !esFuerte || !claveAdmin}
             className="px-4 py-2 text-sm font-medium bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white rounded-lg transition-colors">
             {guardando ? 'Guardando…' : 'Cambiar contraseña'}
           </button>

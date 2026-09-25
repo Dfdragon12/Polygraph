@@ -9,8 +9,8 @@ const ciudadService = {
   clasificar: (id, nivelCiudad) =>
     api.patch(`/ciudades/${id}/nivel`, { nivelCiudad }).then(r => r.data),
 
-  confirmar: (id) =>
-    api.patch(`/ciudades/${id}/confirmar`).then(r => r.data),
+  confirmar: (id, codigosDane) =>
+    api.patch(`/ciudades/${id}/confirmar`, codigosDane ?? {}).then(r => r.data),
 
   eliminar: (id) =>
     api.delete(`/ciudades/${id}`),

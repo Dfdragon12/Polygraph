@@ -3,6 +3,7 @@ package com.polygraph.erp.modules.notificaciones.service;
 import com.polygraph.erp.modules.auth.entity.Usuario;
 import com.polygraph.erp.modules.auth.repository.UsuarioRepository;
 import com.polygraph.erp.modules.notificaciones.dto.NotificacionResponse;
+import com.polygraph.erp.modules.notificaciones.dto.PaginaNotificacionesResponse;
 import com.polygraph.erp.shared.entity.Notificacion;
 import com.polygraph.erp.shared.enums.Rol;
 import com.polygraph.erp.shared.exceptions.ApiException;
@@ -11,6 +12,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.security.core.Authentication;
@@ -57,6 +60,25 @@ public class NotificacionService {
                 .stream()
                 .map(NotificacionResponse::from)
                 .toList();
+    }
+
+    /** Listado paginado para "Cargar más" / filtro "No leídas" de la campana — el listar() de
+     *  arriba (últimas 15) se mantiene tal cual para AdminDashboard. */
+    @Transactional(readOnly = true)
+    public PaginaNotificacionesResponse listarPagina(String email, int pagina, int tamano, boolean soloNoLeidas) {
+        PageRequest pageable = PageRequest.of(Math.max(0, pagina), Math.min(Math.max(1, tamano), 50));
+        Page<Notificacion> page = soloNoLeidas
+                ? notificacionRepository.findByUsuario_EmailAndLeidaFalseOrderByFechaCreacionDescIdDesc(email, pageable)
+                : notificacionRepository.findByUsuario_EmailOrderByFechaCreacionDescIdDesc(email, pageable);
+        return new PaginaNotificacionesResponse(
+                page.getContent().stream().map(NotificacionResponse::from).toList(),
+                page.hasNext(),
+                page.getTotalElements());
+    }
+
+    @Transactional
+    public int eliminarLeidas(String email) {
+        return notificacionRepository.eliminarLeidas(email);
     }
 
     @Transactional(readOnly = true)
@@ -193,6 +215,26 @@ public class NotificacionService {
                                 .referenciaId(referenciaId)
                                 .build()
                 ));
+    }
+
+    /** Igual que crearParaUsuario(), pero si ese usuario ya tiene una notificación SIN LEER del
+     *  mismo tipo sobre el mismo registro, la actualiza (mensaje + fecha, sube arriba de la lista)
+     *  en vez de crear otra. Pensado para eventos que se repiten muy seguido sobre el mismo
+     *  registro — p.ej. FORMULARIO_ACTUALIZADO: el autoguardado del formulario guarda cada pocos
+     *  segundos, y antes eso llenaba la campana del gestor/programador con decenas de avisos
+     *  idénticos del mismo servicio. Una vez leída, el siguiente cambio sí crea una nueva. */
+    @Transactional
+    public void crearOAgruparParaUsuario(Long idUsuario, String tipo, String titulo, String mensaje,
+                                         String referenciaTipo, Long referenciaId) {
+        if (idUsuario == null) return;
+        notificacionRepository
+                .findFirstByUsuario_IdUsuarioAndTipoAndReferenciaTipoAndReferenciaIdAndLeidaFalseOrderByFechaCreacionDesc(
+                        idUsuario, tipo, referenciaTipo, referenciaId)
+                .ifPresentOrElse(existente -> {
+                    existente.setTitulo(titulo);
+                    existente.setMensaje(mensaje);
+                    existente.setFechaCreacion(LocalDateTime.now());
+                }, () -> crearParaUsuario(idUsuario, tipo, titulo, mensaje, referenciaTipo, referenciaId));
     }
 
     /** Notifica a TODOS los usuarios de un cliente puntual (ADMIN_CLIENTE y ANALISTA_CLIENTE que

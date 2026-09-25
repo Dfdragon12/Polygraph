@@ -6,6 +6,8 @@ import { Link, useNavigate } from 'react-router-dom'
 import authService from '../services/authService'
 import { useAuth } from '../hooks/useAuth'
 import GoogleSignInButton from '../components/GoogleSignInButton'
+import BrandShowcase from '../components/BrandShowcase'
+import HeartbeatMonitor from '../components/HeartbeatMonitor'
 
 const RUTA_POR_ROL = {
   ADMIN_POLYGRAPH:  '/admin/dashboard',
@@ -40,13 +42,14 @@ const esquemaNatural = z
     path: ['confirmarPassword'],
   })
 
+// Toda empresa que se auto-registra entra siempre como PREPAGO — pasar a pospago requiere que un
+// gestor/admin lo gestione después, no se elige libremente en el registro.
 const esquemaJuridica1 = z.object({
   nit: z.string().min(5, 'NIT inválido').max(20),
   dv: z.string().max(1).optional(),
   razonSocial: z.string().min(2, 'Requerido').max(200),
   nombreComercial: z.string().max(200).optional(),
   representanteLegal: z.string().max(150).optional(),
-  tipoCliente: z.enum(['PREPAGO', 'POSPAGO'], { errorMap: () => ({ message: 'Selecciona un tipo' }) }),
 })
 
 const esquemaJuridica2 = z
@@ -271,14 +274,6 @@ function FormJuridica({ onExito }) {
             <input {...form1.register('representanteLegal')} className={estiloInput(form1.formState.errors.representanteLegal)} placeholder="Juan Pérez" />
           </Campo>
 
-          <Campo label="Tipo de cliente" error={form1.formState.errors.tipoCliente?.message}>
-            <select {...form1.register('tipoCliente')} className={estiloInput(form1.formState.errors.tipoCliente)}>
-              <option value="">Selecciona...</option>
-              <option value="PREPAGO">Prepago</option>
-              <option value="POSPAGO">Pospago (requiere estudio de crédito)</option>
-            </select>
-          </Campo>
-
           <BotonSubmit cargando={false} texto="Continuar →" />
         </form>
       )}
@@ -475,47 +470,27 @@ export default function Register() {
   return (
     <div className="min-h-screen flex bg-white">
       {/* ── Panel de marca (oculto en mobile) — mismo lenguaje visual que Login.jsx ── */}
-      <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-slate-900">
-        <div className="absolute -top-24 -right-16 w-[28rem] h-[28rem] bg-primary-600/70 rounded-full blur-3xl" />
-        <div className="absolute -bottom-24 -left-16 w-96 h-96 bg-primary-700/60 rounded-full blur-3xl" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 h-72 bg-primary-500/10 rounded-full blur-3xl" />
+      <div className="hidden lg:flex lg:w-1/2 lg:sticky lg:top-0 lg:h-screen relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-900 to-primary-900">
+        <div className="absolute -top-24 -right-16 w-[30rem] h-[30rem] bg-primary-600/50 rounded-full blur-3xl animate-float-bg" />
+        <div className="absolute -bottom-24 -left-20 w-96 h-96 bg-primary-400/30 rounded-full blur-3xl animate-float-bg" style={{ animationDelay: '-4s', animationDuration: '10s' }} />
+        <div className="absolute inset-0 opacity-[0.07]"
+          style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '28px 28px' }} />
+        <HeartbeatMonitor />
 
         <div className="relative z-10 flex flex-col justify-between p-12 text-white w-full">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 bg-primary-600 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg shadow-primary-600/40">
-              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-              </svg>
+          <div className="flex flex-col gap-8">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 bg-white rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg shadow-black/20 p-1.5">
+                <img src="/icon-192.png" alt="Polygraph" className="w-full h-full object-contain" />
+              </div>
+              <span className="font-semibold text-lg tracking-tight">Polygraph Service</span>
+              <span className="relative flex h-2.5 w-2.5 ml-1">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary-300 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary-400" />
+              </span>
             </div>
-            <span className="font-semibold text-lg tracking-tight">Polygraph Service</span>
-          </div>
 
-          <div className="max-w-md">
-            <h1 className="text-3xl font-bold leading-tight">
-              Crea tu cuenta y solicita tu primer estudio en minutos
-            </h1>
-            <p className="text-slate-300 mt-4 text-sm leading-relaxed">
-              Poligrafías, visitas domiciliarias y validaciones de hoja de vida en una sola plataforma,
-              con seguimiento en tiempo real de cada solicitud.
-            </p>
-
-            <div className="mt-8 space-y-4">
-              {[
-                'Registro como persona natural o empresa',
-                'Compra por bolsa prepago o cupo de crédito',
-                'Seguimiento de cada estudio en tiempo real',
-              ].map((texto) => (
-                <div key={texto} className="flex items-center gap-3">
-                  <div className="w-6 h-6 rounded-full bg-primary-600/20 border border-primary-500/40 flex items-center justify-center flex-shrink-0">
-                    <svg className="w-3.5 h-3.5 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                    </svg>
-                  </div>
-                  <span className="text-sm text-slate-200">{texto}</span>
-                </div>
-              ))}
-            </div>
+            <BrandShowcase />
           </div>
 
           <p className="text-xs text-slate-500">15 años de experiencia — Polygraph Service Ltda.</p>
@@ -527,16 +502,23 @@ export default function Register() {
         <div className="hidden lg:block absolute inset-y-0 left-0 w-40 bg-gradient-to-r from-primary-50/70 to-transparent pointer-events-none" />
 
         <div className="w-full max-w-lg slide-up relative">
-          {/* Header solo visible en mobile */}
-          <div className="lg:hidden text-center mb-8">
-            <div className="w-14 h-14 bg-primary-600 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-lg shadow-primary-600/30">
-              <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-              </svg>
+          {/* Header solo visible en mobile/tablet — el carrusel es contenido del panel de marca
+              (solo desktop), así que en mobile/tablet se mantiene simple. */}
+          <div className="lg:hidden relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 to-primary-900 text-center mb-8 px-6 py-8 shadow-xl shadow-gray-200/60">
+            <HeartbeatMonitor className="absolute left-0 bottom-2 h-10 opacity-[0.18]" />
+            <div className="relative z-10">
+              <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-lg shadow-black/20 p-2">
+                <img src="/icon-192.png" alt="Polygraph" className="w-full h-full object-contain" />
+              </div>
+              <div className="flex items-center justify-center gap-2">
+                <h1 className="text-xl font-bold text-white">Polygraph Service</h1>
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary-300 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-primary-400" />
+                </span>
+              </div>
+              <p className="text-slate-300 text-sm mt-1">Crear cuenta</p>
             </div>
-            <h1 className="text-xl font-bold text-gray-900">Polygraph Service</h1>
-            <p className="text-gray-500 text-sm mt-1">Crear cuenta</p>
           </div>
 
           <div className="bg-white rounded-2xl shadow-xl shadow-gray-200/60 border border-gray-100 px-8 py-9">

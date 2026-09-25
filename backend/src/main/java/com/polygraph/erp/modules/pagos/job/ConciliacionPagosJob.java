@@ -1,6 +1,7 @@
 package com.polygraph.erp.modules.pagos.job;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.polygraph.erp.modules.notificaciones.service.NotificacionService;
 import com.polygraph.erp.modules.pagos.config.WompiProperties;
 import com.polygraph.erp.modules.pagos.entity.OrdenCompra;
 import com.polygraph.erp.modules.pagos.entity.PagoWompi;
@@ -51,6 +52,7 @@ public class ConciliacionPagosJob {
     private final AuditoriaPagoService auditoriaPagoService;
     private final WompiProperties wompiProperties;
     private final RestClient wompiRestClient;
+    private final NotificacionService notificacionService;
 
     @Scheduled(cron = "0 */15 * * * *")
     public void conciliar() {
@@ -127,6 +129,11 @@ public class ConciliacionPagosJob {
                     pago.getReferencia(), LIMITE_SIN_TRANSACCION.toHours());
             auditoriaPagoService.registrarCambioEstado(pago, estadoAnterior, EstadoPago.ERROR, null, null,
                     "Sin transacción encontrada en Wompi tras más de " + LIMITE_SIN_TRANSACCION.toHours() + "h en PENDIENTE");
+            // Antes esto solo quedaba en logs/auditoría — ningún admin se enteraba salvo que
+            // revisara la tabla a mano.
+            notificacionService.crearParaAdmins("FACTURACION", "Pago sin conciliar",
+                    "La referencia " + pago.getReferencia() + " lleva más de " + LIMITE_SIN_TRANSACCION.toHours()
+                            + "h sin encontrarse en Wompi — quedó en ERROR, revisar manualmente.");
         }
     }
 

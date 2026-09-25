@@ -42,7 +42,9 @@ export default function PWAInstallBanner() {
       style={{ paddingBottom: 'calc(1rem + var(--sab))' }}
     >
       <div className="flex items-center gap-3 px-4 pt-4 pb-1">
-        <img src="/icon.svg" alt="Polygraph" className="w-12 h-12 rounded-2xl flex-shrink-0 bg-primary-600 p-1" />
+        {/* Fondo blanco (no bg-primary-600 como antes): el logo nuevo ya trae su propio fondo
+            blanco — sobre el coral de la marca se veía apagado por poco contraste. */}
+        <img src="/icon-192.png" alt="Polygraph" className="w-12 h-12 rounded-2xl flex-shrink-0 bg-white p-1.5 object-contain" />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold leading-tight">Instalar Polygraph ERP</p>
           <p className="text-xs text-slate-400 mt-0.5">Acceso rápido desde tu pantalla de inicio, sin navegador</p>

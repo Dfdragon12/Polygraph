@@ -7,6 +7,7 @@ public record ConteoAsignacionesResponse(
         long pendientes,
         long asignados,
         long completados,
+        long publicados,
         long cancelados,
         long total
 ) {}

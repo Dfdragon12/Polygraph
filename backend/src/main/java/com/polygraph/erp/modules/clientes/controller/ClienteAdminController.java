@@ -5,7 +5,10 @@ import com.polygraph.erp.modules.clientes.dto.ActualizarPospagoRequest;
 import com.polygraph.erp.modules.clientes.dto.ActualizarUsuarioClienteRequest;
 import com.polygraph.erp.modules.clientes.dto.ClienteAdminResponse;
 import com.polygraph.erp.modules.clientes.dto.CrearUsuarioClienteRequest;
+import com.polygraph.erp.modules.clientes.dto.EstadoCuentaClienteResponse;
 import com.polygraph.erp.modules.clientes.service.ClienteAdminService;
+import com.polygraph.erp.modules.pagos.dto.SaldoServicioResponse;
+import com.polygraph.erp.modules.pagos.service.SaldoServicioClienteService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -22,10 +25,24 @@ import java.util.List;
 public class ClienteAdminController {
 
     private final ClienteAdminService service;
+    private final SaldoServicioClienteService saldoServicioClienteService;
 
     @GetMapping
     public ResponseEntity<List<ClienteAdminResponse>> listar() {
         return ResponseEntity.ok(service.listar());
+    }
+
+    /** Estado de cuenta de todos los clientes — pantalla "Gestión de cuentas". */
+    @GetMapping("/estado-cuentas")
+    public ResponseEntity<List<EstadoCuentaClienteResponse>> listarEstadoCuentas() {
+        return ResponseEntity.ok(service.listarEstadoCuentas());
+    }
+
+    /** Saldo prepago de un cliente puntual, desglosado por proceso — detalle dentro de "Gestión
+     *  de cuentas" para un cliente prepago. */
+    @GetMapping("/{id}/saldos")
+    public ResponseEntity<List<SaldoServicioResponse>> obtenerSaldos(@PathVariable Integer id) {
+        return ResponseEntity.ok(saldoServicioClienteService.obtenerSaldos(id));
     }
 
     @GetMapping("/{id}")

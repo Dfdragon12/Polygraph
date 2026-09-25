@@ -1,10 +1,12 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import api from '../../services/api'
 import Toast from '../../components/Toast'
 import { Modal } from '../../components/ui/Modal'
 import Paginacion from '../../components/ui/Paginacion'
+import MenuAcciones from '../../components/ui/MenuAcciones'
 import CiudadSelect from '../../components/CiudadSelect'
+import BarrioSelect from '../../components/BarrioSelect'
 import ModalDocumentosCliente from '../../components/ModalDocumentosCliente'
 
 /* ─── Helpers ─── */
@@ -130,13 +132,6 @@ function IconDocumento() {
     </svg>
   )
 }
-function IconRecibo() {
-  return (
-    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3M3.75 6h16.5a1.5 1.5 0 011.5 1.5v9a1.5 1.5 0 01-1.5 1.5H3.75a1.5 1.5 0 01-1.5-1.5v-9a1.5 1.5 0 011.5-1.5z" />
-    </svg>
-  )
-}
 function IconUsuarios({ className = 'h-5 w-5' }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -177,19 +172,25 @@ function Avatar({ nombre, apellido, rol, size = 'h-11 w-11 text-sm' }) {
 
 /* ─── Modal editar cliente ─── */
 function ModalEditar({ cliente, onClose, onGuardado }) {
-  const esNatural = cliente.tipoPersona === 'NATURAL'
+  const esNaturalOriginal = cliente.tipoPersona === 'NATURAL'
   const [form, setForm] = useState({
-    nombre:             cliente.nombreDisplay?.split(' ')[0] ?? '',
-    apellido:           esNatural ? (cliente.nombreDisplay?.split(' ').slice(1).join(' ') ?? '') : '',
-    razonSocial:        !esNatural ? cliente.nombreDisplay : '',
+    tipoPersona:        cliente.tipoPersona,
+    tipoCliente:        cliente.tipoCliente,
+    nombre:             esNaturalOriginal ? (cliente.nombreDisplay?.split(' ')[0] ?? '') : '',
+    apellido:           esNaturalOriginal ? (cliente.nombreDisplay?.split(' ').slice(1).join(' ') ?? '') : '',
+    razonSocial:        !esNaturalOriginal ? (cliente.nombreDisplay ?? '') : '',
     nombreComercial:    cliente.nombreComercial ?? '',
     representanteLegal: cliente.representanteLegal ?? '',
+    nit:                cliente.nit ?? '',
+    dv:                 cliente.dv ?? '',
     telefono:           cliente.telefono ?? '',
     direccion:          cliente.direccion ?? '',
     observaciones:      cliente.observaciones ?? '',
     idGestor:           cliente.gestorAsignado?.idUsuario ?? '',
     idCiudad:           cliente.idCiudad ?? null,
+    idBarrio:           cliente.idBarrio ?? null,
   })
+  const esNatural = form.tipoPersona === 'NATURAL'
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState(null)
   const [gestores, setGestores] = useState([])
@@ -225,6 +226,35 @@ function ModalEditar({ cliente, onClose, onGuardado }) {
           <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{error}</div>
         )}
 
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Tipo de persona</label>
+            <select name="tipoPersona" value={form.tipoPersona} onChange={handleChange}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
+              <option value="NATURAL">Persona Natural</option>
+              <option value="JURIDICA">Persona Jurídica</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Modalidad de pago</label>
+            <select name="tipoCliente" value={form.tipoCliente} onChange={handleChange}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
+              <option value="PREPAGO">Prepago</option>
+              <option value="POSPAGO">Pospago</option>
+            </select>
+          </div>
+        </div>
+        {(form.tipoPersona !== cliente.tipoPersona || form.tipoCliente !== cliente.tipoCliente) && (
+          <p className="text-xs text-amber-600 -mt-2">
+            {form.tipoPersona !== cliente.tipoPersona && 'Vas a cambiar el tipo de persona de este cliente — completa los datos correspondientes abajo. '}
+            {form.tipoCliente !== cliente.tipoCliente && (
+              form.tipoCliente === 'POSPAGO'
+                ? 'Al pasar a pospago, el cliente queda con cupo en $0 y requiere que le asignes crédito desde Facturación antes de poder solicitar.'
+                : 'Al pasar a prepago, se valida que no tenga consumo pospago sin facturar ni facturas sin pagar.'
+            )}
+          </p>
+        )}
+
         {esNatural ? (
           <div className="grid grid-cols-2 gap-4">
             <Campo label="Nombre" name="nombre" value={form.nombre} onChange={handleChange} required />
@@ -235,6 +265,12 @@ function ModalEditar({ cliente, onClose, onGuardado }) {
             <Campo label="Razón social" name="razonSocial" value={form.razonSocial} onChange={handleChange} required />
             <Campo label="Nombre comercial" name="nombreComercial" value={form.nombreComercial} onChange={handleChange} />
             <Campo label="Representante legal" name="representanteLegal" value={form.representanteLegal} onChange={handleChange} />
+            <div className="grid grid-cols-3 gap-4">
+              <div className="col-span-2">
+                <Campo label="NIT" name="nit" value={form.nit} onChange={handleChange} required />
+              </div>
+              <Campo label="DV" name="dv" value={form.dv} onChange={handleChange} placeholder="0" />
+            </div>
           </>
         )}
 
@@ -256,6 +292,10 @@ function ModalEditar({ cliente, onClose, onGuardado }) {
           <label className="block text-xs font-medium text-gray-600 mb-1">Ciudad</label>
           <CiudadSelect value={form.idCiudad} onChange={(idCiudad) => setForm(p => ({ ...p, idCiudad }))} />
           <p className="text-xs text-gray-400 mt-1">Se usará para tarifas y disponibilidad por ciudad.</p>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Barrio</label>
+          <BarrioSelect idCiudad={form.idCiudad} value={form.idBarrio} onChange={(idBarrio) => setForm(p => ({ ...p, idBarrio }))} />
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Dirección</label>
@@ -597,7 +637,7 @@ function ModalUsuarios({ cliente, onClose, onCambio }) {
         </div>
 
         <div className="px-6 py-3.5 border-t border-gray-100 flex-shrink-0">
-          <button onClick={onClose} className="w-full py-2 text-sm text-gray-600 hover:text-gray-800 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
+          <button onClick={onClose} className="w-full py-2 text-sm text-gray-600 hover:text-gray-800 border border-gray-200 rounded-xl hover:bg-gray-50/70 transition-colors">
             Cerrar
           </button>
         </div>
@@ -740,7 +780,7 @@ export default function Clientes() {
     { key: '_usuarios',      label: 'Usuarios',                sortable: false },
     { key: 'estado',         label: 'Estado',                 sortable: true  },
     { key: '_docs',          label: 'Documentos',              sortable: false },
-    { key: '_acc',           label: 'Acciones',               sortable: false },
+    { key: '_acc',           label: '···',                    sortable: false },
   ]
 
   return (
@@ -823,7 +863,7 @@ export default function Clientes() {
       </div>
 
       {/* Tabla */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl ring-1 ring-gray-900/5 shadow-sm overflow-hidden">
         {cargando ? (
           <div className="flex items-center justify-center py-16">
             <div className="animate-spin rounded-full h-8 w-8 border-4 border-primary-600 border-t-transparent" />
@@ -835,12 +875,12 @@ export default function Clientes() {
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-100">
-              <thead className="bg-gray-50">
+              <thead className="bg-gray-50/80">
                 <tr>
                   {columnas.map(col => (
                     <th key={col.key}
                       onClick={col.sortable ? () => manejarOrden(col.key) : undefined}
-                      className={`px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider select-none whitespace-nowrap ${col.sortable ? 'cursor-pointer hover:text-gray-700' : ''}`}>
+                      className={`px-4 py-3 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider select-none whitespace-nowrap ${col.sortable ? 'cursor-pointer hover:text-gray-600' : ''}`}>
                       {col.label}
                       {col.sortable && <IconoOrden activo={ordenCol === col.key} dir={ordenDir} />}
                     </th>
@@ -849,7 +889,7 @@ export default function Clientes() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {clientesVisibles.map(c => (
-                  <tr key={c.idCliente} className="hover:bg-gray-50 transition-colors">
+                  <tr key={c.idCliente} className="hover:bg-gray-50/70 transition-colors">
                     <td className="px-4 py-3">
                       <p className="text-sm font-medium text-gray-900">{c.nombreDisplay}</p>
                       {c.nit && <p className="text-xs text-gray-400">NIT: {c.nit}{c.dv ? `-${c.dv}` : ''}</p>}
@@ -892,31 +932,17 @@ export default function Clientes() {
                     <td className="px-4 py-3">
                       <BolitasDocumentos resumen={c.documentosResumen} />
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1.5 flex-nowrap">
-                        <Link to={`/admin/facturacion/clientes/${c.idCliente}`} title="Facturación"
-                          className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-slate-800 transition-colors">
-                          <IconRecibo />
-                        </Link>
-                        <button onClick={() => setDocumentosDe(c)} title="Documentos"
-                          className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-slate-800 transition-colors">
-                          <IconDocumento />
-                        </button>
-                        <button onClick={() => setEditando(c)} title="Editar"
-                          className="p-1.5 rounded-lg text-primary-600 hover:bg-primary-50 hover:text-primary-800 transition-colors">
-                          <IconLapiz />
-                        </button>
-                        <button
-                          onClick={() => cambiarEstado(c, c.estado !== 'ACTIVO')}
-                          title={c.estado === 'ACTIVO' ? 'Desactivar' : 'Activar'}
-                          className={`p-1.5 rounded-lg transition-colors ${
-                            c.estado === 'ACTIVO'
-                              ? 'text-red-600 hover:bg-red-50 hover:text-red-800'
-                              : 'text-green-700 hover:bg-green-50 hover:text-green-900'
-                          }`}>
-                          <IconPower />
-                        </button>
-                      </div>
+                    <td className="px-4 py-3 text-center">
+                      <MenuAcciones opciones={[
+                        { label: 'Documentos', icono: <IconDocumento />, onClick: () => setDocumentosDe(c) },
+                        { label: 'Editar', icono: <IconLapiz />, onClick: () => setEditando(c) },
+                        {
+                          label: c.estado === 'ACTIVO' ? 'Desactivar' : 'Activar',
+                          icono: <IconPower />,
+                          destacado: c.estado === 'ACTIVO' ? 'text-red-600' : 'text-green-700',
+                          onClick: () => cambiarEstado(c, c.estado !== 'ACTIVO'),
+                        },
+                      ]} />
                     </td>
                   </tr>
                 ))}

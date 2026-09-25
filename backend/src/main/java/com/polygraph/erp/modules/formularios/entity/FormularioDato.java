@@ -32,4 +32,9 @@ public class FormularioDato {
 
     @Column(name = "valor", columnDefinition = "TEXT")
     private String valor;
+
+    /** Explicación de quien diligencia cuando el valor es una respuesta CRÍTICA de un campo
+     *  calificable — obligatoria para poder enviar el subproceso. null en cualquier otro caso. */
+    @Column(name = "justificacion", columnDefinition = "TEXT")
+    private String justificacion;
 }

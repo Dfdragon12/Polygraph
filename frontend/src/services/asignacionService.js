@@ -22,6 +22,12 @@ const asignacionService = {
   completar: (id) =>
     api.patch(`/gestor/asignaciones/${id}/completar`).then(r => r.data),
 
+  devolver: (id, observacion) =>
+    api.patch(`/gestor/asignaciones/${id}/devolver`, { observacion }).then(r => r.data),
+
+  aprobar: (id) =>
+    api.patch(`/gestor/asignaciones/${id}/aprobar`).then(r => r.data),
+
   desasignar: (id) =>
     api.patch(`/gestor/asignaciones/${id}/desasignar`).then(r => r.data),
 
@@ -48,6 +54,23 @@ const asignacionService = {
 
   subprocesos: () =>
     api.get('/gestor/asignaciones/subprocesos').then(r => r.data),
+
+  // Novedades del subproceso — devuelve { novedades, tipos, puedeRegistrar, puedeResolver }.
+  novedades: (id) =>
+    api.get(`/gestor/asignaciones/${id}/novedades`).then(r => r.data),
+
+  // idTipoNovedad: una opción del catálogo (viene en `tipos` de novedades()).
+  registrarNovedad: (id, idTipoNovedad, descripcion) =>
+    api.post(`/gestor/asignaciones/${id}/novedades`, { idTipoNovedad, descripcion }).then(r => r.data),
+
+  // nuevaFechaProgramada (opcional, 'YYYY-MM-DDTHH:mm'): además de cerrar la novedad, corre la
+  // hora del subproceso.
+  // marcarNoRealizado: el subproceso se cierra como "No realizado" (no penaliza en el riesgo).
+  resolverNovedad: (id, idNovedad, respuesta, nuevaFechaProgramada = null, marcarNoRealizado = false) =>
+    api.patch(`/gestor/asignaciones/${id}/novedades/${idNovedad}/resolver`, { respuesta, nuevaFechaProgramada, marcarNoRealizado }).then(r => r.data),
+
+  agregarSeguimientoNovedad: (id, idNovedad, texto) =>
+    api.post(`/gestor/asignaciones/${id}/novedades/${idNovedad}/seguimientos`, { texto }).then(r => r.data),
 }
 
 export default asignacionService

@@ -5,6 +5,7 @@ import Campana from '../Campana'
 import PanelEnlaces from '../PanelEnlaces'
 import BuscadorGlobal from '../BuscadorGlobal'
 import SidebarSeccion from './SidebarSeccion'
+import { IconoDashboard, IconoEquipo, IconoClientes, IconoSemaforo, IconoReversion, IconoCatalogo, IconoFacturacion, IconoCuenta, IconoDescuento, IconoCiudades, IconoDepartamento, IconoLlave, IconoNovedad, IconoRiesgo } from './IconosNav'
 import api from '../../services/api'
 import reversionService from '../../services/reversionService'
 import ciudadService from '../../services/ciudadService'
@@ -22,40 +23,54 @@ const SECCIONES_ADMIN = [
   {
     titulo: 'General',
     items: [
-      { ruta: '/admin/dashboard',          etiqueta: 'Dashboard',         icono: '📊' },
-      { ruta: '/admin/usuarios-internos',  etiqueta: 'Equipo Polygraph',  icono: '👥' },
-      { ruta: '/admin/clientes',           etiqueta: 'Clientes',          icono: '🏢' },
+      { ruta: '/admin/dashboard',          etiqueta: 'Dashboard',         icono: <IconoDashboard /> },
+      { ruta: '/admin/usuarios-internos',  etiqueta: 'Equipo Polygraph',  icono: <IconoEquipo /> },
+      { ruta: '/admin/clientes',           etiqueta: 'Clientes',          icono: <IconoClientes /> },
     ],
   },
   /*{
     titulo: 'Servicios',
     items: [
-      { ruta: '/admin/semaforo', etiqueta: 'Semáforo',  icono: '🚦' },
+      { ruta: '/admin/semaforo', etiqueta: 'Semáforo',  icono: <IconoSemaforo /> },
     ],
   },*/
   {
     titulo: 'Solicitudes',
     items: [
-      { ruta: '/admin/reversiones', etiqueta: 'Reversiones', icono: '↩️', badgeKey: 'reversiones' },
+      { ruta: '/admin/reversiones', etiqueta: 'Reversiones', icono: <IconoReversion />, badgeKey: 'reversiones' },
     ],
   },
   {
     titulo: 'Catálogo',
     items: [
-      { ruta: '/admin/catalogo', etiqueta: 'Catálogo', icono: '📋' },
+      { ruta: '/admin/catalogo', etiqueta: 'Catálogo', icono: <IconoCatalogo /> },
+    ],
+  },
+  {
+    titulo: 'Novedades',
+    items: [
+      { ruta: '/admin/tipos-novedad', etiqueta: 'Tipos de novedad', icono: <IconoNovedad /> },
+    ],
+  },
+  {
+    titulo: 'Calificación de riesgo',
+    items: [
+      { ruta: '/admin/riesgo/parametros', etiqueta: 'Parámetros', icono: <IconoRiesgo /> },
     ],
   },
   {
     titulo: 'Facturación',
     items: [
-      { ruta: '/admin/facturacion', etiqueta: 'Facturación', icono: '🧾' },
-      { ruta: '/admin/descuentos', etiqueta: 'Descuentos', icono: '🏷️' },
+      { ruta: '/admin/facturacion', etiqueta: 'Facturación', icono: <IconoFacturacion /> },
+      { ruta: '/admin/gestion-cuentas', etiqueta: 'Gestión de cuentas', icono: <IconoCuenta /> },
+      { ruta: '/admin/descuentos', etiqueta: 'Descuentos', icono: <IconoDescuento /> },
     ],
   },
   {
     titulo: 'Ciudades',
     items: [
-      { ruta: '/admin/ciudades', etiqueta: 'Ciudades', icono: '🗺️', badgeKey: 'ciudades' },
+      { ruta: '/admin/ciudades', etiqueta: 'Ciudades', icono: <IconoCiudades />, badgeKey: 'ciudades' },
+      { ruta: '/admin/departamentos', etiqueta: 'Departamentos', icono: <IconoDepartamento /> },
     ],
   },
 ]
@@ -69,12 +84,17 @@ const ETIQUETAS_RUTA = {
   catalogo:            'Catálogo',
   procesos:            'Procesos',
   'tipos-progreso':    'Tipos de Subproceso',
+  'tipos-novedad':     'Tipos de novedad',
+  riesgo:              'Calificación de riesgo',
+  parametros:          'Parámetros',
   semaforo:            'Semáforo de Servicios',
   candidatos:          'Candidatos',
   reversiones:         'Solicitudes de reversión',
   descuentos:          'Descuentos',
   ciudades:            'Ciudades',
+  departamentos:       'Departamentos',
   facturacion:         'Facturación',
+  'gestion-cuentas':   'Gestión de cuentas',
   ordenes:             'Órdenes de compra',
   comprobantes:        'Comprobante',
   facturas:            'Factura',
@@ -168,7 +188,7 @@ function ConfiguracionMenu() {
   }, [])
 
   const opciones = [
-    { label: 'Cambiar contraseña', icono: '🔑', accion: () => { navigate('/cambiar-password'); setAbierto(false) } },
+    { label: 'Cambiar contraseña', icono: <IconoLlave />, accion: () => { navigate('/cambiar-password'); setAbierto(false) } },
   ]
 
   return (

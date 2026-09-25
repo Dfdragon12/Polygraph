@@ -58,6 +58,12 @@ public class Cliente {
     @Column(name = "id_ciudad")
     private Integer idCiudad;
 
+    @Column(name = "id_pais")
+    private Integer idPais;
+
+    @Column(name = "id_barrio")
+    private Integer idBarrio;
+
     @Column(name = "direccion", columnDefinition = "TEXT")
     private String direccion;
 

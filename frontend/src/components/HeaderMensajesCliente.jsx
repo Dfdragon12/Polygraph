@@ -7,6 +7,7 @@ function formatHora(iso) {
   return new Date(iso).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
 }
 
+// Hilo privado: solo tú y tu gestor lo ven, ya no se comparte con el resto de tu equipo.
 export default function HeaderMensajesCliente() {
   const [abierto, setAbierto]   = useState(false)
   const [mensajes, setMensajes] = useState(null)

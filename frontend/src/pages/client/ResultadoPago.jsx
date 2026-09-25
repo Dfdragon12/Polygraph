@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom'
 import pagosService from '../../services/pagosService'
 import { formatearPrecio } from '../../utils/catalogoDisplay'
+import { useAuth } from '../../hooks/useAuth'
 
 const INTERVALO_MS = 2000
 const MAX_INTENTOS = 20
@@ -36,6 +37,7 @@ function FilaInfo({ label, valor }) {
 export default function ResultadoPago() {
   const { idOrden } = useParams()
   const navigate = useNavigate()
+  const { refrescarUsuario } = useAuth()
   // Estos vienen del redirect de Wompi (?id=...&env=...) — solo para mostrar, nunca para decidir
   // el estado del pago: eso siempre se confirma contra el backend, que a su vez lo saca del webhook.
   const [searchParams] = useSearchParams()
@@ -68,6 +70,13 @@ export default function ResultadoPago() {
     consultar()
     return () => { cancelado = true; clearTimeout(timeoutId) }
   }, [idOrden])
+
+  // Con la primera compra, el backend habilita "Solicitudes" (ver AuthService.
+  // resolverPuedeSolicitar) — sin esto, el usuario tenía que cerrar sesión y volver a entrar
+  // para verlo aparecer en el menú.
+  useEffect(() => {
+    if (orden?.estado === 'APROBADA') refrescarUsuario()
+  }, [orden?.estado, refrescarUsuario])
 
   const reintentarPago = async () => {
     setReintentando(true)

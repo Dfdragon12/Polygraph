@@ -2,9 +2,11 @@ package com.polygraph.erp.modules.catalogo.service;
 
 import com.polygraph.erp.modules.catalogo.dto.*;
 import com.polygraph.erp.modules.catalogo.entity.ClasificacionProceso;
+import com.polygraph.erp.modules.catalogo.entity.DocumentoRequeridoProceso;
 import com.polygraph.erp.modules.catalogo.entity.ProcesoTipoProgreso;
 import com.polygraph.erp.modules.catalogo.entity.TipoProgreso;
 import com.polygraph.erp.modules.catalogo.repository.ClasificacionProcesoRepository;
+import com.polygraph.erp.modules.catalogo.repository.DocumentoRequeridoProcesoRepository;
 import com.polygraph.erp.modules.catalogo.repository.ProcesoTipoProgresoRepository;
 import com.polygraph.erp.modules.catalogo.repository.TipoProgresoRepository;
 import com.polygraph.erp.modules.notificaciones.service.NotificacionService;
@@ -37,7 +39,9 @@ public class ProcesoService {
     private final TipoProgresoRepository tipoProgresoRepository;
     private final TramoPrecioProcesoRepository tramoRepository;
     private final PrecioCiudadProcesoRepository precioCiudadRepository;
+    private final DocumentoRequeridoProcesoRepository documentoRequeridoRepository;
     private final NotificacionService notificacionService;
+    private final CalificacionProcesoService calificacionProcesoService;
 
     @Transactional(readOnly = true)
     public List<ProcesoResponse> listarTodos() {
@@ -153,6 +157,7 @@ public class ProcesoService {
                 .obligatorio(req.obligatorio() != null ? req.obligatorio() : true)
                 .build();
         pasoRepository.save(paso);
+        calificacionProcesoService.trasCambioDeComposicion(proceso);
         log.info("Paso '{}' asignado al proceso '{}'", tipo.getNombreProgreso(), proceso.getNombreProceso());
         notificacionService.crearParaAdmins("CATALOGO", "Progreso asignado",
                 "\"" + tipo.getNombreProgreso() + "\" fue asignado al proceso \"" + proceso.getNombreProceso() + "\"");
@@ -163,9 +168,12 @@ public class ProcesoService {
         ProcesoTipoProgreso paso = findPaso(pasoId);
         String nombreProgreso = paso.getTipoProgreso().getNombreProgreso();
         String nombreProceso  = paso.getProceso().getNombreProceso();
+        boolean cambiaCalificacion = (req.habilitado() != null && !req.habilitado().equals(paso.getHabilitado()))
+                || (req.obligatorio() != null && !req.obligatorio().equals(paso.getObligatorio()));
         paso.setOrdenEnProceso(req.ordenEnProceso());
         if (req.habilitado() != null) paso.setHabilitado(req.habilitado());
         if (req.obligatorio() != null) paso.setObligatorio(req.obligatorio());
+        if (cambiaCalificacion) calificacionProcesoService.trasCambioDeComposicion(paso.getProceso());
         notificacionService.crearParaAdmins("CATALOGO", "Configuración de progreso actualizada",
                 "Se actualizó \"" + nombreProgreso + "\" en el proceso \"" + nombreProceso + "\"");
         return toPasoResponse(paso);
@@ -175,10 +183,83 @@ public class ProcesoService {
         ProcesoTipoProgreso paso = findPaso(pasoId);
         String nombreProgreso = paso.getTipoProgreso().getNombreProgreso();
         String nombreProceso  = paso.getProceso().getNombreProceso();
+        Proceso proceso = paso.getProceso();
         pasoRepository.delete(paso);
+        pasoRepository.flush();
+        calificacionProcesoService.trasCambioDeComposicion(proceso);
         log.info("Paso {} eliminado del proceso '{}'", nombreProgreso, nombreProceso);
         notificacionService.crearParaAdmins("CATALOGO", "Progreso removido",
                 "\"" + nombreProgreso + "\" fue removido del proceso \"" + nombreProceso + "\"");
+    }
+
+    // ---------- Documentos requeridos (qué debe subir el candidato para este proceso) ----------
+
+    @Transactional(readOnly = true)
+    public List<DocumentoRequeridoResponse> obtenerDocumentosRequeridos(Integer idProceso) {
+        findProceso(idProceso);
+        return documentoRequeridoRepository.findByProceso_IdProcesoOrderByOrdenAscNombreAsc(idProceso).stream()
+                .map(DocumentoRequeridoResponse::from)
+                .toList();
+    }
+
+    public DocumentoRequeridoResponse agregarDocumentoRequerido(Integer idProceso, DocumentoRequeridoRequest req) {
+        Proceso proceso = findProceso(idProceso);
+        String clave = claveDeRequest(req);
+        if (documentoRequeridoRepository.existsByProceso_IdProcesoAndClaveIgnoreCase(idProceso, clave)) {
+            throw new ApiException("Ya hay un documento con esa clave en este proceso", HttpStatus.CONFLICT);
+        }
+        DocumentoRequeridoProceso doc = DocumentoRequeridoProceso.builder()
+                .proceso(proceso)
+                .clave(clave)
+                .nombre(req.nombre().trim())
+                .obligatorio(req.obligatorio() == null || req.obligatorio())
+                .orden(req.orden() != null ? req.orden() : 0)
+                .build();
+        documentoRequeridoRepository.save(doc);
+        log.info("Documento requerido agregado: proceso={}, clave={}", proceso.getNombreProceso(), clave);
+        return DocumentoRequeridoResponse.from(doc);
+    }
+
+    public DocumentoRequeridoResponse actualizarDocumentoRequerido(Integer id, DocumentoRequeridoRequest req) {
+        DocumentoRequeridoProceso doc = findDocumentoRequerido(id);
+        Integer idProceso = doc.getProceso().getIdProceso();
+        String clave = claveDeRequest(req);
+        if (documentoRequeridoRepository.existsByProceso_IdProcesoAndClaveIgnoreCaseAndIdNot(idProceso, clave, id)) {
+            throw new ApiException("Ya hay un documento con esa clave en este proceso", HttpStatus.CONFLICT);
+        }
+        doc.setClave(clave);
+        doc.setNombre(req.nombre().trim());
+        if (req.obligatorio() != null) doc.setObligatorio(req.obligatorio());
+        if (req.orden() != null) doc.setOrden(req.orden());
+        log.info("Documento requerido actualizado: id={}, proceso={}", id, doc.getProceso().getNombreProceso());
+        return DocumentoRequeridoResponse.from(doc);
+    }
+
+    public void eliminarDocumentoRequerido(Integer id) {
+        DocumentoRequeridoProceso doc = findDocumentoRequerido(id);
+        log.info("Documento requerido eliminado: id={}, proceso={}", id, doc.getProceso().getNombreProceso());
+        documentoRequeridoRepository.delete(doc);
+    }
+
+    private DocumentoRequeridoProceso findDocumentoRequerido(Integer id) {
+        return documentoRequeridoRepository.findById(id)
+                .orElseThrow(() -> new ApiException("Documento requerido no encontrado", HttpStatus.NOT_FOUND));
+    }
+
+    // Si no viene una clave explícita, se deriva del nombre (minúsculas, sin tildes, espacios ->
+    // guion bajo) — el admin normalmente solo escribe el nombre visible ("Cédula por ambas caras")
+    // y no necesita pensar en un identificador técnico aparte.
+    private String claveDeRequest(DocumentoRequeridoRequest req) {
+        if (req.clave() != null && !req.clave().isBlank()) return req.clave().trim().toLowerCase();
+        String sinTildes = java.text.Normalizer.normalize(req.nombre(), java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "");
+        String clave = sinTildes.toLowerCase().trim()
+                .replaceAll("[^a-z0-9\\s_]", "")
+                .replaceAll("\\s+", "_");
+        if (clave.isBlank()) {
+            throw new ApiException("No se pudo derivar una clave válida del nombre — indícala manualmente.", HttpStatus.BAD_REQUEST);
+        }
+        return clave;
     }
 
     private ProcesoResponse toResponse(Proceso p, long totalPasos) {
@@ -190,12 +271,15 @@ public class ProcesoService {
             );
         }
         BigDecimal valorCalculado = pasoRepository.sumValorHabilitadosByProcesoId(p.getIdProceso());
+        CalificacionProcesoService.ResumenPesos pesos = calificacionProcesoService.resumen(p.getIdProceso());
         return new ProcesoResponse(
                 p.getIdProceso(), p.getNombreProceso(), p.getDescripcion(),
                 p.getActivo(), totalPasos, clsf, p.getValor(), valorCalculado,
                 p.getDiasHabilesEntrega(), listarTramos(p.getIdProceso()),
                 p.getAplicaPrecioCiudad(), listarPreciosCiudad(p.getIdProceso()),
-                separarPuntosClave(p.getPuntosClave())
+                separarPuntosClave(p.getPuntosClave()),
+                pesos.suma(), pesos.califica(), pesos.motivo(),
+                p.getCriticidadDefecto().name(), p.getCoberturaMinima()
         );
     }
 
@@ -335,6 +419,7 @@ public class ProcesoService {
                 tipo.getOrden(),
                 p.getHabilitado(),
                 p.getObligatorio(),
+                p.getPeso(),
                 Boolean.TRUE.equals(tipo.getActivo())
         );
     }

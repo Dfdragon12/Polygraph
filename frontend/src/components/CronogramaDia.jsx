@@ -33,7 +33,8 @@ const DURACION_MIN_VISUAL = 30
 
 const ESTILO_ESTADO = {
   ASIGNADO:   { borde_l: 'border-l-blue-500',    punto: 'bg-blue-500',    texto: 'text-blue-800',    fondo: 'bg-blue-50',    fondoHover: 'hover:bg-blue-100/80' },
-  COMPLETADO: { borde_l: 'border-l-emerald-500', punto: 'bg-emerald-500', texto: 'text-emerald-800', fondo: 'bg-emerald-50', fondoHover: 'hover:bg-emerald-100/80' },
+  COMPLETADO: { borde_l: 'border-l-violet-500',  punto: 'bg-violet-500',  texto: 'text-violet-800',  fondo: 'bg-violet-50',  fondoHover: 'hover:bg-violet-100/80' },
+  PUBLICADO:  { borde_l: 'border-l-emerald-500', punto: 'bg-emerald-500', texto: 'text-emerald-800', fondo: 'bg-emerald-50', fondoHover: 'hover:bg-emerald-100/80' },
   CANCELADO:  { borde_l: 'border-l-red-400',     punto: 'bg-red-400',     texto: 'text-red-700 line-through decoration-red-300', fondo: 'bg-red-50', fondoHover: 'hover:bg-red-100/70' },
 }
 const ESTILO_DEFAULT = { borde_l: 'border-l-gray-400', punto: 'bg-gray-400', texto: 'text-gray-700', fondo: 'bg-gray-50', fondoHover: 'hover:bg-gray-100' }

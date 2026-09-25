@@ -15,6 +15,8 @@ public interface ClienteRepository extends JpaRepository<Cliente, Integer> {
     Optional<Cliente> findByEmailPrincipal(String email);
     List<Cliente> findByIdGestor(Long idGestor);
 
+    long countByIdGestor(Long idGestor);
+
     /** Para el buscador global (solo ADMIN_POLYGRAPH ve clientes, ver BusquedaGlobalService) —
      *  busca por razón social, nombre comercial, nombre/apellido (persona natural), email o NIT.
      *  `patron` ya viene armado como "%texto%" en minúsculas desde el servicio — ver la nota en

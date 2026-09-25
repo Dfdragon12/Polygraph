@@ -12,12 +12,6 @@
   "categories": ["business", "productivity"],
   "icons": [
     {
-      "src": "/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any"
-    },
-    {
       "src": "/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
@@ -41,19 +35,19 @@
       "name": "Dashboard Admin",
       "short_name": "Dashboard",
       "url": "/admin/dashboard",
-      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
     },
     {
       "name": "Usuarios Internos",
       "short_name": "Usuarios",
       "url": "/admin/usuarios-internos",
-      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
     },
     {
       "name": "Clientes",
       "short_name": "Clientes",
       "url": "/admin/clientes",
-      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
     }
   ],
   "screenshots": [],

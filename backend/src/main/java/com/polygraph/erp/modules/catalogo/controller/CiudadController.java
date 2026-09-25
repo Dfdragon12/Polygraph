@@ -3,6 +3,7 @@ package com.polygraph.erp.modules.catalogo.controller;
 import com.polygraph.erp.modules.catalogo.dto.CiudadRequest;
 import com.polygraph.erp.modules.catalogo.dto.CiudadResponse;
 import com.polygraph.erp.modules.catalogo.dto.ClasificarCiudadRequest;
+import com.polygraph.erp.modules.catalogo.dto.ConfirmarCiudadRequest;
 import com.polygraph.erp.modules.catalogo.service.CiudadService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +27,9 @@ public class CiudadController {
         return ResponseEntity.ok(service.listar());
     }
 
+    // El listado de departamentos vive ahora en /api/v1/departamentos (DepartamentoController) —
+    // catálogo gestionable por admin, ya no una lista fija hardcodeada.
+
     // Público — el formulario del evaluado no tiene sesión y necesita poder agregar su ciudad
     // si no está en el catálogo.
     @PostMapping
@@ -43,8 +47,9 @@ public class CiudadController {
 
     @PatchMapping("/{id}/confirmar")
     @PreAuthorize("hasRole('ADMIN_POLYGRAPH')")
-    public ResponseEntity<CiudadResponse> confirmar(@PathVariable Integer id) {
-        return ResponseEntity.ok(service.confirmar(id));
+    public ResponseEntity<CiudadResponse> confirmar(
+            @PathVariable Integer id, @Valid @RequestBody(required = false) ConfirmarCiudadRequest req) {
+        return ResponseEntity.ok(service.confirmar(id, req));
     }
 
     @GetMapping("/pendientes/conteo")

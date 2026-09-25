@@ -84,6 +84,8 @@ public class SolicitudService {
     private final SaldoServicioClienteService saldoServicioClienteService;
     private final RecargoPendienteService recargoPendienteService;
     private final ClientePospagoService clientePospagoService;
+    private final com.polygraph.erp.modules.riesgo.service.CalificacionRiesgoService calificacionRiesgoService;
+    private final org.springframework.context.ApplicationEventPublisher eventos;
 
     public List<SolicitudDetalleResponse> crearSolicitud(SolicitudRequest request, String emailUsuario) {
         var usuario = usuarioRepository.findByEmail(emailUsuario)
@@ -324,8 +326,19 @@ public class SolicitudService {
         EstadoServicio nuevoEstado = EstadoServicio.valueOf(request.estado().toUpperCase());
         EstadoServicio estadoAnterior = servicio.getEstado();
         validarTransicion(usuario.getRol(), estadoAnterior, nuevoEstado);
+        if (nuevoEstado == EstadoServicio.PUBLICADO && estadoAnterior != EstadoServicio.PUBLICADO) {
+            // Publicar = entregar el informe: exige la decisión del gestor sobre el riesgo (si el
+            // proceso califica) y bloquea el cálculo (docs/modelo-calificacion-riesgo.md §6).
+            calificacionRiesgoService.prepararPublicacion(servicio, usuario);
+        }
 
         servicio.setEstado(nuevoEstado);
+        if (estadoAnterior == EstadoServicio.PUBLICADO && nuevoEstado != EstadoServicio.PUBLICADO) {
+            // Se devolvió un informe publicado: el riesgo se desbloquea y se recalcula después del
+            // commit (CalificacionRiesgoService.recalcular) — un error ahí no revierte el cambio.
+            eventos.publishEvent(new com.polygraph.erp.modules.riesgo.service.RecalculoRiesgoSolicitado(
+                    idServicio, usuario.getIdUsuario()));
+        }
 
         historialRepository.save(HistorialEstadoServicio.builder()
                 .servicio(servicio)
@@ -336,8 +349,50 @@ public class SolicitudService {
                 .observacion(request.observacion())
                 .build());
 
+        notificarCambioEstadoAlCliente(servicio, nuevoEstado);
+
         log.info("Estado cambiado: servicio={}, {} → {}, usuario={}",
                 idServicio, estadoAnterior, nuevoEstado, userDetails.getUsername());
+    }
+
+    /** El cliente nunca se enteraba de que su solicitud avanzó, se publicó o se canceló — tenía
+     *  que entrar a revisar manualmente. Se notifica a TODOS los usuarios de esa empresa (no solo
+     *  a quien la creó), con mensaje distinto cuando el nuevo estado es el informe final
+     *  (PUBLICADO) o una cancelación. */
+    private void notificarCambioEstadoAlCliente(Servicio servicio, EstadoServicio nuevoEstado) {
+        if (servicio.getCliente() == null) return;
+        String nombreEvaluado = servicio.getCandidato() != null
+                ? (servicio.getCandidato().getNombres() + " " + servicio.getCandidato().getApellidos()).trim()
+                : "tu solicitud #" + servicio.getIdServicio();
+
+        String titulo;
+        String mensaje;
+        if (nuevoEstado == EstadoServicio.PUBLICADO) {
+            titulo = "Informe publicado";
+            mensaje = "El informe de " + nombreEvaluado + " ya está disponible para descargar.";
+        } else if (nuevoEstado == EstadoServicio.CANCELADO) {
+            titulo = "Solicitud cancelada";
+            mensaje = "La solicitud de " + nombreEvaluado + " fue cancelada.";
+        } else if (nuevoEstado == EstadoServicio.FINALIZADO) {
+            titulo = "Estudio finalizado";
+            mensaje = "El estudio de " + nombreEvaluado + " terminó y está en revisión final.";
+        } else {
+            titulo = "Cambio de estado";
+            mensaje = "La solicitud de " + nombreEvaluado + " pasó a " + nuevoEstado.name() + ".";
+        }
+
+        usuarioRepository.findByIdCliente(servicio.getCliente().getIdCliente()).stream()
+                .filter(u -> Boolean.TRUE.equals(u.getActivo()))
+                .forEach(dest -> notificacionRepository.save(Notificacion.builder()
+                        .usuario(dest)
+                        .tipo("SOLICITUD_ESTADO")
+                        .titulo(titulo)
+                        .mensaje(mensaje)
+                        .leida(false)
+                        .fechaCreacion(LocalDateTime.now())
+                        .referenciaTipo("SERVICIO")
+                        .referenciaId(servicio.getIdServicio().longValue())
+                        .build()));
     }
 
     /**

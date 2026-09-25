@@ -3,9 +3,11 @@ package com.polygraph.erp.modules.formularios.controller;
 import com.polygraph.erp.modules.auth.entity.Usuario;
 import com.polygraph.erp.modules.auth.repository.UsuarioRepository;
 import com.polygraph.erp.modules.formularios.dto.ArchivoDescarga;
+import com.polygraph.erp.modules.formularios.dto.FichaCandidatoResponse;
 import com.polygraph.erp.modules.formularios.dto.FormularioResponse;
 import com.polygraph.erp.modules.formularios.dto.GuardarFormularioRequest;
 import com.polygraph.erp.modules.formularios.dto.ProgresoFormularioResponse;
+import com.polygraph.erp.modules.formularios.service.FichaCandidatoService;
 import com.polygraph.erp.modules.formularios.service.FormularioDocumentoService;
 import com.polygraph.erp.modules.formularios.service.FormularioService;
 import com.polygraph.erp.shared.exceptions.ApiException;
@@ -38,6 +40,7 @@ public class FormularioController {
 
     private final FormularioService service;
     private final FormularioDocumentoService documentoService;
+    private final FichaCandidatoService fichaCandidatoService;
     private final UsuarioRepository usuarioRepository;
 
     @GetMapping("/subproceso/{idServicioSubproceso}")
@@ -97,6 +100,25 @@ public class FormularioController {
     public ResponseEntity<Resource> descargarArchivo(
             @PathVariable Long idServicioSubproceso, @RequestParam String ruta, Authentication auth) {
         ArchivoDescarga descarga = service.descargarArchivo(idServicioSubproceso, ruta, resolverUsuario(auth));
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(descarga.tipoContenido()))
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment()
+                                .filename(descarga.nombreArchivo(), StandardCharsets.UTF_8)
+                                .build().toString())
+                .body(descarga.recurso());
+    }
+
+    /** Datos del candidato agrupados + soportes que cargó (cruzados con los que pide el proceso). */
+    @GetMapping("/subproceso/{idServicioSubproceso}/candidato")
+    public ResponseEntity<FichaCandidatoResponse> fichaCandidato(@PathVariable Long idServicioSubproceso, Authentication auth) {
+        return ResponseEntity.ok(fichaCandidatoService.obtener(idServicioSubproceso, resolverUsuario(auth)));
+    }
+
+    @GetMapping("/subproceso/{idServicioSubproceso}/soportes/{idDocumento}")
+    public ResponseEntity<Resource> descargarSoporte(
+            @PathVariable Long idServicioSubproceso, @PathVariable Long idDocumento, Authentication auth) {
+        ArchivoDescarga descarga = fichaCandidatoService.descargarSoporte(idServicioSubproceso, idDocumento, resolverUsuario(auth));
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(descarga.tipoContenido()))
                 .header(HttpHeaders.CONTENT_DISPOSITION,

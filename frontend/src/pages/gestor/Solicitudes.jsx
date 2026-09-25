@@ -7,9 +7,11 @@ import asignacionService from '../../services/asignacionService'
 import Toast from '../../components/Toast'
 import { Modal, ConfirmModal } from '../../components/ui/Modal'
 import Paginacion from '../../components/ui/Paginacion'
+import MenuAcciones from '../../components/ui/MenuAcciones'
 import ModalAsignarSubproceso from '../../components/ModalAsignarSubproceso'
 import ModalAsignarProgramador from '../../components/ModalAsignarProgramador'
 import CiudadSelect from '../../components/CiudadSelect'
+import RiesgoServicio from '../../components/RiesgoServicio'
 
 /* ─── Iconos de acciones de tabla ─── */
 function IconoOjo() {
@@ -64,7 +66,7 @@ const TARJETAS_ESTADO = [
   { estado: 'PROGRAMANDO',  label: 'Programando',   desc: 'En preparación',         border: 'border-blue-200',    dot: 'bg-blue-400',    texto: 'text-blue-600',    bgActivo: 'bg-blue-50/70',    ring: 'ring-blue-300' },
   { estado: 'EN_EJECUCION', label: 'En ejecución',  desc: 'Siendo trabajados',      border: 'border-primary-200', dot: 'bg-primary-400', texto: 'text-primary-600', bgActivo: 'bg-primary-50/70', ring: 'ring-primary-300' },
   { estado: 'FINALIZADO',   label: 'Finalizados',   desc: 'Listos para revisar',    border: 'border-green-200',   dot: 'bg-green-400',   texto: 'text-green-600',   bgActivo: 'bg-green-50/70',   ring: 'ring-green-300' },
-  { estado: 'PUBLICADO',    label: 'Publicados',    desc: 'Entregados',             border: 'border-cyan-200',    dot: 'bg-cyan-400',    texto: 'text-cyan-600',    bgActivo: 'bg-cyan-50/70',    ring: 'ring-cyan-300' },
+  { estado: 'PUBLICADO',    label: 'Publicados',    desc: 'Entregados',             border: 'border-emerald-200', dot: 'bg-emerald-400', texto: 'text-emerald-600', bgActivo: 'bg-emerald-50/70', ring: 'ring-emerald-300' },
   { estado: 'CANCELADO',    label: 'Cancelados',    desc: 'No activos',             border: 'border-red-200',     dot: 'bg-red-400',     texto: 'text-red-500',     bgActivo: 'bg-red-50/70',     ring: 'ring-red-300' },
   { estado: 'REPROGRAMADO', label: 'Reprogramados', desc: 'Cambiaron de fecha',     border: 'border-orange-200',  dot: 'bg-orange-400',  texto: 'text-orange-600',  bgActivo: 'bg-orange-50/70',  ring: 'ring-orange-300' },
 ]
@@ -77,7 +79,7 @@ const BADGE = {
   PROGRAMANDO:  'bg-blue-100 text-blue-700',
   EN_EJECUCION: 'bg-primary-100 text-primary-700',
   FINALIZADO:   'bg-green-100 text-green-700',
-  PUBLICADO:    'bg-cyan-100 text-cyan-700',
+  PUBLICADO:    'bg-emerald-100 text-emerald-700',
   CANCELADO:    'bg-red-100 text-red-600',
   REPROGRAMADO: 'bg-orange-100 text-orange-700',
 }
@@ -87,7 +89,7 @@ const DOT_ESTADO = {
   PROGRAMANDO:  'bg-blue-400',
   EN_EJECUCION: 'bg-primary-400',
   FINALIZADO:   'bg-green-400',
-  PUBLICADO:    'bg-cyan-400',
+  PUBLICADO:    'bg-emerald-400',
   CANCELADO:    'bg-red-400',
   REPROGRAMADO: 'bg-orange-400',
 }
@@ -152,21 +154,27 @@ function subprocesosProgramadorDe(subprocesos) {
   }
 }
 
+// Mismo semáforo que gestor/programador → Agenda: COMPLETADO en violeta ("por revisar", el
+// gestor todavía no lo aprueba) y PUBLICADO es el único verde de verdad. Antes PUBLICADO ni
+// siquiera estaba en este mapa — un subproceso ya aprobado desaparecía de esta cuenta en vez de
+// solo verse con el color equivocado.
 const BADGE_SUBPROCESO = {
   PENDIENTE:  'bg-amber-100 text-amber-700',
   ASIGNADO:   'bg-blue-100 text-blue-700',
-  COMPLETADO: 'bg-green-100 text-green-700',
+  COMPLETADO: 'bg-violet-100 text-violet-700',
+  PUBLICADO:  'bg-emerald-100 text-emerald-700',
   CANCELADO:  'bg-red-100 text-red-600',
 }
 
 const DOT_SUBPROCESO = {
   PENDIENTE:  'bg-amber-400',
   ASIGNADO:   'bg-blue-400',
-  COMPLETADO: 'bg-green-400',
+  COMPLETADO: 'bg-violet-400',
+  PUBLICADO:  'bg-emerald-400',
   CANCELADO:  'bg-red-400',
 }
 
-const ORDEN_ESTADOS_SUBPROCESO = ['PENDIENTE', 'ASIGNADO', 'COMPLETADO', 'CANCELADO']
+const ORDEN_ESTADOS_SUBPROCESO = ['PENDIENTE', 'ASIGNADO', 'COMPLETADO', 'PUBLICADO', 'CANCELADO']
 
 function BolitasSubprocesos({ subprocesos }) {
   if (!subprocesos?.length) return <span className="text-gray-300 text-xs">—</span>
@@ -189,11 +197,16 @@ function BolitasSubprocesos({ subprocesos }) {
 }
 
 /* ─── Fila desplegable: subprocesos reales del servicio (con tiempo estimado) ─── */
-function FilaSubprocesos({ idServicio, colSpan, onToast }) {
+function FilaSubprocesos({ idServicio, colSpan, onToast, candidatoCompletado }) {
   const [subprocesos, setSubprocesos] = useState(null)
   const [error, setError] = useState(false)
   const [seleccionado, setSeleccionado] = useState(null)
   const [asignandoProgramadorDe, setAsignandoProgramadorDe] = useState(null)
+  // false = el candidato todavía no diligenció su link — null/true no restringen (ver
+  // SolicitudGestorResponse.candidatoCompletado). El backend igual lo bloquearía (409); esto solo
+  // evita el intento fallido y explica el motivo de una vez con el tooltip.
+  const bloqueadoPorCandidato = candidatoCompletado === false
+  const tituloBloqueo = 'El candidato todavía no ha diligenciado su información (link pendiente).'
 
   const cargar = useCallback(() => {
     asignacionService.listar({ idServicio, size: 50 })
@@ -238,8 +251,12 @@ function FilaSubprocesos({ idServicio, colSpan, onToast }) {
                     <div className="flex items-center gap-2 flex-shrink-0">
                       {(sp.estado === 'PENDIENTE' || sp.estado === 'ASIGNADO') && (
                         <button type="button" onClick={() => setAsignandoProgramadorDe(sp)}
-                          title="Elegir a qué programador encargarle esto"
-                          className="text-[10px] font-medium text-primary-600 hover:text-primary-800 hover:underline whitespace-nowrap">
+                          disabled={sp.estado === 'PENDIENTE' && bloqueadoPorCandidato}
+                          title={sp.estado === 'PENDIENTE' && bloqueadoPorCandidato ? tituloBloqueo : 'Elegir a qué programador encargarle esto'}
+                          className={`text-[10px] font-medium whitespace-nowrap ${
+                            sp.estado === 'PENDIENTE' && bloqueadoPorCandidato
+                              ? 'text-gray-300 cursor-not-allowed'
+                              : 'text-primary-600 hover:text-primary-800 hover:underline'}`}>
                           {sp.nombreProgramadorResponsable ? 'Reasignar programador' : 'Asignar programador'}
                         </button>
                       )}
@@ -250,9 +267,17 @@ function FilaSubprocesos({ idServicio, colSpan, onToast }) {
                   </div>
                 )
               }
+              // Solo se bloquea el intento de ASIGNAR (subproceso todavía PENDIENTE) — uno ya
+              // asignado/completado sigue abriendo el modal normalmente (completar, aprobar, etc.),
+              // esta regla no aplica ahí.
+              const bloqueado = sp.estado === 'PENDIENTE' && bloqueadoPorCandidato
               return (
-                <button key={sp.id} onClick={() => setSeleccionado(sp)}
-                  className="flex items-center justify-between gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2 text-left hover:border-primary-300 hover:shadow-sm transition-all">
+                <button key={sp.id} onClick={() => { if (!bloqueado) setSeleccionado(sp) }}
+                  disabled={bloqueado} title={bloqueado ? tituloBloqueo : undefined}
+                  className={`flex items-center justify-between gap-2 border rounded-lg px-3 py-2 text-left transition-all ${
+                    bloqueado
+                      ? 'bg-gray-50 border-gray-100 opacity-70 cursor-not-allowed'
+                      : 'bg-white border-gray-200 hover:border-primary-300 hover:shadow-sm'}`}>
                   <div className="min-w-0">
                     <p className="text-xs font-medium text-gray-800 truncate">{sp.subproceso}</p>
                     <p className="text-[11px] text-gray-400 truncate">
@@ -1176,7 +1201,7 @@ function SeccionCandidato({ detalle, onCiudadCorregida }) {
           </div>
           <div className="px-6 pb-5 flex justify-end gap-3">
             <button type="button" onClick={() => setEditandoCiudad(false)} disabled={guardandoCiudad}
-              className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+              className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 border border-gray-200 rounded-lg hover:bg-gray-50/70 transition-colors">
               Cancelar
             </button>
             <button type="button" onClick={guardarCiudad} disabled={guardandoCiudad}
@@ -1305,6 +1330,7 @@ const TABS_DETALLE = [
   { key: 'informacion',  label: 'Información básica', icono: '🧾' },
   { key: 'programacion', label: 'Programación',       icono: '🗓️' },
   { key: 'link',         label: 'Link',               icono: '🔗' },
+  { key: 'riesgo',       label: 'Riesgo',             icono: '🛡️' },
   { key: 'historial',    label: 'Historial',          icono: '🕒' },
 ]
 
@@ -1378,6 +1404,8 @@ function ModalDetalle({ solicitud, onClose, onToast }) {
 
               {tab === 'link' && <SeccionLink idServicio={solicitud.idServicio} onToast={onToast} />}
 
+              {tab === 'riesgo' && <RiesgoServicio idServicio={solicitud.idServicio} onToast={onToast} />}
+
               {tab === 'historial' && (
                 numHistorial === 0 ? (
                   <p className="text-sm text-gray-400 text-center py-8">Sin historial de cambios registrado.</p>
@@ -1415,7 +1443,7 @@ function ModalDetalle({ solicitud, onClose, onToast }) {
         )}
 
         <div className="px-6 py-4 border-t border-gray-100 sticky bottom-0 bg-white">
-          <button onClick={onClose} className="w-full py-2 text-sm text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">Cerrar</button>
+          <button onClick={onClose} className="w-full py-2 text-sm text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50/70 transition-colors">Cerrar</button>
         </div>
       </>
     </Modal>
@@ -1575,7 +1603,7 @@ export default function Solicitudes() {
       </div>
 
       {/* ── Tabla ── */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl ring-1 ring-gray-900/5 shadow-sm overflow-hidden">
         {cargando ? (
           <div className="flex justify-center py-16">
             <div className="animate-spin rounded-full h-8 w-8 border-4 border-primary-600 border-t-transparent" />
@@ -1585,17 +1613,17 @@ export default function Solicitudes() {
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-100">
-              <thead className="bg-gray-50">
+              <thead className="bg-gray-50/80">
                 <tr>
-                  {['#', 'Evaluado', 'Cargo', 'Proceso', 'Estado', 'Solicitud', 'Entrega', 'Subprocesos', 'Acciones'].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                  {['#', 'Evaluado', 'Cargo', 'Proceso', 'Estado', 'Fechas', 'Subprocesos', '···'].map(h => (
+                    <th key={h} className="px-4 py-3 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {solicitudesFiltradas.map(s => (
                   <Fragment key={s.idServicio}>
-                  <tr className="hover:bg-gray-50 transition-colors">
+                  <tr className="hover:bg-gray-50/70 transition-colors">
                     <td className="px-4 py-3 text-xs text-gray-400">
                       <button onClick={() => toggleExpandir(s.idServicio)}
                         className="flex items-center gap-1.5 hover:text-primary-600 transition-colors">
@@ -1615,53 +1643,49 @@ export default function Solicitudes() {
                       <span className="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded whitespace-nowrap">{s.proceso}</span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap ${BADGE[s.estado] ?? 'bg-gray-100 text-gray-600'}`}>
+                      <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap ${BADGE[s.estado] ?? 'bg-gray-100 text-gray-600'}`}>
+                        <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
                         {s.estado}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{formatFecha(s.fechaSolicitud)}</td>
-                    <td className="px-4 py-3 text-xs whitespace-nowrap"><EtiquetaEntrega fecha={s.fechaEntregaEstimada} /></td>
+                    <td className="px-4 py-3 text-xs whitespace-nowrap">
+                      <div className="grid grid-cols-[3.2rem_auto] gap-x-1.5 gap-y-0.5 items-center">
+                        <span className="text-gray-400">Sol.</span><span className="text-gray-600">{formatFecha(s.fechaSolicitud)}</span>
+                        <span className="text-gray-400">Entr.</span><span><EtiquetaEntrega fecha={s.fechaEntregaEstimada} /></span>
+                      </div>
+                    </td>
                     <td className="px-4 py-3"><BolitasSubprocesos subprocesos={s.subprocesos} /></td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => setDetalle(s)} title="Ver"
-                          className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-slate-800 transition-colors">
-                          <IconoOjo />
-                        </button>
-                        {(() => {
+                    <td className="px-4 py-3 text-center">
+                      <MenuAcciones opciones={[
+                        { label: 'Ver', icono: <IconoOjo />, onClick: () => setDetalle(s) },
+                        (() => {
                           const { hayAlgunos, todosAsignados } = subprocesosProgramadorDe(s.subprocesos)
                           if (!hayAlgunos) return null
-                          return (
-                            <button onClick={() => abrirAsignarProgramador(s.idServicio)}
-                              disabled={cargandoPendientesId === s.idServicio}
-                              title={todosAsignados ? 'Programador ya asignado — reasignar' : 'Asignar programador'}
-                              className={`p-1.5 rounded-lg transition-colors disabled:opacity-40 ${
-                                todosAsignados
-                                  ? 'text-green-600 hover:bg-green-50 hover:text-green-800'
-                                  : 'text-cyan-600 hover:bg-cyan-50 hover:text-cyan-800'
-                              }`}>
-                              {cargandoPendientesId === s.idServicio
-                                ? <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                                : (todosAsignados ? <IconoAsignado /> : <IconoEnviar />)}
-                            </button>
-                          )
-                        })()}
-                        {(TRANSICIONES_GESTOR[s.estado]?.length ?? 0) > 0 && (
-                          <button onClick={() => setCambiandoEstado(s)}
-                            title={s.estado === 'CANCELADO' ? 'Solicitar reversión' : 'Cambiar estado'}
-                            className={`p-1.5 rounded-lg transition-colors ${
-                              s.estado === 'CANCELADO'
-                                ? 'text-amber-600 hover:bg-amber-50 hover:text-amber-800'
-                                : 'text-primary-600 hover:bg-primary-50 hover:text-primary-800'
-                            }`}>
-                            <IconoCambioEstado />
-                          </button>
-                        )}
-                      </div>
+                          const cargando = cargandoPendientesId === s.idServicio
+                          // candidatoCompletado === false: el candidato todavía no diligenció su
+                          // link — el backend igual lo bloquearía (409), pero se deshabilita acá
+                          // para que el gestor no intente y reciba el motivo de una vez.
+                          const bloqueadoPorCandidato = s.candidatoCompletado === false
+                          return {
+                            label: cargando ? 'Cargando...' : (todosAsignados ? 'Programador ya asignado — reasignar' : 'Asignar programador'),
+                            icono: todosAsignados ? <IconoAsignado /> : <IconoEnviar />,
+                            destacado: todosAsignados ? 'text-green-600' : 'text-cyan-600',
+                            disabled: cargando || bloqueadoPorCandidato,
+                            title: bloqueadoPorCandidato ? 'El candidato todavía no ha diligenciado su información (link pendiente).' : undefined,
+                            onClick: () => abrirAsignarProgramador(s.idServicio),
+                          }
+                        })(),
+                        (TRANSICIONES_GESTOR[s.estado]?.length ?? 0) > 0 && {
+                          label: s.estado === 'CANCELADO' ? 'Solicitar reversión' : 'Cambiar estado',
+                          icono: <IconoCambioEstado />,
+                          destacado: s.estado === 'CANCELADO' ? 'text-amber-600' : 'text-primary-600',
+                          onClick: () => setCambiandoEstado(s),
+                        },
+                      ]} />
                     </td>
                   </tr>
                   {expandidos.has(s.idServicio) && (
-                    <FilaSubprocesos idServicio={s.idServicio} colSpan={9}
+                    <FilaSubprocesos idServicio={s.idServicio} colSpan={8} candidatoCompletado={s.candidatoCompletado}
                       onToast={(mensaje, tipo = 'exito') => setToast({ mensaje, tipo: tipo === 'error' ? 'error' : 'exito' })} />
                   )}
                   </Fragment>

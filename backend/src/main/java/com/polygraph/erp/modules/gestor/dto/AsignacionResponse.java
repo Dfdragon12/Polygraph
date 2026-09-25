@@ -27,6 +27,9 @@ public record AsignacionResponse(
         LocalDateTime fechaProgramada,
         LocalDateTime fechaAsignacion,
         LocalDateTime fechaCompletado,
+        // Cuándo se aprobó (pasó a PUBLICADO) — distinto de fechaCompletado, casi nunca el mismo
+        // momento. Ver ServicioSubproceso.fechaPublicado.
+        LocalDateTime fechaPublicado,
         // Fecha de entrega prometida al cliente para TODO el servicio (calculada una vez al crear
         // la solicitud, ver DiasHabilesService) — igual para todos los subprocesos de un mismo
         // Servicio, no es específica de este subproceso puntual.

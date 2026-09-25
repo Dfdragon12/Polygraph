@@ -30,8 +30,5 @@ public record RegistroJuridicaRequest(
         String password,
 
         @Size(max = 20)
-        String telefono,
-
-        @NotBlank(message = "El tipo de cliente es requerido")
-        String tipoCliente
+        String telefono
 ) {}

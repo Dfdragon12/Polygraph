@@ -14,20 +14,20 @@ import java.util.Optional;
 
 public interface MensajeClienteGestorRepository extends JpaRepository<MensajeClienteGestor, Long> {
 
-    List<MensajeClienteGestor> findByCliente_IdClienteAndFechaExpiracionAfterOrderByFechaEnvioAsc(
-            Integer idCliente, LocalDateTime ahora);
+    List<MensajeClienteGestor> findByUsuarioCliente_IdUsuarioAndFechaExpiracionAfterOrderByFechaEnvioAsc(
+            Long idUsuarioCliente, LocalDateTime ahora);
 
-    Optional<MensajeClienteGestor> findTopByCliente_IdClienteAndFechaExpiracionAfterOrderByFechaEnvioDesc(
-            Integer idCliente, LocalDateTime ahora);
+    Optional<MensajeClienteGestor> findTopByUsuarioCliente_IdUsuarioAndFechaExpiracionAfterOrderByFechaEnvioDesc(
+            Long idUsuarioCliente, LocalDateTime ahora);
 
-    long countByCliente_IdClienteAndOrigenAndLeidoFalseAndFechaExpiracionAfter(
-            Integer idCliente, OrigenMensaje origen, LocalDateTime ahora);
+    long countByUsuarioCliente_IdUsuarioAndOrigenAndLeidoFalseAndFechaExpiracionAfter(
+            Long idUsuarioCliente, OrigenMensaje origen, LocalDateTime ahora);
 
     @Modifying
     @Transactional
     @Query("update MensajeClienteGestor m set m.leido = true " +
-           "where m.cliente.idCliente = :idCliente and m.origen = :origen and m.leido = false")
-    int marcarLeidos(@Param("idCliente") Integer idCliente, @Param("origen") OrigenMensaje origen);
+           "where m.usuarioCliente.idUsuario = :idUsuarioCliente and m.origen = :origen and m.leido = false")
+    int marcarLeidos(@Param("idUsuarioCliente") Long idUsuarioCliente, @Param("origen") OrigenMensaje origen);
 
     int deleteByFechaExpiracionBefore(LocalDateTime ahora);
 }

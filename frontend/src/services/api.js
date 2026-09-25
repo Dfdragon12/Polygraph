@@ -43,6 +43,11 @@ function renovarSesion() {
         .then(({ data }) => {
           localStorage.setItem('token', data.token)
           localStorage.setItem('refreshToken', data.refreshToken)
+          // El backend recalcula puedeSolicitar/tipoCliente en cada refresh — se guarda también
+          // acá para que ese dato no quede pegado al valor del login original (ver AuthContext,
+          // que escucha este evento para refrescar su estado sin recargar la página).
+          localStorage.setItem('usuario', JSON.stringify(data.usuario))
+          window.dispatchEvent(new Event('usuario-refrescado'))
           return data.token
         })
     }

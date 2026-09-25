@@ -53,6 +53,21 @@ const pagosService = {
     return data
   },
 
+  async adminListarSinFacturar(params = {}) {
+    const { data } = await api.get('/admin/ordenes/sin-facturar', { params })
+    return data
+  },
+
+  async adminResumenPagos() {
+    const { data } = await api.get('/admin/ordenes/resumen')
+    return data
+  },
+
+  async adminObtenerOrden(idOrden) {
+    const { data } = await api.get(`/admin/ordenes/${idOrden}`)
+    return data
+  },
+
   async adminGenerarComprobante(idOrden) {
     const { data } = await api.post(`/admin/ordenes/${idOrden}/comprobante`)
     return data

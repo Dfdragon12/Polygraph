@@ -39,7 +39,8 @@ function yaPaso(iso) {
 const BADGE_ESTADO = {
   PENDIENTE:  'bg-amber-100 text-amber-700',
   ASIGNADO:   'bg-blue-100 text-blue-700',
-  COMPLETADO: 'bg-green-100 text-green-700',
+  COMPLETADO: 'bg-violet-100 text-violet-700',
+  PUBLICADO:  'bg-emerald-100 text-emerald-700',
   CANCELADO:  'bg-red-100 text-red-600',
 }
 
@@ -47,8 +48,11 @@ const DOT_ACCION = {
   ASIGNADO:    'bg-blue-400',
   REASIGNADO:  'bg-indigo-400',
   DESASIGNADO: 'bg-amber-400',
-  COMPLETADO:  'bg-green-400',
+  COMPLETADO:  'bg-violet-400',
+  DEVUELTO:    'bg-amber-400',
+  PUBLICADO:   'bg-emerald-400',
   CANCELADO:   'bg-red-400',
+  REPROGRAMADO: 'bg-sky-400',
 }
 
 // Confirmación de asistencia — solo aplica a poligrafía/visita (trabajo presencial, hay que
@@ -100,6 +104,8 @@ function describirEvento(h) {
       return `Marcado como completado (asignado a ${nombreCorto(h.usuarioNuevoNombre)})`
     case 'CANCELADO':
       return `Cancelado${h.usuarioNuevoNombre ? ` (estaba con ${nombreCorto(h.usuarioNuevoNombre)})` : ''}`
+    case 'REPROGRAMADO':
+      return `Reprogramado${fechaAnt ? ` de ${fechaAnt}` : ''}${fechaNueva ? ` a ${fechaNueva}` : ''}${h.observaciones ? ` — ${h.observaciones}` : ''}`
     default:
       return h.accion
   }

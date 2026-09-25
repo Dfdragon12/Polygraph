@@ -1,6 +1,9 @@
 package com.polygraph.erp.modules.gestor.controller;
 
 import com.polygraph.erp.modules.auth.repository.UsuarioRepository;
+import com.polygraph.erp.modules.clientes.dto.ClienteAdminResponse;
+import com.polygraph.erp.modules.clientes.dto.CrearUsuarioPropioRequest;
+import com.polygraph.erp.modules.clientes.service.ClienteAdminService;
 import com.polygraph.erp.modules.gestor.dto.ConteoEstadosResponse;
 import com.polygraph.erp.modules.gestor.dto.GestorDashboardResponse;
 import com.polygraph.erp.modules.gestor.service.GestorService;
@@ -24,6 +27,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/v1/gestor")
 @RequiredArgsConstructor
@@ -34,6 +39,7 @@ public class GestorController {
     private final SolicitudService solicitudService;
     private final ReversionSolicitudService reversionSolicitudService;
     private final UsuarioRepository usuarioRepository;
+    private final ClienteAdminService clienteAdminService;
 
     @GetMapping("/dashboard")
     public ResponseEntity<GestorDashboardResponse> dashboard(Authentication auth) {
@@ -96,5 +102,23 @@ public class GestorController {
             @RequestParam(required = false) String q,
             @PageableDefault(size = 20) Pageable pageable) {
         return ResponseEntity.ok(reversionSolicitudService.listar(estado, q, pageable));
+    }
+
+    /** Cuando un cliente ya llegó al tope de autoservicio (ClienteAdminService.
+     *  MAX_ANALISTAS_CLIENTE) y le escribe al gestor pidiendo un usuario adicional — el gestor se
+     *  lo crea sin tope, para su propio cliente asignado. */
+    @GetMapping("/clientes/{idCliente}/usuarios")
+    public ResponseEntity<List<ClienteAdminResponse.UsuarioAsociado>> usuariosDeCliente(
+            @PathVariable Integer idCliente, Authentication auth) {
+        return ResponseEntity.ok(clienteAdminService.listarUsuariosComoGestor(idCliente, resolverIdGestor(auth)));
+    }
+
+    @PostMapping("/clientes/{idCliente}/usuarios")
+    public ResponseEntity<ClienteAdminResponse.UsuarioAsociado> crearUsuarioDeCliente(
+            @PathVariable Integer idCliente,
+            @Valid @RequestBody CrearUsuarioPropioRequest request,
+            Authentication auth) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(clienteAdminService.crearUsuarioComoGestor(idCliente, resolverIdGestor(auth), request));
     }
 }

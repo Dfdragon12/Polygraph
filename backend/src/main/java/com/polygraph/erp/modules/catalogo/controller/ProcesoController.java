@@ -1,6 +1,7 @@
 package com.polygraph.erp.modules.catalogo.controller;
 
 import com.polygraph.erp.modules.catalogo.dto.*;
+import com.polygraph.erp.modules.catalogo.service.CalificacionProcesoService;
 import com.polygraph.erp.modules.catalogo.service.ProcesoService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +19,7 @@ import java.util.List;
 public class ProcesoController {
 
     private final ProcesoService service;
+    private final CalificacionProcesoService calificacionProcesoService;
 
     @GetMapping
     public ResponseEntity<List<ProcesoResponse>> listar() {
@@ -50,6 +52,18 @@ public class ProcesoController {
     @PatchMapping("/{id}/desactivar")
     public ResponseEntity<ProcesoResponse> desactivar(@PathVariable Integer id) {
         return ResponseEntity.ok(service.cambiarEstado(id, false));
+    }
+
+    /** Pesos de riesgo por subproceso, obligatorios, cobertura mínima y criticidad por defecto. */
+    @GetMapping("/{id}/calificacion")
+    public ResponseEntity<CalificacionProcesoResponse> obtenerCalificacion(@PathVariable Integer id) {
+        return ResponseEntity.ok(calificacionProcesoService.obtener(id));
+    }
+
+    @PutMapping("/{id}/calificacion")
+    public ResponseEntity<CalificacionProcesoResponse> guardarCalificacion(
+            @PathVariable Integer id, @Valid @RequestBody GuardarCalificacionProcesoRequest req) {
+        return ResponseEntity.ok(calificacionProcesoService.guardar(id, req));
     }
 
     @GetMapping("/{id}/pasos")
@@ -119,5 +133,31 @@ public class ProcesoController {
             @PathVariable Integer id,
             @Valid @RequestBody List<PrecioCiudadRequest> items) {
         return ResponseEntity.ok(service.guardarPreciosCiudad(id, items));
+    }
+
+    // Documentos que el candidato debe subir para este proceso — el candidato mismo los recibe
+    // embebidos en LinkValidacionResponse (ver EvaluadoService.validarLink), no por acá: esto es
+    // solo para que el admin los configure.
+    @GetMapping("/{id}/documentos")
+    public ResponseEntity<List<DocumentoRequeridoResponse>> obtenerDocumentosRequeridos(@PathVariable Integer id) {
+        return ResponseEntity.ok(service.obtenerDocumentosRequeridos(id));
+    }
+
+    @PostMapping("/{id}/documentos")
+    public ResponseEntity<DocumentoRequeridoResponse> agregarDocumentoRequerido(
+            @PathVariable Integer id, @Valid @RequestBody DocumentoRequeridoRequest req) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.agregarDocumentoRequerido(id, req));
+    }
+
+    @PutMapping("/{id}/documentos/{docId}")
+    public ResponseEntity<DocumentoRequeridoResponse> actualizarDocumentoRequerido(
+            @PathVariable Integer id, @PathVariable Integer docId, @Valid @RequestBody DocumentoRequeridoRequest req) {
+        return ResponseEntity.ok(service.actualizarDocumentoRequerido(docId, req));
+    }
+
+    @DeleteMapping("/{id}/documentos/{docId}")
+    public ResponseEntity<Void> eliminarDocumentoRequerido(@PathVariable Integer id, @PathVariable Integer docId) {
+        service.eliminarDocumentoRequerido(docId);
+        return ResponseEntity.noContent().build();
     }
 }

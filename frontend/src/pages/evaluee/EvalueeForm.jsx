@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import evaluadoService from '../../services/evaluadoService'
 import WorkTimeline from '../../components/WorkTimeline'
 import CiudadSelect from '../../components/CiudadSelect'
+import BarrioSelect from '../../components/BarrioSelect'
 
 const PASOS = ['Autorización', 'Datos personales', 'Educación', 'Experiencia laboral', 'Referencias', 'Documentos', 'Revisión']
 
@@ -18,28 +19,6 @@ const CATEGORIAS_EDUCATIVAS = Object.keys(NIVELES_EDUCATIVOS)
 function categoriaDeNivel(nivel) {
   return CATEGORIAS_EDUCATIVAS.find((cat) => NIVELES_EDUCATIVOS[cat].includes(nivel)) || ''
 }
-
-// Documentos por servicio — se seleccionan mediante coincidencia de palabras clave en el nombre del servicio
-const DOCS_CONFIG = [
-  { id: 'cedula', nombre: 'Cédula por ambas caras', obligatorio: true,
-    palabrasClave: ['antecedentes', 'estudio de seguridad', 'estudio básico'] },
-  { id: 'acta_diploma', nombre: 'Acta o diploma del último estudio', obligatorio: true,
-    palabrasClave: ['validación académica', 'estudio de seguridad'] },
-  { id: 'certificados_laborales', nombre: 'Certificados laborales', obligatorio: true,
-    palabrasClave: ['validación laboral', 'estudio de seguridad'] },
-  { id: 'sabana_pensional', nombre: 'Sábana pensional', obligatorio: true,
-    palabrasClave: ['validación laboral'] },
-  { id: 'hoja_vida', nombre: 'Hoja de vida actualizada', obligatorio: true,
-    palabrasClave: ['visita domiciliaria', 'estudio de seguridad'] },
-  { id: 'autorizacion_datos', nombre: 'Autorización manejo de datos', obligatorio: false,
-    palabrasClave: ['estudio de seguridad'] },
-  { id: 'libreta_militar', nombre: 'Libreta militar (si aplica)', obligatorio: false,
-    palabrasClave: ['estudio de seguridad'] },
-  { id: 'referencias_doc', nombre: 'Referencias personales (formulario)', obligatorio: false,
-    palabrasClave: ['estudio de seguridad'] },
-  { id: 'autorizacion_poligrafo', nombre: 'Autorización de polígrafo firmada', obligatorio: true,
-    palabrasClave: ['polígrafo', 'poligrafo', 'poligrafía', 'poligrafias'] },
-]
 
 const inputCls = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none transition-shadow'
 const selectCls = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none bg-white transition-shadow'
@@ -101,7 +80,7 @@ function EvalueeForm() {
     estadoCivil: '', rh: '', nivelEducativo: '',
     libretaMilitar: '', visa: '', pasaporte: '',
     fondoPensiones: '', eps: '',
-    estrato: '', barrio: '', direccion: '',
+    estrato: '', barrio: '', idBarrio: null, direccion: '',
     telefonoFijo: '', celular: '', email: '',
     educacion: [],
     experienciaLaboral: [],
@@ -112,16 +91,12 @@ function EvalueeForm() {
   const [justificaciones, setJustificaciones] = useState({}) // { 'fechaInicio_fechaFin': string }
   const [archivos, setArchivos] = useState({}) // { docId: { idDocumento, nombreArchivo, subiendo, error } }
 
-  // Documentos requeridos según el proceso del evaluado
+  // Documentos requeridos según el proceso del evaluado — configurados por admin en
+  // admin/catálogo → editar proceso (ver ProcesoService.obtenerDocumentosRequeridos), ya vienen
+  // resueltos desde el backend en validarLink(). `clave` hace de identificador estable (lo que se
+  // manda como tipoDocumento al subir el archivo), igual que antes usaba `id`.
   const documentosRequeridos = useMemo(() => {
-    if (!info?.proceso) {
-      // Sin información de proceso: mostrar todos como opcionales
-      return DOCS_CONFIG.map(d => ({ ...d, obligatorio: false }))
-    }
-    const procesoLower = info.proceso.toLowerCase()
-    return DOCS_CONFIG.filter(doc =>
-      doc.palabrasClave.some(kw => procesoLower.includes(kw))
-    )
+    return (info?.documentosRequeridos ?? []).map(d => ({ id: d.clave, nombre: d.nombre, obligatorio: !!d.obligatorio }))
   }, [info])
 
   const docsObligatoriosPendientes = documentosRequeridos.filter(d => d.obligatorio && !archivos[d.id]?.idDocumento)
@@ -171,6 +146,7 @@ function EvalueeForm() {
           nivelEducativo: data.nivelEducativo ?? '',
           direccion: data.direccion ?? '',
           barrio: data.barrio ?? '',
+          idBarrio: data.idBarrio ?? null,
           estrato: data.estrato ?? '',
           email: data.email ?? '',
           celular: data.celular ?? '',
@@ -547,7 +523,8 @@ function EvalueeForm() {
                   </select>
                 </Campo>
                 <Campo label="Barrio de residencia" requerido>
-                  <input type="text" className={inputCls} value={form.barrio || ''} onChange={f('barrio')} />
+                  <BarrioSelect idCiudad={form.idCiudadResidencia} value={form.idBarrio}
+                    onChange={(idBarrio, nombre) => setForm(p => ({ ...p, idBarrio, barrio: nombre }))} />
                 </Campo>
                 <Campo label="Libreta militar">
                   <input type="text" className={inputCls} value={form.libretaMilitar || ''} onChange={f('libretaMilitar')} />

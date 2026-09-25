@@ -284,6 +284,12 @@ public class CandidatoHojaVidaService {
                         candidato.getIdCandidato(), actor.getIdUsuario())) {
             throw new ApiException("No tienes ningún servicio asignado de este candidato.", HttpStatus.FORBIDDEN);
         }
+        // GESTOR: solo candidatos de sus clientes (ver AccesoGestor, corregido 25-sep-2026).
+        if (actor.getRol() == com.polygraph.erp.shared.enums.Rol.GESTOR
+                && !servicioSubprocesoRepository.existsByServicio_Candidato_IdCandidatoAndServicio_Cliente_IdGestor(
+                        candidato.getIdCandidato(), actor.getIdUsuario())) {
+            throw new ApiException("Este candidato es de un cliente que no gestionas.", HttpStatus.FORBIDDEN);
+        }
     }
 
     private List<Long> idsExistentesDe(String clave, HojaVidaEvaluado hv) {

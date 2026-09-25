@@ -39,13 +39,23 @@ const pospagoService = {
     return data
   },
 
+  async adminPendientesGlobal() {
+    const { data } = await api.get('/admin/pospago/pendientes')
+    return data
+  },
+
+  async adminResumenFacturas() {
+    const { data } = await api.get('/admin/pospago/facturas/resumen')
+    return data
+  },
+
   async adminFacturasDelCliente(idCliente) {
     const { data } = await api.get(`/admin/pospago/clientes/${idCliente}/facturas`)
     return data
   },
 
-  async adminGenerarFactura(idCliente, fechaVencimiento) {
-    const { data } = await api.post(`/admin/pospago/clientes/${idCliente}/facturas`, { fechaVencimiento })
+  async adminGenerarFactura(idCliente, fechaVencimiento, idsMovimientos) {
+    const { data } = await api.post(`/admin/pospago/clientes/${idCliente}/facturas`, { fechaVencimiento, idsMovimientos })
     return data
   },
 

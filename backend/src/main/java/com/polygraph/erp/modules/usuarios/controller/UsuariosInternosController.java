@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -50,8 +51,8 @@ public class UsuariosInternosController {
      *  cambio de contraseña. */
     @PatchMapping("/{id}/password")
     public ResponseEntity<UsuarioInternoResponse> cambiarPassword(
-            @PathVariable Long id, @Valid @RequestBody CambiarPasswordUsuarioInternoRequest request) {
-        return ResponseEntity.ok(service.cambiarPassword(id, request.password()));
+            @PathVariable Long id, @Valid @RequestBody CambiarPasswordUsuarioInternoRequest request, Authentication auth) {
+        return ResponseEntity.ok(service.cambiarPassword(id, request.password(), request.claveAdmin(), auth.getName()));
     }
 
     @PatchMapping("/{id}/activar")

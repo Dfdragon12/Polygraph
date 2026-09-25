@@ -18,10 +18,12 @@ import PoligrafistLayout from './components/layout/PoligrafistLayout'
 import VisitadorLayout   from './components/layout/VisitadorLayout'
 
 // Páginas públicas
-import Login           from './pages/Login'
-import Register        from './pages/Register'
-import EvalueeForm     from './pages/evaluee/EvalueeForm'
-import CambiarPassword from './pages/CambiarPassword'
+import Login             from './pages/Login'
+import Register          from './pages/Register'
+import EvalueeForm       from './pages/evaluee/EvalueeForm'
+import CambiarPassword   from './pages/CambiarPassword'
+import RecuperarPassword from './pages/RecuperarPassword'
+import ResetPassword     from './pages/ResetPassword'
 
 // Portal cliente
 import Dashboard        from './pages/client/Dashboard'
@@ -31,6 +33,7 @@ import BulkUpload       from './pages/client/BulkUpload'
 import Solicitudes      from './pages/client/Solicitudes'
 import SolicitudDetalle from './pages/client/SolicitudDetalle'
 import Documentos       from './pages/client/Documentos'
+import MiEquipo         from './pages/client/MiEquipo'
 import ComprarServicios from './pages/client/ComprarServicios'
 import SimuladorPago    from './pages/client/SimuladorPago'
 import ResultadoPago    from './pages/client/ResultadoPago'
@@ -46,19 +49,21 @@ import Clientes          from './pages/admin/Clientes'
 import SemaforoServicios from './pages/admin/SemaforoServicios'
 import Catalogo          from './pages/admin/catalogo/Catalogo'
 import PlantillaFormulario from './pages/admin/catalogo/PlantillaFormulario'
+import TiposNovedad from './pages/admin/catalogo/TiposNovedad'
+import ParametrosRiesgo from './pages/admin/riesgo/ParametrosRiesgo'
 import AdminReversiones  from './pages/admin/AdminReversiones'
 import Descuentos        from './pages/admin/Descuentos'
 import Ciudades          from './pages/admin/Ciudades'
+import Departamentos     from './pages/admin/Departamentos'
 import Facturacion         from './pages/admin/Facturacion'
-import FacturacionCliente  from './pages/admin/FacturacionCliente'
-import AdminComprobante  from './pages/admin/AdminComprobante'
-import AdminFacturaPospagoDetalle from './pages/admin/AdminFacturaPospagoDetalle'
+import GestionCuentas      from './pages/admin/GestionCuentas'
 
 // Portales de rol
 import GestorDashboard       from './pages/gestor/GestorDashboard'
 import GestorSolicitudes     from './pages/gestor/Solicitudes'
 import GestorReversiones     from './pages/gestor/GestorReversiones'
 import GestorAgenda          from './pages/gestor/Agenda'
+import GestorClienteDetalle  from './pages/gestor/ClienteDetalle'
 import ProgramadorDashboard  from './pages/programador/ProgramadorDashboard'
 import ProgramadorAgenda     from './pages/programador/Agenda'
 // Compartidas entre analista/poligrafista/visitador — mismo backend filtra por rol autenticado
@@ -96,17 +101,6 @@ function Proximamente({ titulo }) {
   )
 }
 
-function PaginaPublica({ titulo, mensaje }) {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50">
-      <div className="text-center">
-        <h2 className="text-xl font-bold text-gray-900 mb-2">{titulo}</h2>
-        {mensaje && <p className="text-gray-500 text-sm">{mensaje}</p>}
-      </div>
-    </div>
-  )
-}
-
 function InactivityWatcher() {
   const { mostrarAlerta, seguirConectado } = useInactivityLogout()
   if (!mostrarAlerta) return null
@@ -136,12 +130,13 @@ function App() {
       <PWAInstallBanner />
       <Routes>
         {/* ── Públicas ── */}
-        <Route path="/login"            element={<Login />} />
-        <Route path="/registro"         element={<Register />} />
-        <Route path="/cambiar-password" element={<ProtectedRoute><CambiarPassword /></ProtectedRoute>} />
+        <Route path="/login"              element={<Login />} />
+        <Route path="/registro"           element={<Register />} />
+        <Route path="/recuperar-password" element={<RecuperarPassword />} />
+        <Route path="/reset-password"     element={<ResetPassword />} />
+        <Route path="/cambiar-password"   element={<ProtectedRoute><CambiarPassword /></ProtectedRoute>} />
         <Route path="/evaluado/link/:token"      element={<EvalueeForm />} />
         <Route path="/evaluado/completar/:token" element={<EvalueeForm />} />
-        <Route path="/activate" element={<PaginaPublica titulo="Activando tu cuenta..." mensaje="Serás redirigido en un momento." />} />
         <Route path="/no-autorizado" element={
           <div className="min-h-screen flex items-center justify-center bg-slate-50">
             <div className="text-center">
@@ -173,6 +168,7 @@ function App() {
           <Route path="pospago/facturas/:idFactura"   element={<FacturaPospagoDetalle />} />
           <Route path="pospago/resultado/:referencia" element={<ResultadoPagoFactura />} />
           <Route path="documentos"        element={<Documentos />} />
+          <Route path="equipo"            element={<MiEquipo />} />
           <Route path="estadisticas"      element={<Proximamente titulo="Estadísticas" />} />
         </Route>
 
@@ -186,13 +182,15 @@ function App() {
           <Route path="reversiones"       element={<AdminReversiones />} />
           <Route path="catalogo"                  element={<Catalogo key="grid" />} />
           <Route path="catalogo/plantilla/:idTipoProgreso" element={<PlantillaFormulario />} />
+          <Route path="tipos-novedad" element={<TiposNovedad />} />
+          <Route path="riesgo/parametros" element={<ParametrosRiesgo />} />
+          <Route path="formulario/:idServicioSubproceso" element={<Formulario />} />
           <Route path="catalogo/:clasificacion"   element={<Catalogo key="detalle" />} />
           <Route path="descuentos"                element={<Descuentos />} />
           <Route path="ciudades"                  element={<Ciudades />} />
+          <Route path="departamentos"             element={<Departamentos />} />
           <Route path="facturacion"                          element={<Facturacion />} />
-          <Route path="facturacion/clientes/:idCliente"      element={<FacturacionCliente />} />
-          <Route path="facturacion/ordenes/comprobantes/:idComprobante" element={<AdminComprobante />} />
-          <Route path="facturacion/facturas/:idFactura"      element={<AdminFacturaPospagoDetalle />} />
+          <Route path="gestion-cuentas"                      element={<GestionCuentas />} />
         </Route>
 
         {/* ── Portal GESTOR ── */}
@@ -202,6 +200,7 @@ function App() {
           <Route path="solicitudes"   element={<GestorSolicitudes />} />
           <Route path="agenda"       element={<GestorAgenda />} />
           <Route path="reversiones"  element={<GestorReversiones />} />
+          <Route path="clientes/:idCliente" element={<GestorClienteDetalle />} />
           <Route path="formulario/:idServicioSubproceso" element={<Formulario />} />
           <Route path="candidatos/:idCandidato" element={<CandidatoPerfil />} />
         </Route>

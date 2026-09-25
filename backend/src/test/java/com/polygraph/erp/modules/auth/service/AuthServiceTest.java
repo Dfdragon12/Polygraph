@@ -146,7 +146,7 @@ class AuthServiceTest {
     // ── REGISTRO NATURAL ─────────────────────────────────────────
 
     @Test
-    @DisplayName("Registro persona natural crea usuario con rol ADMIN_CLIENTE inactivo")
+    @DisplayName("Registro persona natural crea usuario con rol ADMIN_CLIENTE activo de inmediato")
     void registro_natural_crea_usuario_correctamente() {
         RegistroNaturalRequest request = new RegistroNaturalRequest(
                 "María", "García", "maria@test.com", "Password1!", "3001234567");
@@ -154,7 +154,6 @@ class AuthServiceTest {
         when(clienteRepository.save(any(Cliente.class))).thenReturn(new Cliente());
         when(passwordEncoder.encode("Password1!")).thenReturn("hashed-pass");
         when(usuarioRepository.save(any(Usuario.class))).thenReturn(usuarioActivo);
-        doNothing().when(emailService).enviarActivacion(anyString(), anyString(), anyString());
 
         authService.registrarNatural(request);
 
@@ -163,11 +162,10 @@ class AuthServiceTest {
         Usuario guardado = captor.getValue();
 
         assertThat(guardado.getRol()).isEqualTo(Rol.ADMIN_CLIENTE);
-        assertThat(guardado.getActivo()).isFalse();
-        assertThat(guardado.getEmailVerificado()).isFalse();
+        assertThat(guardado.getActivo()).isTrue();
+        assertThat(guardado.getEmailVerificado()).isTrue();
         assertThat(guardado.getEmail()).isEqualTo("maria@test.com");
         verify(passwordEncoder).encode("Password1!");
-        verify(emailService).enviarActivacion(eq("maria@test.com"), eq("María"), anyString());
     }
 
     @Test
@@ -189,62 +187,4 @@ class AuthServiceTest {
         verify(usuarioRepository, never()).save(any());
     }
 
-    @Test
-    @DisplayName("Registro natural envía email de activación con token no nulo")
-    void registro_natural_envia_email_de_activacion() {
-        RegistroNaturalRequest request = new RegistroNaturalRequest(
-                "Ana", "Torres", "ana@test.com", "Password1!", "3009876543");
-        when(usuarioRepository.existsByEmail(anyString())).thenReturn(false);
-        when(clienteRepository.save(any())).thenReturn(new Cliente());
-        when(passwordEncoder.encode(anyString())).thenReturn("hashed");
-        when(usuarioRepository.save(any())).thenReturn(usuarioActivo);
-
-        authService.registrarNatural(request);
-
-        ArgumentCaptor<String> tokenCaptor = ArgumentCaptor.forClass(String.class);
-        verify(emailService).enviarActivacion(anyString(), anyString(), tokenCaptor.capture());
-        assertThat(tokenCaptor.getValue()).isNotNull().isNotBlank();
-    }
-
-    // ── ACTIVACIÓN ───────────────────────────────────────────────
-
-    @Test
-    @DisplayName("Activar cuenta con token válido activa el usuario")
-    void activar_cuenta_con_token_valido() {
-        String token = "valid-token-123";
-        usuarioActivo.setActivo(false);
-        usuarioActivo.setEmailVerificado(false);
-        usuarioActivo.setTokenActivacion(token);
-        usuarioActivo.setTokenActivacionExpira(LocalDateTime.now().plusHours(1));
-        when(usuarioRepository.findByTokenActivacion(token)).thenReturn(Optional.of(usuarioActivo));
-
-        authService.activarCuenta(token);
-
-        assertThat(usuarioActivo.getActivo()).isTrue();
-        assertThat(usuarioActivo.getEmailVerificado()).isTrue();
-        assertThat(usuarioActivo.getTokenActivacion()).isNull();
-    }
-
-    @Test
-    @DisplayName("Activar cuenta con token expirado lanza ApiException")
-    void activar_cuenta_token_expirado_lanza_excepcion() {
-        String token = "expired-token";
-        usuarioActivo.setTokenActivacion(token);
-        usuarioActivo.setTokenActivacionExpira(LocalDateTime.now().minusHours(1));
-        when(usuarioRepository.findByTokenActivacion(token)).thenReturn(Optional.of(usuarioActivo));
-
-        assertThatThrownBy(() -> authService.activarCuenta(token))
-                .isInstanceOf(ApiException.class)
-                .hasMessageContaining("expirado");
-    }
-
-    @Test
-    @DisplayName("Activar cuenta con token inválido lanza ApiException NOT_FOUND")
-    void activar_cuenta_token_invalido_lanza_excepcion() {
-        when(usuarioRepository.findByTokenActivacion("bad-token")).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> authService.activarCuenta("bad-token"))
-                .isInstanceOf(ApiException.class)
-                .satisfies(ex -> assertThat(((ApiException) ex).getStatus()).isEqualTo(HttpStatus.BAD_REQUEST));
-    }
 }

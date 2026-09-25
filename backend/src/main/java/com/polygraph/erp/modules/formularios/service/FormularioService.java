@@ -47,6 +47,8 @@ public class FormularioService {
     private final AlmacenamientoDocumentosService almacenamientoService;
     private final CandidatoInfoService candidatoInfoService;
     private final NotificacionService notificacionService;
+    private final org.springframework.context.ApplicationEventPublisher eventos;
+    private final FormularioPlantillaConfigRepository plantillaConfigRepository;
 
     private static final String CATEGORIA_ARCHIVOS = "formularios";
 
@@ -64,6 +66,8 @@ public class FormularioService {
         Map<Integer, List<FormularioFila>> filasPorSeccion = new HashMap<>();
         Map<Integer, String> valoresCampos = new HashMap<>(); // idColumna -> valor
         Map<Integer, Map<Integer, String>> valoresPorFila = new HashMap<>(); // idFila -> (idColumna -> valor)
+        Map<Integer, String> justificacionesCampos = new HashMap<>(); // idColumna -> justificación
+        Map<Integer, Map<Integer, String>> justificacionesPorFila = new HashMap<>(); // idFila -> (idColumna -> justificación)
 
         if (formulario != null) {
             List<FormularioFila> filas = filaRepository.findByFormulario_IdFormularioOrderByOrdenAsc(formulario.getIdFormulario());
@@ -73,9 +77,14 @@ public class FormularioService {
             for (FormularioDato d : datoRepository.findByFormulario_IdFormulario(formulario.getIdFormulario())) {
                 if (d.getFila() == null) {
                     valoresCampos.put(d.getColumna().getIdColumna(), d.getValor());
+                    if (d.getJustificacion() != null) justificacionesCampos.put(d.getColumna().getIdColumna(), d.getJustificacion());
                 } else {
                     valoresPorFila.computeIfAbsent(d.getFila().getIdFila(), k -> new HashMap<>())
                             .put(d.getColumna().getIdColumna(), d.getValor());
+                    if (d.getJustificacion() != null) {
+                        justificacionesPorFila.computeIfAbsent(d.getFila().getIdFila(), k -> new HashMap<>())
+                                .put(d.getColumna().getIdColumna(), d.getJustificacion());
+                    }
                 }
             }
         }
@@ -105,22 +114,26 @@ public class FormularioService {
         Map<String, List<Map<String, String>>> tablasFijasDatos = candidatoInfoService.resolverTablasFijas(candidato);
         List<FormularioResponse.TablaFijaResponse> tablasFijasResponse = new ArrayList<>();
 
-        // Mientras el subproceso sigue ASIGNADO, ni quien lo diligencia (ANALISTA_INTERNO/
-        // POLIGRAFISTA/VISITADOR) ni GESTOR deben ver nada que el admin haya quitado de la
-        // plantilla, así tenga datos guardados — solo al llegar a COMPLETADO (formulario
-        // congelado, guardar() ya no admite cambios) se les vuelve a mostrar lo archivado, para no
-        // perder de vista lo que sí alcanzó a diligenciarse. Solo ADMIN_POLYGRAPH siempre ve lo
-        // archivado con datos (supervisión total del catálogo, sin esta restricción).
-        boolean ocultarArchivadoParaEjecutor = (ROLES_EJECUTORES.contains(actor.getRol()) || actor.getRol() == Rol.GESTOR)
-                && subproceso.getEstado() != EstadoAsignacion.COMPLETADO;
+        // Lo que el admin quitó de la plantilla (archivado) solo lo ve ADMIN_POLYGRAPH, que
+        // supervisa el catálogo. Gestor, programador y ejecutores NUNCA lo ven, ni siquiera ya
+        // COMPLETADO/PUBLICADO: antes se les volvía a mostrar al congelarse y el gestor veía
+        // campos eliminados que el Word tampoco imprime (FormularioDocumentoService solo usa
+        // columnas activas) — la pantalla debe mostrar lo mismo que el documento (bug 25-sep-2026).
+        boolean ocultarArchivadoParaEjecutor = ocultaArchivados(actor);
 
+        // El formulario SÍ trae los puntos por respuesta (decisión 25-sep-2026): quien diligencia ve
+        // cuántos puntos suma cada fila de una tabla y el total — /estructura los sigue ocultando.
         List<FormularioResponse.SeccionDatosResponse> seccionesResponse = new ArrayList<>();
         for (FormularioSeccion seccion : secciones) {
-            // Este subproceso queda "congelado" a las secciones que ya existían cuando se creó —
-            // una sección agregada a la plantilla DESPUÉS nunca aparece acá, ni siquiera si por
-            // algún motivo este formulario puntual llegó a tener datos guardados en ella (ver
-            // TipoProgreso.versionPlantilla / ServicioSubproceso.versionPlantilla).
-            if (seccion.getVersionCreacion() > subproceso.getVersionPlantilla()) continue;
+            // Mientras sigue ASIGNADO, el formulario sigue la plantilla VIGENTE (si admin agrega
+            // una sección mientras alguien todavía lo está llenando, sí debe verla) — el
+            // congelamiento por versión solo aplica una vez COMPLETADO/PUBLICADO (ver
+            // AsignacionService.completar(), que estampa versionPlantilla justo en ese momento, no
+            // al crearse). Una sección agregada a la plantilla DESPUÉS de completado nunca aparece
+            // acá, ni siquiera si por algún motivo este formulario puntual llegó a tener datos
+            // guardados en ella.
+            if (estaCongelado(subproceso.getEstado())
+                    && seccion.getVersionCreacion() > subproceso.getVersionPlantilla()) continue;
             // Origen automático (referencias, educación...): se llena y se edita directo sobre el
             // registro real del candidato (ver CandidatoHojaVidaController) — aquí solo se
             // muestra en el mismo orden del constructor, aparte de las secciones editables (ver
@@ -134,9 +147,35 @@ public class FormularioService {
                         .map(c -> new FormularioResponse.TablaFijaResponse.ColumnaFija(c,
                                 CandidatoInfoService.ETIQUETAS_COLUMNAS_TABLAS_FIJAS.getOrDefault(c, c)))
                         .toList();
+
+                // Columnas de VALIDACIÓN: las que el admin agregó a esta sección (FormularioColumna
+                // normales) para que analista/poligrafista/visitador opinen por fila — mismo
+                // mecanismo de siempre (FormularioFila/FormularioDato), correlacionado con la fila
+                // real del candidato vía FormularioFila.idOrigenFijo, nunca toca su tabla.
+                List<ColumnaResponse> columnasValidacion = seccion.getColumnas().stream()
+                        .filter(c -> Boolean.TRUE.equals(c.getActivo())
+                                || (!ocultarArchivadoParaEjecutor && columnaTieneDatos(c, valoresCampos, valoresPorFila)))
+                        .sorted(Comparator.comparing(FormularioColumna::getOrden))
+                        .map(c -> ColumnaResponse.de(c, parseOpciones(c.getOpciones()), true))
+                        .toList();
+
+                Map<Long, FormularioFila> filaPorOrigenFijo = filasPorSeccion.getOrDefault(seccion.getIdSeccion(), List.of())
+                        .stream().filter(f -> f.getIdOrigenFijo() != null)
+                        .collect(Collectors.toMap(FormularioFila::getIdOrigenFijo, f -> f, (a, b) -> a));
+                Map<String, FormularioResponse.TablaFijaResponse.FilaValidacionResponse> validacionPorId = new HashMap<>();
+                for (Map<String, String> filaFija : tablasFijasDatos.getOrDefault(seccion.getOrigenFijo(), List.of())) {
+                    String idStr = filaFija.get("id");
+                    FormularioFila filaValidacion = idStr == null ? null : filaPorOrigenFijo.get(Long.valueOf(idStr));
+                    validacionPorId.put(idStr, new FormularioResponse.TablaFijaResponse.FilaValidacionResponse(
+                            filaValidacion == null ? null : filaValidacion.getIdFila(),
+                            filaValidacion == null ? Map.of() : valoresPorFila.getOrDefault(filaValidacion.getIdFila(), Map.of()),
+                            filaValidacion == null ? Map.of() : justificacionesPorFila.getOrDefault(filaValidacion.getIdFila(), Map.of())));
+                }
+
                 tablasFijasResponse.add(new FormularioResponse.TablaFijaResponse(seccion.getIdSeccion(), seccion.getNombre(),
                         seccion.getOrden(), seccion.getOrigenFijo(), columnasFijas,
-                        tablasFijasDatos.getOrDefault(seccion.getOrigenFijo(), List.of())));
+                        tablasFijasDatos.getOrDefault(seccion.getOrigenFijo(), List.of()),
+                        columnasValidacion, validacionPorId));
                 continue;
             }
             // Una sección/columna archivada (el admin la quitó de la plantilla después de que ya
@@ -153,14 +192,16 @@ public class FormularioService {
                     .filter(c -> Boolean.TRUE.equals(c.getActivo())
                             || (!ocultarArchivadoParaEjecutor && columnaTieneDatos(c, valoresCampos, valoresPorFila)))
                     .sorted(Comparator.comparing(FormularioColumna::getOrden))
-                    .map(c -> new ColumnaResponse(c.getIdColumna(), c.getNombre(), c.getTipoDato().name(), c.getOrden(), c.getCampoCandidato(), c.getCampoCliente(), c.getClave(), parseOpciones(c.getOpciones())))
+                    .map(c -> ColumnaResponse.de(c, parseOpciones(c.getOpciones()), true))
                     .toList();
 
             if (seccion.getTipo() == TipoSeccionFormulario.CAMPOS) {
                 Map<Integer, String> valores = columnas.stream()
                         .collect(Collectors.toMap(ColumnaResponse::idColumna, c -> valoresCampos.getOrDefault(c.idColumna(), "")));
                 seccionesResponse.add(new FormularioResponse.SeccionDatosResponse(
-                        seccion.getIdSeccion(), seccion.getNombre(), seccion.getTipo().name(), seccion.getOrden(), columnas, valores, List.of()));
+                        seccion.getIdSeccion(), seccion.getNombre(), seccion.getTipo().name(), seccion.getOrden(), columnas, valores, List.of(),
+                        justificacionesCampos.entrySet().stream().filter(e -> valores.containsKey(e.getKey()))
+                                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue))));
             } else {
                 List<FormularioFila> filas = filasPorSeccion.get(seccion.getIdSeccion());
                 List<FormularioResponse.FilaDatosResponse> filasResponse;
@@ -168,18 +209,19 @@ public class FormularioService {
                     filasResponse = filas.stream()
                             .sorted(Comparator.comparing(FormularioFila::getOrden))
                             .map(f -> new FormularioResponse.FilaDatosResponse(f.getIdFila(), f.getEtiqueta(),
-                                    valoresPorFila.getOrDefault(f.getIdFila(), Map.of())))
+                                    valoresPorFila.getOrDefault(f.getIdFila(), Map.of()),
+                                    justificacionesPorFila.getOrDefault(f.getIdFila(), Map.of())))
                             .toList();
                 } else {
                     // Aún no se ha guardado nada — se muestran las filas sugeridas de la plantilla,
                     // sin id (todavía no existen como FormularioFila reales).
                     filasResponse = seccion.getFilasSugeridas().stream()
                             .sorted(Comparator.comparing(FormularioFilaSugerida::getOrden))
-                            .map(f -> new FormularioResponse.FilaDatosResponse(null, f.getEtiqueta(), Map.of()))
+                            .map(f -> new FormularioResponse.FilaDatosResponse(null, f.getEtiqueta(), Map.of(), Map.of()))
                             .toList();
                 }
                 seccionesResponse.add(new FormularioResponse.SeccionDatosResponse(
-                        seccion.getIdSeccion(), seccion.getNombre(), seccion.getTipo().name(), seccion.getOrden(), columnas, Map.of(), filasResponse));
+                        seccion.getIdSeccion(), seccion.getNombre(), seccion.getTipo().name(), seccion.getOrden(), columnas, Map.of(), filasResponse, Map.of()));
             }
         }
 
@@ -196,10 +238,55 @@ public class FormularioService {
         return servicio != null ? servicio.getCliente() : null;
     }
 
+    /** Misma regla en obtener() y guardar(): solo ADMIN_POLYGRAPH ve lo archivado. */
+    private static boolean ocultaArchivados(Usuario actor) {
+        return actor.getRol() != Rol.ADMIN_POLYGRAPH;
+    }
+
     private boolean columnaTieneDatos(FormularioColumna columna, Map<Integer, String> valoresCampos,
                                        Map<Integer, Map<Integer, String>> valoresPorFila) {
+        // Las columnas automáticas (candidato/cliente) nunca guardan datos: su valor se resuelve
+        // en vivo, así que no cuentan como "archivada con datos".
+        if (columna.getCampoCandidato() != null || columna.getCampoCliente() != null) return false;
         if (valoresCampos.containsKey(columna.getIdColumna())) return true;
         return valoresPorFila.values().stream().anyMatch(m -> m.containsKey(columna.getIdColumna()));
+    }
+
+    /** ¿El valor elegido es una respuesta CRÍTICA de un campo calificable? (docs/modelo-calificacion-riesgo.md §3) */
+    static boolean esRespuestaCritica(FormularioColumna columna, String valor) {
+        if (valor == null || valor.isBlank() || !Boolean.TRUE.equals(columna.getCalificaRiesgo())) return false;
+        return columna.getPuntajes().stream()
+                .anyMatch(p -> Boolean.TRUE.equals(p.getEsCritico()) && p.getOpcion().equals(valor.trim()));
+    }
+
+    /** Solo se guarda la justificación si la respuesta es crítica — si el ejecutor cambió a una
+     *  respuesta normal, la explicación vieja se descarta. */
+    private static String justificacionSiCritica(FormularioColumna columna, String valor, Map<Integer, String> justificaciones) {
+        if (justificaciones == null || !esRespuestaCritica(columna, valor)) return null;
+        String j = justificaciones.get(columna.getIdColumna());
+        return j == null || j.isBlank() ? null : j.trim();
+    }
+
+    /** Respuestas críticas sin justificación en el formulario de un subproceso — si hay alguna,
+     *  no se puede marcar como completado (AsignacionService.completar). Devuelve etiquetas
+     *  legibles ("Sección › Campo"); vacío si todo está bien o no hay formulario. */
+    @Transactional(readOnly = true)
+    public List<String> respuestasCriticasSinJustificar(Long idServicioSubproceso) {
+        Formulario formulario = formularioRepository.findByServicioSubproceso_Id(idServicioSubproceso).orElse(null);
+        if (formulario == null) return List.of();
+        return datoRepository.findByFormulario_IdFormulario(formulario.getIdFormulario()).stream()
+                .filter(d -> Boolean.TRUE.equals(d.getColumna().getActivo()))
+                .filter(d -> esRespuestaCritica(d.getColumna(), d.getValor()))
+                .filter(d -> d.getJustificacion() == null || d.getJustificacion().isBlank())
+                .map(d -> {
+                    FormularioColumna c = d.getColumna();
+                    String campo = c.getNombre() != null ? c.getNombre() : c.getClave();
+                    String fila = d.getFila() != null && d.getFila().getEtiqueta() != null && !d.getFila().getEtiqueta().isBlank()
+                            ? " (" + d.getFila().getEtiqueta() + ")" : "";
+                    return c.getSeccion().getNombre() + " › " + campo + fila;
+                })
+                .distinct()
+                .toList();
     }
 
     private List<String> parseOpciones(String opcionesCsv) {
@@ -210,7 +297,7 @@ public class FormularioService {
     public FormularioResponse guardar(Long idServicioSubproceso, GuardarFormularioRequest req, Usuario actor) {
         ServicioSubproceso subproceso = obtenerSubproceso(idServicioSubproceso);
         validarAcceso(subproceso, actor);
-        if (subproceso.getEstado() == EstadoAsignacion.COMPLETADO) {
+        if (estaCongelado(subproceso.getEstado())) {
             throw new ApiException("Este subproceso ya está completado, no se pueden hacer más cambios.", HttpStatus.CONFLICT);
         }
 
@@ -232,8 +319,7 @@ public class FormularioService {
         // como "filas borradas" ni se borran sus filas/datos — de lo contrario este guardado (de
         // OTRAS secciones, totalmente normal) las perdería para siempre, ya que este método
         // reemplaza todo el formulario.
-        boolean ocultarArchivadoParaEjecutor = (ROLES_EJECUTORES.contains(actor.getRol()) || actor.getRol() == Rol.GESTOR)
-                && subproceso.getEstado() != EstadoAsignacion.COMPLETADO;
+        boolean ocultarArchivadoParaEjecutor = ocultaArchivados(actor);
         Set<Integer> seccionesOcultasIds = ocultarArchivadoParaEjecutor
                 ? seccionesPorId.values().stream().filter(s -> !Boolean.TRUE.equals(s.getActivo()))
                         .map(FormularioSeccion::getIdSeccion).collect(Collectors.toSet())
@@ -244,14 +330,24 @@ public class FormularioService {
         // Reemplazo completo de filas y datos — mismo patrón de "guardar todo de una vez" que el
         // resto del sistema, evita estados intermedios inconsistentes. Las secciones ocultas de
         // arriba quedan fuera del reemplazo, intactas.
+        //
+        // deleteAllInBatch (un solo DELETE ... WHERE id IN (...)) en vez de deleteAll: deleteAll()
+        // borra entidad por entidad vía el EntityManager, que antes de cada DELETE pone en NULL el
+        // id_fila de cada FormularioDato referenciado (para "romper" la FK antes de borrar, aunque
+        // la fila referenciada también se vaya a borrar en el mismo flush). Cuando dos filas
+        // comparten columna de validación (mismo id_columna, típico de las tablas fijas con
+        // origenFijo), esa nulificación intermedia deja momentáneamente dos datos con
+        // (id_formulario, id_columna) repetido e id_fila=NULL — justo lo que prohíbe
+        // ux_formulario_datos_campo — y el guardado falla aunque ambas filas se fueran a borrar de
+        // todos modos. El borrado en bloque va directo a la BD (DELETE físico) sin pasar por esa
+        // limpieza intermedia; se borran los datos primero (por más que id_fila tenga ON DELETE
+        // CASCADE hacia formulario_filas, ser explícitos evita depender del orden del cascade).
         List<FormularioFila> filasABorrar = filaRepository.findByFormulario_IdFormularioOrderByOrdenAsc(formulario.getIdFormulario())
                 .stream().filter(f -> !seccionesOcultasIds.contains(f.getSeccion().getIdSeccion())).toList();
-        filaRepository.deleteAll(filasABorrar);
         List<FormularioDato> datosABorrar = datoRepository.findByFormulario_IdFormulario(formulario.getIdFormulario())
                 .stream().filter(d -> !seccionesOcultasIds.contains(d.getColumna().getSeccion().getIdSeccion())).toList();
-        datoRepository.deleteAll(datosABorrar);
-        datoRepository.flush();
-        filaRepository.flush();
+        datoRepository.deleteAllInBatch(datosABorrar);
+        filaRepository.deleteAllInBatch(filasABorrar);
 
         List<FormularioDato> nuevosDatos = new ArrayList<>();
         if (req.secciones() != null) {
@@ -271,6 +367,7 @@ public class FormularioService {
                             if (columna == null || columna.getCampoCandidato() != null || columna.getCampoCliente() != null) continue;
                             nuevosDatos.add(FormularioDato.builder()
                                     .formulario(formulario).columna(columna).fila(null).valor(e.getValue())
+                                    .justificacion(justificacionSiCritica(columna, e.getValue(), s.justificaciones()))
                                     .build());
                         }
                     }
@@ -281,6 +378,7 @@ public class FormularioService {
                                 .formulario(formulario).seccion(seccion)
                                 .etiqueta(filaReq.etiqueta() != null ? filaReq.etiqueta() : "")
                                 .orden(orden++)
+                                .idOrigenFijo(filaReq.idOrigenFijo())
                                 .build());
                         if (filaReq.valores() != null) {
                             for (var e : filaReq.valores().entrySet()) {
@@ -288,6 +386,7 @@ public class FormularioService {
                                 if (columna == null || columna.getCampoCandidato() != null || columna.getCampoCliente() != null) continue;
                                 nuevosDatos.add(FormularioDato.builder()
                                         .formulario(formulario).columna(columna).fila(fila).valor(e.getValue())
+                                        .justificacion(justificacionSiCritica(columna, e.getValue(), filaReq.justificaciones()))
                                         .build());
                             }
                         }
@@ -298,6 +397,11 @@ public class FormularioService {
         datoRepository.saveAll(nuevosDatos);
 
         notificarCambioFormulario(subproceso, actor);
+        if (subproceso.getServicio() != null) {
+            // El riesgo del caso depende de las respuestas calificables (docs/modelo-calificacion-riesgo.md §3).
+            eventos.publishEvent(new com.polygraph.erp.modules.riesgo.service.RecalculoRiesgoSolicitado(
+                    subproceso.getServicio().getIdServicio(), actor.getIdUsuario()));
+        }
 
         return obtener(idServicioSubproceso, actor);
     }
@@ -323,12 +427,12 @@ public class FormularioService {
 
         Cliente cliente = servicio.getCliente();
         if (cliente != null && cliente.getIdGestor() != null) {
-            notificacionService.crearParaUsuario(cliente.getIdGestor(), "FORMULARIO_ACTUALIZADO", "Formulario actualizado",
+            notificacionService.crearOAgruparParaUsuario(cliente.getIdGestor(), "FORMULARIO_ACTUALIZADO", "Formulario actualizado",
                     mensaje, "SERVICIO_SUBPROCESO", subproceso.getId());
         }
         Usuario programador = subproceso.getProgramadorResponsable();
         if (programador != null && !programador.getIdUsuario().equals(actor.getIdUsuario())) {
-            notificacionService.crearParaUsuario(programador.getIdUsuario(), "FORMULARIO_ACTUALIZADO", "Formulario actualizado",
+            notificacionService.crearOAgruparParaUsuario(programador.getIdUsuario(), "FORMULARIO_ACTUALIZADO", "Formulario actualizado",
                     mensaje, "SERVICIO_SUBPROCESO", subproceso.getId());
         }
     }
@@ -351,6 +455,16 @@ public class FormularioService {
         // la plantilla (ver FormularioColumna.campoCandidato).
         List<CampoCandidatoValorResponse> datosCandidato = candidatoInfoService.resolver(candidato, null);
 
+        // Mismo criterio que el documento: un subproceso ya cerrado muestra el nombre del Word con
+        // el que se completó (rutaWordCongelada), no el que esté activo ahora mismo — así
+        // analista/poligrafista/visitador/gestor/programador ven, sin ambigüedad, con cuál
+        // documento quedó su trabajo, igual que ya se ve en admin/catálogo → Plantilla.
+        String rutaWord = (estaCongelado(subproceso.getEstado()) && subproceso.getRutaWordCongelada() != null)
+                ? subproceso.getRutaWordCongelada()
+                : plantillaConfigRepository.findById(subproceso.getTipoProgreso().getIdTipoProgreso())
+                        .map(FormularioPlantillaConfig::getPlantillaWordRuta).orElse(null);
+        String nombreArchivoWord = nombreOriginalDeRuta(rutaWord);
+
         return new FormularioResponse(
                 formulario != null ? formulario.getIdFormulario() : null,
                 subproceso.getId(),
@@ -362,13 +476,43 @@ public class FormularioService {
                 profesionalEncargado != null
                         ? (profesionalEncargado.getNombre() + (profesionalEncargado.getApellido() != null ? " " + profesionalEncargado.getApellido() : ""))
                         : null,
-                subproceso.getEstado() == EstadoAsignacion.COMPLETADO,
+                estaCongelado(subproceso.getEstado()),
                 datosCandidato,
                 secciones,
                 tablasFijas,
                 subproceso.getVersionPlantilla(),
-                subproceso.getTipoProgreso().getVersionPlantilla()
+                subproceso.getTipoProgreso().getVersionPlantilla(),
+                subproceso.getEstado().name(),
+                nombreArchivoWord,
+                subproceso.getTipoProgreso().getNombreProgreso(),
+                subproceso.getFechaProgramada(),
+                subproceso.getObservaciones(),
+                telefonoDe(candidato),
+                candidatoInfoService.resolverUno(candidato, "CIUDAD_RESIDENCIA"),
+                servicio != null && servicio.getProceso() != null ? servicio.getProceso().getNombreProceso() : null,
+                servicio != null ? servicio.getCargo() : null,
+                subproceso.getFechaAsignacion(),
+                subproceso.getFechaCompletado(),
+                subproceso.getDuracionMinutos() != null ? subproceso.getDuracionMinutos()
+                        : subproceso.getTipoProgreso().getMinutosEstimados(),
+                servicio != null ? servicio.getFechaEntregaEstimada() : null
         );
+    }
+
+    private String telefonoDe(Candidato candidato) {
+        String celular = candidatoInfoService.resolverUno(candidato, "CELULAR");
+        return celular != null && !celular.isBlank() ? celular : candidatoInfoService.resolverUno(candidato, "TELEFONO_FIJO");
+    }
+
+    /** Mismo criterio que FormularioPlantillaService.nombreOriginalDeRuta — la ruta guarda
+     *  "{uuid}_{nombre}" para que dos cargas no choquen en disco; esto le quita el prefijo para
+     *  mostrar solo el nombre real (ya renombrado a "{subproceso}_{fecha}.docx" desde que se sube,
+     *  ver FormularioPlantillaService.subirPlantillaWord()). null si no hay ningún Word asociado. */
+    private String nombreOriginalDeRuta(String ruta) {
+        if (ruta == null) return null;
+        String segmento = ruta.substring(ruta.lastIndexOf('/') + 1);
+        int guionBajo = segmento.indexOf('_');
+        return guionBajo >= 0 ? segmento.substring(guionBajo + 1) : segmento;
     }
 
     /** Sube un archivo (imagen/documento) para adjuntarlo a una columna tipo ARCHIVO — el
@@ -408,9 +552,14 @@ public class FormularioService {
                 .findByTipoProgreso_IdTipoProgresoOrderByOrdenAsc(subproceso.getTipoProgreso().getIdTipoProgreso());
         // Solo columnas de secciones ACTIVAS cuentan — sin este filtro, el "X/Y" quedaba inflado
         // con columnas de secciones archivadas (ej. de pruebas viejas) que ni siquiera se ven ya
-        // en el formulario, así que no cuadraba con lo que la persona tenía en pantalla.
+        // en el formulario, así que no cuadraba con lo que la persona tenía en pantalla. Mismo
+        // criterio de congelamiento por versión que obtener()/generar(): una vez COMPLETADO, una
+        // sección agregada a la plantilla DESPUÉS no debe inflar el total (sin esto, "X/Y" seguía
+        // subiendo con cada cambio a la plantilla aunque el formulario ya estuviera cerrado).
+        boolean congelado = estaCongelado(subproceso.getEstado());
         Set<Integer> columnasActivasIds = secciones.stream()
                 .filter(s -> Boolean.TRUE.equals(s.getActivo()) && s.getTipo() == TipoSeccionFormulario.CAMPOS)
+                .filter(s -> !congelado || s.getVersionCreacion() <= subproceso.getVersionPlantilla())
                 .flatMap(s -> s.getColumnas().stream())
                 .filter(c -> Boolean.TRUE.equals(c.getActivo()))
                 .map(FormularioColumna::getIdColumna)
@@ -425,7 +574,47 @@ public class FormularioService {
                 .filter(d -> d.getValor() != null && !d.getValor().isBlank())
                 .count();
 
-        return new ProgresoFormularioResponse(llenos, total);
+        // Avance por secciones (ver ProgresoFormularioResponse.porcentaje).
+        List<FormularioSeccion> seccionesVigentes = secciones.stream()
+                .filter(s -> Boolean.TRUE.equals(s.getActivo()))
+                .filter(s -> !congelado || s.getVersionCreacion() <= subproceso.getVersionPlantilla())
+                .toList();
+        Set<Integer> seccionesConFilas = formulario == null ? Set.of()
+                : filaRepository.findByFormulario_IdFormularioOrderByOrdenAsc(formulario.getIdFormulario()).stream()
+                        .filter(f -> f.getIdOrigenFijo() == null && f.getSeccion() != null)
+                        .map(f -> f.getSeccion().getIdSeccion())
+                        .collect(Collectors.toSet());
+        Map<String, List<Map<String, String>>> tablasFijas = seccionesVigentes.stream().anyMatch(s -> s.getOrigenFijo() != null)
+                ? candidatoInfoService.resolverTablasFijas(subproceso.getServicio() != null ? subproceso.getServicio().getCandidato() : null)
+                : Map.of();
+        Set<Integer> llenosIds = formulario == null ? Set.of()
+                : datoRepository.findByFormulario_IdFormulario(formulario.getIdFormulario()).stream()
+                        .filter(d -> d.getFila() == null && d.getValor() != null && !d.getValor().isBlank())
+                        .map(d -> d.getColumna().getIdColumna())
+                        .collect(Collectors.toSet());
+
+        double suma = 0;
+        int seccionesTotal = 0;
+        int seccionesCompletas = 0;
+        for (FormularioSeccion s : seccionesVigentes) {
+            double fraccion;
+            if (s.getTipo() == TipoSeccionFormulario.CAMPOS) {
+                List<Integer> cols = s.getColumnas().stream().filter(c -> Boolean.TRUE.equals(c.getActivo()))
+                        .map(FormularioColumna::getIdColumna).toList();
+                if (cols.isEmpty()) continue;
+                fraccion = cols.stream().filter(llenosIds::contains).count() / (double) cols.size();
+            } else if (s.getOrigenFijo() != null) {
+                fraccion = tablasFijas.getOrDefault(s.getOrigenFijo(), List.of()).isEmpty() ? 0 : 1;
+            } else {
+                fraccion = seccionesConFilas.contains(s.getIdSeccion()) ? 1 : 0;
+            }
+            seccionesTotal++;
+            if (fraccion >= 1) seccionesCompletas++;
+            suma += fraccion;
+        }
+        Integer porcentaje = seccionesTotal == 0 ? null : (int) Math.round(suma / seccionesTotal * 100);
+
+        return new ProgresoFormularioResponse(llenos, total, porcentaje, seccionesCompletas, seccionesTotal);
     }
 
     private ServicioSubproceso obtenerSubproceso(Long id) {
@@ -433,11 +622,21 @@ public class FormularioService {
                 .orElseThrow(() -> new ApiException("Subproceso no encontrado", HttpStatus.NOT_FOUND));
     }
 
+    /** COMPLETADO y PUBLICADO son ambos "cerrados" para el formulario: ya no se edita y queda
+     *  congelado en la versión de plantilla que tenía al completarse (PUBLICADO no vuelve a
+     *  estampar versión propia, hereda la de COMPLETADO — ver AsignacionService.aprobar()). Antes
+     *  de que existiera PUBLICADO, esto solo comparaba contra COMPLETADO; sin este helper,
+     *  aprobar un subproceso lo volvía a dejar editable, porque `!= COMPLETADO` ya no era cierto. */
+    private static boolean estaCongelado(EstadoAsignacion estado) {
+        return estado == EstadoAsignacion.COMPLETADO || estado == EstadoAsignacion.PUBLICADO;
+    }
+
     private static final Set<Rol> ROLES_EJECUTORES = Set.of(Rol.ANALISTA_INTERNO, Rol.POLIGRAFISTA, Rol.VISITADOR);
 
     /** ANALISTA_INTERNO/POLIGRAFISTA/VISITADOR solo acceden a subprocesos asignados a ellos
      *  mismos — GESTOR/ADMIN_POLYGRAPH entran sin restricción (supervisión). */
     private void validarAcceso(ServicioSubproceso subproceso, Usuario actor) {
+        com.polygraph.erp.shared.utils.AccesoGestor.validar(subproceso, actor);
         if (ROLES_EJECUTORES.contains(actor.getRol())) {
             Usuario asignado = subproceso.getUsuarioAsignado();
             if (asignado == null || !actor.getIdUsuario().equals(asignado.getIdUsuario())) {

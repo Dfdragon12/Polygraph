@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback, useMemo, Fragment } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import api from '../../../services/api'
 import Toast from '../../../components/Toast'
 import { alCambiarTexto } from '../../../utils/texto'
 import { Modal, ConfirmModal } from '../../../components/ui/Modal'
+import MenuAcciones from '../../../components/ui/MenuAcciones'
 
 /* ─── Paleta dinámica de colores para clasificaciones ─── */
 const PALETA = [
@@ -515,6 +516,43 @@ function FormProceso({ proceso, clasificaciones, clasificacionDefaultId, onClose
 }
 
 /* ─── Modal progresos de un proceso ─── */
+/* ─── Calificación de riesgo del proceso (docs/modelo-calificacion-riesgo.md §2) ─── */
+const CRITICIDADES = [
+  { valor: 'ESTANDAR', etiqueta: 'Estándar' },
+  { valor: 'SENSIBLE', etiqueta: 'Sensible' },
+  { valor: 'CRITICO', etiqueta: 'Crítico' },
+]
+
+// "33.33" / "" -> número o null (el campo vacío = sin configurar).
+function aNumeroPeso(texto) {
+  if (texto === '' || texto == null) return null
+  const n = Number(String(texto).replace(',', '.'))
+  return Number.isFinite(n) ? n : NaN
+}
+
+function fmtPct(n) {
+  return `${(Math.round(n * 100) / 100).toLocaleString('es-CO', { maximumFractionDigits: 2 })} %`
+}
+
+// Estado en vivo de la suma: mismas reglas que el backend (CalificacionProcesoService).
+function estadoPesos(filas) {
+  const cuentan = filas.filter(f => f.cuenta)
+  const valores = cuentan.map(f => aNumeroPeso(f.texto))
+  const invalidos = valores.filter(v => Number.isNaN(v) || (v != null && (v < 0 || v > 100))).length
+  const sinPeso = valores.filter(v => v == null).length
+  const suma = valores.filter(v => v != null && !Number.isNaN(v)).reduce((a, b) => a + b, 0)
+  const sumaR = Math.round(suma * 100) / 100
+  if (cuentan.length === 0) return { suma: 0, tono: 'gris', texto: 'No hay subprocesos habilitados que califiquen.', puedeGuardar: true }
+  if (invalidos > 0) return { suma: sumaR, tono: 'rojo', texto: 'Cada peso debe estar entre 0 y 100.', puedeGuardar: false }
+  if (sumaR > 100) return { suma: sumaR, tono: 'rojo', texto: `Pasa de 100 % por ${fmtPct(sumaR - 100)} — no se puede guardar.`, puedeGuardar: false }
+  if (sinPeso > 0) return { suma: sumaR, tono: 'ambar', texto: `${sinPeso} subproceso${sinPeso === 1 ? '' : 's'} sin peso — el proceso no califica todavía.`, puedeGuardar: true }
+  if (sumaR < 100) return { suma: sumaR, tono: 'ambar', texto: `Faltan ${fmtPct(100 - sumaR)} para calificar.`, puedeGuardar: true }
+  return { suma: sumaR, tono: 'verde', texto: '✓ Suma 100 % — el proceso califica riesgo.', puedeGuardar: true }
+}
+
+const TONO_BARRA = { verde: 'bg-green-500', ambar: 'bg-amber-400', rojo: 'bg-red-500', gris: 'bg-gray-300' }
+const TONO_TEXTO = { verde: 'text-green-700', ambar: 'text-amber-700', rojo: 'text-red-600', gris: 'text-gray-500' }
+
 function PasosModal({ proceso, onClose, onToast }) {
   const [pasos, setPasos] = useState([])
   const [disponibles, setDisponibles] = useState([])
@@ -522,22 +560,89 @@ function PasosModal({ proceso, onClose, onToast }) {
   const [seleccionados, setSeleccionados] = useState(new Set())
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState(null)
+  // Calificación de riesgo: borrador de pesos (texto por idPaso, para poder escribir "33,3"),
+  // criticidad y cobertura. Se guarda todo junto con "Guardar pesos".
+  const [calificacion, setCalificacion] = useState(null)
+  const [pesosBorrador, setPesosBorrador] = useState({})
+  const [criticidad, setCriticidad] = useState('ESTANDAR')
+  const [cobertura, setCobertura] = useState('100')
+  const [pesosSucios, setPesosSucios] = useState(false)
+  const [guardandoPesos, setGuardandoPesos] = useState(false)
 
   const cargar = useCallback(async () => {
     setCargando(true)
     try {
-      const [rPasos, rTodos] = await Promise.all([
+      const [rPasos, rTodos, rCalif] = await Promise.all([
         api.get(`/catalogo/procesos/${proceso.idProceso}/pasos`),
         api.get('/catalogo/tipos-progreso'),
+        api.get(`/catalogo/procesos/${proceso.idProceso}/calificacion`),
       ])
       const asignados = new Set(rPasos.data.map(p => p.idTipoProgreso))
       setPasos(rPasos.data)
       setDisponibles(rTodos.data.filter(t => !asignados.has(t.idTipoProgreso) && t.activo))
       setSeleccionados(new Set())
+      setCalificacion(rCalif.data)
+      // Si hay pesos escritos sin guardar (ej. se habilitó otro subproceso mientras tanto), se
+      // conservan; solo se completan los que falten con lo que tenga el servidor.
+      setPesosBorrador(prev => {
+        const siguiente = {}
+        rCalif.data.subprocesos.forEach(sp => {
+          siguiente[sp.idPaso] = pesosSuciosRef.current && prev[sp.idPaso] !== undefined
+            ? prev[sp.idPaso]
+            : (sp.peso != null ? String(Number(sp.peso)) : '')
+        })
+        return siguiente
+      })
+      if (!pesosSuciosRef.current) {
+        setCriticidad(rCalif.data.criticidadDefecto)
+        setCobertura(String(Number(rCalif.data.coberturaMinima)))
+      }
     } finally { setCargando(false) }
   }, [proceso.idProceso])
 
+  const pesosSuciosRef = useRef(false)
+  useEffect(() => { pesosSuciosRef.current = pesosSucios }, [pesosSucios])
+
   useEffect(() => { cargar() }, [cargar])
+
+  const infoCalif = new Map((calificacion?.subprocesos ?? []).map(sp => [sp.idPaso, sp]))
+  const filasPeso = (calificacion?.subprocesos ?? []).map(sp => ({ ...sp, texto: pesosBorrador[sp.idPaso] ?? '' }))
+  const estado = estadoPesos(filasPeso)
+
+  const editarPeso = (idPaso, texto) => {
+    setPesosBorrador(prev => ({ ...prev, [idPaso]: texto.replace(/[^0-9.,]/g, '') }))
+    setPesosSucios(true)
+  }
+
+  // Reparte 100 % en partes iguales entre los que cuentan; la diferencia de redondeo va al primero.
+  const repartirIguales = () => {
+    const cuentan = filasPeso.filter(f => f.cuenta)
+    if (cuentan.length === 0) return
+    const base = Math.floor((100 / cuentan.length) * 100) / 100
+    const resto = Math.round((100 - base * cuentan.length) * 100) / 100
+    setPesosBorrador(prev => {
+      const s = { ...prev }
+      cuentan.forEach((f, i) => { s[f.idPaso] = String(Math.round((base + (i === 0 ? resto : 0)) * 100) / 100) })
+      return s
+    })
+    setPesosSucios(true)
+  }
+
+  const guardarPesos = async () => {
+    setGuardandoPesos(true); setError(null)
+    try {
+      const { data } = await api.put(`/catalogo/procesos/${proceso.idProceso}/calificacion`, {
+        criticidadDefecto: criticidad,
+        coberturaMinima: aNumeroPeso(cobertura) ?? 0,
+        subprocesos: filasPeso.map(f => ({ idPaso: f.idPaso, peso: aNumeroPeso(f.texto), obligatorio: null })),
+      })
+      setCalificacion(data)
+      setPesosSucios(false)
+      onToast?.(data.califica ? 'Pesos guardados — el proceso califica riesgo' : `Pesos guardados — ${data.motivoNoCalifica}`)
+    } catch (err) {
+      setError(mensajeErrorValidacion(err, 'No se pudieron guardar los pesos.'))
+    } finally { setGuardandoPesos(false) }
+  }
 
   const toggleSeleccion = (id) => {
     setSeleccionados(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
@@ -564,7 +669,7 @@ function PasosModal({ proceso, onClose, onToast }) {
     try {
       await api.delete(`/catalogo/procesos/${proceso.idProceso}/pasos/${paso.id}`)
       cargar(); onToast?.(`"${paso.nombreProgreso}" removido del proceso`)
-    } catch { setError('Error al quitar el subproceso.') }
+    } catch (err) { setError(mensajeErrorValidacion(err, 'Error al quitar el subproceso.')) }
   }
 
   const toggle = async (paso, campo) => {
@@ -580,7 +685,7 @@ function PasosModal({ proceso, onClose, onToast }) {
         onToast?.(nuevoHabilitado ? `"${paso.nombreProgreso}" habilitado` : `"${paso.nombreProgreso}" deshabilitado`)
       else
         onToast?.(nuevoObligatorio ? `"${paso.nombreProgreso}" marcado obligatorio` : `"${paso.nombreProgreso}" marcado opcional`)
-    } catch { setError('Error al actualizar.') }
+    } catch (err) { setError(mensajeErrorValidacion(err, 'Error al actualizar.')) }
   }
 
   return (
@@ -602,6 +707,17 @@ function PasosModal({ proceso, onClose, onToast }) {
                     {i + 1}
                   </span>
                   <span className={`flex-1 text-sm font-medium ${inactivo ? 'text-gray-400 line-through' : 'text-gray-800'}`}>{p.nombreProgreso}</span>
+                  {infoCalif.get(p.id)?.cuenta ? (
+                    <label className="flex items-center gap-1 flex-shrink-0" title="Peso en la calificación de riesgo (vacío = sin configurar, 0 = no califica)">
+                      <input value={pesosBorrador[p.id] ?? ''} onChange={e => editarPeso(p.id, e.target.value)}
+                        inputMode="decimal" placeholder="—"
+                        className={`w-16 text-right border rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 ${
+                          (pesosBorrador[p.id] ?? '') === '' ? 'border-amber-300 bg-amber-50/50' : 'border-gray-200 bg-white'}`} />
+                      <span className="text-xs text-gray-400">%</span>
+                    </label>
+                  ) : (
+                    <span className="text-[11px] text-gray-400 flex-shrink-0 w-[84px] text-right" title="Solo cuentan los subprocesos habilitados y activos">No califica</span>
+                  )}
                   {inactivo ? (
                     <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 border border-red-200 text-red-500">Subproceso inactivo</span>
                   ) : (
@@ -623,6 +739,63 @@ function PasosModal({ proceso, onClose, onToast }) {
           </div>
         )}
       </div>
+
+      {!cargando && calificacion && pasos.length > 0 && (
+        <div className="rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <p className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Calificación de riesgo</p>
+              <p className="text-[11px] text-gray-400">Peso de cada subproceso en el puntaje del evaluado. Debe sumar 100 % para calificar.</p>
+            </div>
+            <span className="text-[11px] text-gray-400">Versión {calificacion.versionCalificacion}</span>
+          </div>
+          <div className="px-4 py-4 space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Criticidad por defecto</label>
+                <select value={criticidad} onChange={e => { setCriticidad(e.target.value); setPesosSucios(true) }}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500">
+                  {CRITICIDADES.map(c => <option key={c.valor} value={c.valor}>{c.etiqueta}</option>)}
+                </select>
+                <p className="text-[11px] text-gray-400 mt-0.5">El gestor la puede ajustar en cada caso según el cargo.</p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Cobertura mínima</label>
+                <div className="flex items-center gap-1.5">
+                  <input value={cobertura} onChange={e => { setCobertura(e.target.value.replace(/[^0-9.,]/g, '')); setPesosSucios(true) }}
+                    inputMode="decimal"
+                    className="w-24 text-right border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                  <span className="text-sm text-gray-400">%</span>
+                </div>
+                <p className="text-[11px] text-gray-400 mt-0.5">Si se realiza menos peso que esto, el caso va a revisión manual.</p>
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between text-xs mb-1.5">
+                <span className="font-medium text-gray-600">Suma de pesos</span>
+                <span className={`font-bold ${TONO_TEXTO[estado.tono]}`}>{fmtPct(estado.suma)}</span>
+              </div>
+              <div className="h-2.5 rounded-full bg-gray-100 overflow-hidden">
+                <div className={`h-full rounded-full transition-all ${TONO_BARRA[estado.tono]}`} style={{ width: `${Math.min(100, estado.suma)}%` }} />
+              </div>
+              <p className={`text-xs mt-1.5 ${TONO_TEXTO[estado.tono]}`}>{estado.texto}</p>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {pesosSucios && <span className="text-[11px] text-amber-600 mr-auto">Cambios sin guardar</span>}
+              <button type="button" onClick={repartirIguales} disabled={!filasPeso.some(f => f.cuenta)}
+                className="text-xs font-medium px-3 py-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50">
+                Repartir en partes iguales
+              </button>
+              <button type="button" onClick={guardarPesos} disabled={guardandoPesos || !estado.puedeGuardar || !pesosSucios}
+                className="text-xs font-medium px-4 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white">
+                {guardandoPesos ? 'Guardando…' : 'Guardar pesos'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {!cargando && disponibles.length > 0 && (
         <div>
@@ -662,7 +835,141 @@ function PasosModal({ proceso, onClose, onToast }) {
   )
 }
 
-function TarjetaProceso({ p, clasificaciones, onEditar, onPasos, onEstado }) {
+/* ─── Documentos que el candidato debe subir para este proceso ─── */
+function DocumentosModal({ proceso, onClose, onToast }) {
+  const [documentos, setDocumentos] = useState([])
+  const [cargando, setCargando] = useState(true)
+  const [error, setError] = useState(null)
+  const [agregando, setAgregando] = useState(false)
+  const [nuevoNombre, setNuevoNombre] = useState('')
+  const [nuevoObligatorio, setNuevoObligatorio] = useState(true)
+  const [guardando, setGuardando] = useState(false)
+  const [editandoId, setEditandoId] = useState(null)
+  const [edicion, setEdicion] = useState({ nombre: '', obligatorio: true })
+
+  const cargar = useCallback(async () => {
+    setCargando(true)
+    try {
+      const { data } = await api.get(`/catalogo/procesos/${proceso.idProceso}/documentos`)
+      setDocumentos(data)
+    } catch { setError('Error al cargar los documentos requeridos.') }
+    finally { setCargando(false) }
+  }, [proceso.idProceso])
+
+  useEffect(() => { cargar() }, [cargar])
+
+  const agregar = async () => {
+    if (!nuevoNombre.trim()) return
+    setGuardando(true); setError(null)
+    try {
+      await api.post(`/catalogo/procesos/${proceso.idProceso}/documentos`, {
+        nombre: nuevoNombre.trim(), obligatorio: nuevoObligatorio,
+      })
+      setNuevoNombre(''); setNuevoObligatorio(true); setAgregando(false)
+      cargar()
+      onToast?.('Documento agregado correctamente')
+    } catch (err) {
+      setError(err.response?.data?.mensaje ?? 'Error al agregar el documento.')
+    } finally { setGuardando(false) }
+  }
+
+  const guardarEdicion = async (doc) => {
+    if (!edicion.nombre.trim()) return
+    setGuardando(true); setError(null)
+    try {
+      await api.put(`/catalogo/procesos/${proceso.idProceso}/documentos/${doc.id}`, {
+        nombre: edicion.nombre.trim(), clave: doc.clave, obligatorio: edicion.obligatorio, orden: doc.orden,
+      })
+      setEditandoId(null)
+      cargar()
+      onToast?.('Documento actualizado correctamente')
+    } catch (err) {
+      setError(err.response?.data?.mensaje ?? 'Error al actualizar el documento.')
+    } finally { setGuardando(false) }
+  }
+
+  const eliminar = async (doc) => {
+    setError(null)
+    try {
+      await api.delete(`/catalogo/procesos/${proceso.idProceso}/documentos/${doc.id}`)
+      cargar()
+      onToast?.(`"${doc.nombre}" eliminado`)
+    } catch (err) {
+      setError(err.response?.data?.mensaje ?? 'Error al eliminar el documento.')
+    }
+  }
+
+  return (
+    <div className="px-6 py-5 space-y-5">
+      <p className="text-xs text-gray-500">
+        Documentos que el candidato debe subir al diligenciar su link para este proceso — se muestran
+        en el paso "Documentos" de su formulario, marcados como obligatorios u opcionales.
+      </p>
+      {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{error}</div>}
+
+      {cargando ? (
+        <div className="flex justify-center py-6"><div className="animate-spin rounded-full h-6 w-6 border-4 border-primary-600 border-t-transparent" /></div>
+      ) : documentos.length === 0 && !agregando ? (
+        <p className="text-sm text-gray-400 py-3 text-center bg-gray-50 rounded-lg">Sin documentos configurados — el candidato no verá el paso de documentos.</p>
+      ) : (
+        <div className="space-y-2">
+          {documentos.map(doc => (
+            editandoId === doc.id ? (
+              <div key={doc.id} className="flex items-center gap-2 p-3 rounded-lg bg-primary-50/50 border border-primary-100">
+                <input value={edicion.nombre} onChange={e => setEdicion(p => ({ ...p, nombre: e.target.value }))} autoFocus
+                  className="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                <button onClick={() => setEdicion(p => ({ ...p, obligatorio: !p.obligatorio }))}
+                  className={`text-xs px-2 py-1 rounded-full border whitespace-nowrap ${edicion.obligatorio ? 'bg-orange-50 border-orange-200 text-orange-600' : 'bg-gray-100 border-gray-200 text-gray-400'}`}>
+                  {edicion.obligatorio ? 'Obligatorio' : 'Opcional'}
+                </button>
+                <button onClick={() => guardarEdicion(doc)} disabled={guardando} className="text-xs font-medium text-primary-600 hover:text-primary-800">Guardar</button>
+                <button onClick={() => setEditandoId(null)} className="text-xs text-gray-400">Cancelar</button>
+              </div>
+            ) : (
+              <div key={doc.id} className="flex items-center gap-3 p-3 rounded-lg bg-gray-50">
+                <span className="flex-1 text-sm font-medium text-gray-800 truncate">{doc.nombre}</span>
+                <span className={`text-xs px-2 py-0.5 rounded-full border whitespace-nowrap ${doc.obligatorio ? 'bg-orange-50 border-orange-200 text-orange-600' : 'bg-gray-100 border-gray-200 text-gray-400'}`}>
+                  {doc.obligatorio ? 'Obligatorio' : 'Opcional'}
+                </span>
+                <button onClick={() => { setEditandoId(doc.id); setEdicion({ nombre: doc.nombre, obligatorio: doc.obligatorio }) }}
+                  className="text-xs text-primary-600 hover:underline">Editar</button>
+                <button onClick={() => eliminar(doc)} className="text-xs text-red-500 hover:underline">Eliminar</button>
+              </div>
+            )
+          ))}
+        </div>
+      )}
+
+      {agregando ? (
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-primary-50/50 border border-primary-100">
+          <input value={nuevoNombre} onChange={e => setNuevoNombre(e.target.value)} autoFocus
+            placeholder="Ej: Cédula por ambas caras"
+            className="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+          <button onClick={() => setNuevoObligatorio(v => !v)}
+            className={`text-xs px-2 py-1 rounded-full border whitespace-nowrap ${nuevoObligatorio ? 'bg-orange-50 border-orange-200 text-orange-600' : 'bg-gray-100 border-gray-200 text-gray-400'}`}>
+            {nuevoObligatorio ? 'Obligatorio' : 'Opcional'}
+          </button>
+          <button onClick={agregar} disabled={guardando || !nuevoNombre.trim()}
+            className="text-xs font-medium text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50 px-3 py-1.5 rounded-lg">
+            {guardando ? 'Guardando...' : 'Guardar'}
+          </button>
+          <button onClick={() => { setAgregando(false); setNuevoNombre('') }} className="text-xs text-gray-400">Cancelar</button>
+        </div>
+      ) : (
+        <button onClick={() => setAgregando(true)}
+          className="w-full text-xs font-medium text-primary-600 hover:text-primary-800 border border-dashed border-primary-200 rounded-lg py-2.5 hover:bg-primary-50/40 transition-colors">
+          + Agregar documento
+        </button>
+      )}
+
+      <div className="flex justify-end pt-2 border-t border-gray-100">
+        <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cerrar</button>
+      </div>
+    </div>
+  )
+}
+
+function TarjetaProceso({ p, clasificaciones, onEditar, onPasos, onDocumentos, onEstado }) {
   const cfg = cfgColor(clasificaciones, p.clasificacion?.codigo)
   const v   = fmtValor(p.valor)
   const vc  = fmtValor(p.valorCalculado)
@@ -691,6 +998,13 @@ function TarjetaProceso({ p, clasificaciones, onEditar, onPasos, onEstado }) {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               {p.diasHabilesEntrega} día{p.diasHabilesEntrega !== 1 ? 's' : ''} hábil{p.diasHabilesEntrega !== 1 ? 'es' : ''}
+            </span>
+          )}
+          {p.totalPasos > 0 && (
+            <span title={p.calificaRiesgo ? 'Los pesos de riesgo suman 100 %: el proceso califica' : (p.motivoNoCalifica ?? '')}
+              className={`inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full border ${
+                p.calificaRiesgo ? 'bg-green-50 text-green-700 border-green-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+              {p.calificaRiesgo ? '✓' : '⚠'} Riesgo {p.sumaPesos != null ? fmtPct(Number(p.sumaPesos)) : '0 %'}
             </span>
           )}
           {p.tramosPrecio?.length > 0 && (
@@ -724,6 +1038,10 @@ function TarjetaProceso({ p, clasificaciones, onEditar, onPasos, onEstado }) {
             className="flex-1 text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors text-center">
             Subprocesos
           </button>
+          <button onClick={() => onDocumentos(p)}
+            className="flex-1 text-xs font-medium px-3 py-1.5 rounded-lg border border-cyan-200 text-cyan-600 hover:bg-cyan-50 transition-colors text-center">
+            Documentos
+          </button>
           <button onClick={() => onEditar(p)}
             className="flex-1 text-xs font-medium px-3 py-1.5 rounded-lg border border-primary-200 text-primary-600 hover:bg-primary-50 transition-colors text-center">
             Editar
@@ -738,13 +1056,13 @@ function TarjetaProceso({ p, clasificaciones, onEditar, onPasos, onEstado }) {
   )
 }
 
-function TablaProcesos({ procesos, clasificaciones, cargando, onEditar, onPasos, onEstado }) {
+function TablaProcesos({ procesos, clasificaciones, cargando, onEditar, onPasos, onDocumentos, onEstado }) {
   if (cargando) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-4 border-primary-600 border-t-transparent" /></div>
   if (!procesos.length) return <div className="text-center py-16 text-gray-400 text-sm">Sin procesos en esta clasificación.</div>
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {procesos.map(p => (
-        <TarjetaProceso key={p.idProceso} p={p} clasificaciones={clasificaciones} onEditar={onEditar} onPasos={onPasos} onEstado={onEstado} />
+        <TarjetaProceso key={p.idProceso} p={p} clasificaciones={clasificaciones} onEditar={onEditar} onPasos={onPasos} onDocumentos={onDocumentos} onEstado={onEstado} />
       ))}
     </div>
   )
@@ -933,6 +1251,8 @@ function FormProgreso({ progreso, onClose, onGuardado }) {
 }
 
 function TablaProgresos({ progresos, cargando, onEditar, onDesactivar, onActivar, ordenCol, ordenDir, onOrdenar }) {
+  const navigate = useNavigate()
+
   if (cargando) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-4 border-primary-600 border-t-transparent" /></div>
   if (!progresos.length) return <div className="text-center py-16 text-gray-400 text-sm">No hay subprocesos que coincidan con el filtro.</div>
 
@@ -944,17 +1264,17 @@ function TablaProgresos({ progresos, cargando, onEditar, onDesactivar, onActivar
     { key: 'minutosEstimados', label: 'Tiempo est.',   sortable: true  },
     { key: 'rolResponsable',   label: 'Rol',           sortable: true  },
     { key: 'activo',           label: 'Estado',        sortable: true  },
-    { key: '_acc',             label: 'Acciones',      sortable: false },
+    { key: '_acc',             label: '···',           sortable: false },
   ]
 
   return (
     <div className="overflow-x-auto">
       <table className="min-w-full divide-y divide-gray-100">
-        <thead className="bg-gray-50">
+        <thead className="bg-gray-50/80">
           <tr>
             {cols.map(c => (
               <th key={c.key} onClick={c.sortable ? () => onOrdenar(c.key) : undefined}
-                className={`px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider select-none ${c.sortable ? 'cursor-pointer hover:text-gray-700' : ''}`}>
+                className={`px-4 py-3 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider select-none whitespace-nowrap ${c.sortable ? 'cursor-pointer hover:text-gray-600' : ''}`}>
                 {c.label}{c.sortable && <IconoOrden activo={ordenCol === c.key} dir={ordenDir} />}
               </th>
             ))}
@@ -962,7 +1282,7 @@ function TablaProgresos({ progresos, cargando, onEditar, onDesactivar, onActivar
         </thead>
         <tbody className="divide-y divide-gray-100">
           {progresos.map(t => (
-            <tr key={t.idTipoProgreso} className="hover:bg-gray-50 transition-colors">
+            <tr key={t.idTipoProgreso} className="hover:bg-gray-50/70 transition-colors">
               <td className="px-4 py-3 text-sm text-gray-500 text-center w-16">{t.orden ?? 0}</td>
               <td className="px-4 py-3 text-sm font-medium text-gray-900">{t.nombreProgreso}</td>
               <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">{t.descripcion ?? '—'}</td>
@@ -972,33 +1292,19 @@ function TablaProgresos({ progresos, cargando, onEditar, onDesactivar, onActivar
               </td>
               <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{etiquetaRol(t.rolResponsable)}</td>
               <td className="px-4 py-3"><Badge activo={t.activo} /></td>
-              <td className="px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <Link to={`/admin/catalogo/plantilla/${t.idTipoProgreso}`}
-                    title={t.requiereDocumento ? `Plantilla de ${t.nombreProgreso}` : `Plantilla de ${t.nombreProgreso} (aún no marcada como "requiere documento")`}
-                    className={`p-1.5 rounded-lg transition-colors ${
-                      t.requiereDocumento
-                        ? 'text-primary-600 hover:bg-primary-50 hover:text-primary-800'
-                        : 'text-gray-300 hover:bg-gray-50 hover:text-gray-500'
-                    }`}>
-                    <IconoHoja />
-                  </Link>
-                  <button onClick={() => onEditar(t)} title="Editar"
-                    className="p-1.5 rounded-lg text-primary-600 hover:bg-primary-50 hover:text-primary-800 transition-colors">
-                    <IconoLapiz />
-                  </button>
-                  {t.activo ? (
-                    <button onClick={() => onDesactivar(t)} title="Desactivar"
-                      className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 hover:text-red-800 transition-colors">
-                      <IconoPower />
-                    </button>
-                  ) : (
-                    <button onClick={() => onActivar(t)} title="Activar"
-                      className="p-1.5 rounded-lg text-green-700 hover:bg-green-50 hover:text-green-900 transition-colors">
-                      <IconoPower />
-                    </button>
-                  )}
-                </div>
+              <td className="px-4 py-3 text-center">
+                <MenuAcciones opciones={[
+                  {
+                    label: t.requiereDocumento ? 'Plantilla' : 'Plantilla (sin "requiere documento")',
+                    icono: <IconoHoja />,
+                    destacado: t.requiereDocumento ? undefined : 'text-gray-400',
+                    onClick: () => navigate(`/admin/catalogo/plantilla/${t.idTipoProgreso}`),
+                  },
+                  { label: 'Editar', icono: <IconoLapiz />, onClick: () => onEditar(t) },
+                  t.activo
+                    ? { label: 'Desactivar', icono: <IconoPower />, destacado: 'text-red-600', onClick: () => onDesactivar(t) }
+                    : { label: 'Activar', icono: <IconoPower />, destacado: 'text-green-700', onClick: () => onActivar(t) },
+                ]} />
               </td>
             </tr>
           ))}
@@ -1080,10 +1386,10 @@ function TablaClasificaciones({ clasificaciones, cargando, onEditar, onEstado })
   return (
     <div className="overflow-x-auto">
       <table className="min-w-full divide-y divide-gray-100">
-        <thead className="bg-gray-50">
+        <thead className="bg-gray-50/80">
           <tr>
-            {['Código', 'Nombre', 'Descripción', 'Estado', 'Acciones'].map(h => (
-              <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>
+            {['Código', 'Nombre', 'Descripción', 'Estado', '···'].map(h => (
+              <th key={h} className="px-4 py-3 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
             ))}
           </tr>
         </thead>
@@ -1091,7 +1397,7 @@ function TablaClasificaciones({ clasificaciones, cargando, onEditar, onEstado })
           {clasificaciones.map((c, i) => {
             const cfg = PALETA[i % PALETA.length]
             return (
-              <tr key={c.idClasificacion} className="hover:bg-gray-50 transition-colors">
+              <tr key={c.idClasificacion} className="hover:bg-gray-50/70 transition-colors">
                 <td className="px-4 py-3">
                   <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border ${cfg.color}`}>
                     {c.codigo}
@@ -1100,17 +1406,16 @@ function TablaClasificaciones({ clasificaciones, cargando, onEditar, onEstado })
                 <td className="px-4 py-3 text-sm font-medium text-gray-900">{c.nombre}</td>
                 <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">{c.descripcion ?? '—'}</td>
                 <td className="px-4 py-3"><Badge activo={c.activo} /></td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => onEditar(c)} title="Editar"
-                      className="p-1.5 rounded-lg text-primary-600 hover:bg-primary-50 hover:text-primary-800 transition-colors">
-                      <IconoLapiz />
-                    </button>
-                    <button onClick={() => onEstado(c)} title={c.activo ? 'Desactivar' : 'Activar'}
-                      className={`p-1.5 rounded-lg transition-colors ${c.activo ? 'text-red-600 hover:bg-red-50 hover:text-red-800' : 'text-green-700 hover:bg-green-50 hover:text-green-900'}`}>
-                      <IconoPower />
-                    </button>
-                  </div>
+                <td className="px-4 py-3 text-center">
+                  <MenuAcciones opciones={[
+                    { label: 'Editar', icono: <IconoLapiz />, onClick: () => onEditar(c) },
+                    {
+                      label: c.activo ? 'Desactivar' : 'Activar',
+                      icono: <IconoPower />,
+                      destacado: c.activo ? 'text-red-600' : 'text-green-700',
+                      onClick: () => onEstado(c),
+                    },
+                  ]} />
                 </td>
               </tr>
             )
@@ -1146,6 +1451,7 @@ export default function Catalogo() {
   const [modalCrearProceso,    setModalCrearProceso]    = useState(false)
   const [editandoProceso,      setEditandoProceso]      = useState(null)
   const [configurandoProceso,  setConfigurandoProceso]  = useState(null)
+  const [documentandoProceso,  setDocumentandoProceso]  = useState(null)
 
   /* ── Progresos ── */
   const [progresos,         setProgresos]         = useState([])
@@ -1331,7 +1637,7 @@ export default function Catalogo() {
         <div className="flex items-center gap-2">
           {pestana === 'procesos' && clasificacionActiva && (
             <button onClick={volverAlGrid}
-              className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition-colors">
+              className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 border border-gray-200 px-3 py-1.5 rounded-lg hover:bg-gray-50/70 transition-colors">
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
               </svg>
@@ -1404,6 +1710,7 @@ export default function Catalogo() {
               cargando={cargandoProcesos}
               onEditar={setEditandoProceso}
               onPasos={setConfigurandoProceso}
+              onDocumentos={setDocumentandoProceso}
               onEstado={cambiarEstadoProceso}
             />
           </>
@@ -1415,7 +1722,7 @@ export default function Catalogo() {
             total={progresos.length} activos={progresos.filter(t => t.activo).length}
             inactivos={progresos.filter(t => !t.activo).length} visibles={progresosVisibles.length}
           />
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-2xl ring-1 ring-gray-900/5 shadow-sm overflow-hidden">
             <TablaProgresos progresos={progresosVisibles} cargando={cargandoProgresos}
               onEditar={setEditandoProgreso} onDesactivar={iniciarDesactivarProgreso} onActivar={activarProgreso}
               ordenCol={ordenColProg} ordenDir={ordenDirProg} onOrdenar={manejarOrdenProg} />
@@ -1433,7 +1740,7 @@ export default function Catalogo() {
               <span className="text-base leading-none">+</span> Nueva clasificación
             </button>
           </div>
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-2xl ring-1 ring-gray-900/5 shadow-sm overflow-hidden">
             <TablaClasificaciones
               clasificaciones={clasificacionesVisibles}
               cargando={cargandoClasif}
@@ -1464,6 +1771,14 @@ export default function Catalogo() {
           onClose={() => { setConfigurandoProceso(null); cargarProcesos() }}>
           <PasosModal proceso={configurandoProceso}
             onClose={() => { setConfigurandoProceso(null); cargarProcesos() }}
+            onToast={mostrarToast} />
+        </Modal>
+      )}
+      {documentandoProceso && (
+        <Modal titulo={`Documentos — ${documentandoProceso.nombreProceso}`} ancho="max-w-lg"
+          onClose={() => setDocumentandoProceso(null)}>
+          <DocumentosModal proceso={documentandoProceso}
+            onClose={() => setDocumentandoProceso(null)}
             onToast={mostrarToast} />
         </Modal>
       )}

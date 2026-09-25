@@ -31,17 +31,17 @@ public class GestorMensajeController {
     }
 
     @GetMapping
-    public ResponseEntity<List<MensajeResponse>> listar(@RequestParam Integer idCliente, Authentication auth) {
-        return ResponseEntity.ok(mensajeService.listarParaGestor(idCliente, resolverIdGestor(auth)));
+    public ResponseEntity<List<MensajeResponse>> listar(@RequestParam Long idUsuarioCliente, Authentication auth) {
+        return ResponseEntity.ok(mensajeService.listarParaGestor(idUsuarioCliente, resolverIdGestor(auth)));
     }
 
     @PostMapping
     public ResponseEntity<MensajeResponse> enviar(
-            @RequestParam Integer idCliente,
+            @RequestParam Long idUsuarioCliente,
             @Valid @RequestBody EnviarMensajeRequest request,
             Authentication auth) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(mensajeService.enviarComoGestor(idCliente, resolverIdGestor(auth), auth.getName(), request.mensaje()));
+                .body(mensajeService.enviarComoGestor(idUsuarioCliente, resolverIdGestor(auth), auth.getName(), request.mensaje()));
     }
 
     private Long resolverIdGestor(Authentication auth) {

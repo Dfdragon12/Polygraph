@@ -67,4 +67,17 @@ public class FormularioColumna {
      *  tipo de dato. */
     @Column(name = "opciones", length = 1000)
     private String opciones;
+
+    /** El campo cuenta para la calificación de riesgo (solo Lista o Sí/No) — los puntos de cada
+     *  respuesta están en puntajes. Ver docs/modelo-calificacion-riesgo.md §3. */
+    @Builder.Default
+    @Column(name = "califica_riesgo", nullable = false)
+    private Boolean calificaRiesgo = false;
+
+    /** Mutar esta MISMA colección (clear/add), nunca reemplazarla: orphanRemoval=true. */
+    @Builder.Default
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    @OneToMany(mappedBy = "columna", cascade = CascadeType.ALL, orphanRemoval = true)
+    private java.util.List<FormularioColumnaPuntaje> puntajes = new java.util.ArrayList<>();
 }

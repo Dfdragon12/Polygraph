@@ -9,8 +9,11 @@ import com.polygraph.erp.modules.auth.entity.Usuario;
 import com.polygraph.erp.modules.auth.repository.TokenRefreshRepository;
 import com.polygraph.erp.modules.auth.repository.UsuarioRepository;
 import com.polygraph.erp.modules.clientes.entity.Cliente;
+import com.polygraph.erp.modules.clientes.entity.ClientePospago;
 import com.polygraph.erp.modules.clientes.repository.ClienteRepository;
+import com.polygraph.erp.modules.clientes.repository.ClientePospagoRepository;
 import com.polygraph.erp.modules.notificaciones.service.NotificacionService;
+import com.polygraph.erp.modules.pagos.repository.SaldoServicioClienteRepository;
 import com.polygraph.erp.security.JwtUtil;
 import com.polygraph.erp.shared.enums.Rol;
 import com.polygraph.erp.shared.enums.TipoCliente;
@@ -31,6 +34,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.LocalDateTime;
+import java.util.Comparator;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -41,6 +46,8 @@ public class AuthService {
 
     private final UsuarioRepository usuarioRepository;
     private final ClienteRepository clienteRepository;
+    private final ClientePospagoRepository clientePospagoRepository;
+    private final SaldoServicioClienteRepository saldoServicioClienteRepository;
     private final TokenRefreshRepository tokenRefreshRepository;
     private final JwtUtil jwtUtil;
     private final PasswordEncoder passwordEncoder;
@@ -99,7 +106,7 @@ public class AuthService {
                 new LoginResponse.UsuarioInfo(
                         usuario.getIdUsuario(), usuario.getEmail(),
                         usuario.getRol().name(), usuario.getNombre(), cambioRequerido,
-                        resolverTipoCliente(usuario)));
+                        resolverTipoCliente(usuario), resolverPuedeSolicitar(usuario)));
     }
 
     /** "Continuar con Google" — sirve tanto para registrar (si el email no existe, crea un
@@ -120,6 +127,7 @@ public class AuthService {
                     .apellido(info.familyName())
                     .emailPrincipal(info.email())
                     .estado("ACTIVO")
+                    .idGestor(resolverGestorMenosCargado())
                     .fechaRegistro(LocalDateTime.now())
                     .build();
             clienteRepository.save(cliente);
@@ -160,7 +168,7 @@ public class AuthService {
                 new LoginResponse.UsuarioInfo(
                         usuario.getIdUsuario(), usuario.getEmail(),
                         usuario.getRol().name(), usuario.getNombre(), false,
-                        resolverTipoCliente(usuario)));
+                        resolverTipoCliente(usuario), resolverPuedeSolicitar(usuario)));
     }
 
     private record GoogleTokenInfo(String email, String givenName, String familyName) {}
@@ -210,6 +218,36 @@ public class AuthService {
                 .orElse(null);
     }
 
+    /** Solo aplica a roles del portal cliente; null para roles internos. Si ya puede ver/usar
+     *  "Solicitudes": pospago solo una vez tiene un acuerdo de crédito vigente (fila en
+     *  ClientePospago con requiereAprobacion=false — eso solo lo deja así un interno, ver
+     *  ClienteAdminService.actualizarPospago), prepago solo una vez completó su primera compra
+     *  (existe una fila en SaldoServicioCliente, que solo se crea tras una compra aprobada). No es
+     *  una aprobación manual aparte — se deriva de datos reales, así que no hay nada que un
+     *  gestor tenga que "aprobar" a mano. */
+    private Boolean resolverPuedeSolicitar(Usuario usuario) {
+        if (usuario.getIdCliente() == null) return null;
+        Cliente cliente = clienteRepository.findById(usuario.getIdCliente()).orElse(null);
+        if (cliente == null) return null;
+        if (cliente.getTipoCliente() == TipoCliente.POSPAGO) {
+            ClientePospago pospago = clientePospagoRepository.findByIdCliente(cliente.getIdCliente()).orElse(null);
+            return pospago != null && !Boolean.TRUE.equals(pospago.getRequiereAprobacion());
+        }
+        return saldoServicioClienteRepository.existsByCliente_IdCliente(cliente.getIdCliente());
+    }
+
+    /** A qué gestor se le asigna un cliente nuevo que se auto-registra — el gestor ACTIVO con
+     *  menos clientes ya asignados (reparte la carga, en vez de que todos los registros nuevos le
+     *  caigan siempre al mismo). null si no hay ningún gestor activo (el cliente queda sin
+     *  gestor, igual que antes — un admin se lo asigna a mano después). */
+    private Long resolverGestorMenosCargado() {
+        return usuarioRepository.findByRolIn(Set.of(Rol.GESTOR)).stream()
+                .filter(u -> Boolean.TRUE.equals(u.getActivo()))
+                .min(Comparator.comparingLong(g -> clienteRepository.countByIdGestor(g.getIdUsuario())))
+                .map(Usuario::getIdUsuario)
+                .orElse(null);
+    }
+
     public void cambiarPassword(String email, CambiarPasswordRequest request) {
         Usuario usuario = usuarioRepository.findByEmail(email)
                 .orElseThrow(() -> new ApiException("Usuario no encontrado", HttpStatus.NOT_FOUND));
@@ -231,28 +269,25 @@ public class AuthService {
                 .emailPrincipal(request.email())
                 .telefono(request.telefono())
                 .estado("ACTIVO")
+                .idGestor(resolverGestorMenosCargado())
                 .fechaRegistro(LocalDateTime.now())
                 .build();
         clienteRepository.save(cliente);
 
-        String tokenActivacion = generarToken();
         Usuario usuario = Usuario.builder()
                 .nombre(request.nombre())
                 .apellido(request.apellido())
                 .email(request.email())
                 .password(passwordEncoder.encode(request.password()))
                 .rol(Rol.ADMIN_CLIENTE)
-                .activo(false)
+                .activo(true)
                 .requiere2fa(false)
-                .emailVerificado(false)
-                .tokenActivacion(tokenActivacion)
-                .tokenActivacionExpira(LocalDateTime.now().plusHours(24))
+                .emailVerificado(true)
                 .idCliente(cliente.getIdCliente())
                 .fechaCreacion(LocalDateTime.now())
                 .build();
         usuarioRepository.save(usuario);
 
-        emailService.enviarActivacion(request.email(), request.nombre(), tokenActivacion);
         notificacionService.crearParaAdmins("CLIENTE", "Nuevo cliente registrado",
                 "El cliente " + request.nombre() + " " + (request.apellido() != null ? request.apellido() : "")
                 + " se registró como persona natural (PREPAGO)", usuario.getIdUsuario());
@@ -262,15 +297,12 @@ public class AuthService {
     public void registrarJuridica(RegistroJuridicaRequest request) {
         validarEmailDisponible(request.email());
 
-        TipoCliente tipoCliente;
-        try {
-            tipoCliente = TipoCliente.valueOf(request.tipoCliente().toUpperCase());
-        } catch (IllegalArgumentException e) {
-            throw new ApiException("Tipo de cliente inválido. Use PREPAGO o POSPAGO", HttpStatus.BAD_REQUEST);
-        }
-
+        // Antes se podía elegir PREPAGO o POSPAGO libremente al auto-registrarse — pospago sin
+        // ninguna revisión de crédito previa. Ahora toda empresa que se registra sola entra
+        // siempre como PREPAGO; pasar a pospago requiere que un interno lo gestione después (ver
+        // ClienteAdminService.actualizarPospago).
         Cliente cliente = Cliente.builder()
-                .tipoCliente(tipoCliente)
+                .tipoCliente(TipoCliente.PREPAGO)
                 .tipoPersona(TipoPersona.JURIDICA)
                 .nit(request.nit())
                 .dv(request.dv())
@@ -280,46 +312,28 @@ public class AuthService {
                 .emailPrincipal(request.email())
                 .telefono(request.telefono())
                 .estado("ACTIVO")
+                .idGestor(resolverGestorMenosCargado())
                 .fechaRegistro(LocalDateTime.now())
                 .build();
         clienteRepository.save(cliente);
 
-        String tokenActivacion = generarToken();
         Usuario usuario = Usuario.builder()
                 .nombre(request.razonSocial())
                 .email(request.email())
                 .password(passwordEncoder.encode(request.password()))
                 .rol(Rol.ADMIN_CLIENTE)
-                .activo(false)
+                .activo(true)
                 .requiere2fa(false)
-                .emailVerificado(false)
-                .tokenActivacion(tokenActivacion)
-                .tokenActivacionExpira(LocalDateTime.now().plusHours(24))
+                .emailVerificado(true)
                 .idCliente(cliente.getIdCliente())
                 .fechaCreacion(LocalDateTime.now())
                 .build();
         usuarioRepository.save(usuario);
 
-        emailService.enviarActivacion(request.email(), request.razonSocial(), tokenActivacion);
         notificacionService.crearParaAdmins("CLIENTE", "Nuevo cliente registrado",
-                "La empresa " + request.razonSocial() + " (NIT: " + request.nit() + ") se registró como cliente "
-                + tipoCliente.name().toLowerCase(), usuario.getIdUsuario());
+                "La empresa " + request.razonSocial() + " (NIT: " + request.nit() + ") se registró como cliente prepago",
+                usuario.getIdUsuario());
         log.info("Registro jurídico completado: {}", request.email());
-    }
-
-    public void activarCuenta(String token) {
-        Usuario usuario = usuarioRepository.findByTokenActivacion(token)
-                .orElseThrow(() -> new ApiException("Token de activación inválido", HttpStatus.BAD_REQUEST));
-
-        if (LocalDateTime.now().isAfter(usuario.getTokenActivacionExpira())) {
-            throw new ApiException("El token de activación ha expirado", HttpStatus.BAD_REQUEST);
-        }
-
-        usuario.setActivo(true);
-        usuario.setEmailVerificado(true);
-        usuario.setTokenActivacion(null);
-        usuario.setTokenActivacionExpira(null);
-        log.info("Cuenta activada: {}", usuario.getEmail());
     }
 
     public LoginResponse refresh(RefreshRequest request) {
@@ -340,7 +354,7 @@ public class AuthService {
                 new LoginResponse.UsuarioInfo(
                         usuario.getIdUsuario(), usuario.getEmail(),
                         usuario.getRol().name(), usuario.getNombre(), false,
-                        resolverTipoCliente(usuario)));
+                        resolverTipoCliente(usuario), resolverPuedeSolicitar(usuario)));
     }
 
     public void forgotPassword(ForgotPasswordRequest request) {

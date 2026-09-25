@@ -44,6 +44,9 @@ public class DashboardClienteService {
         Integer idCliente = obtenerIdClienteActual();
         log.info("Cargando dashboard para idCliente={}", idCliente);
 
+        Cliente cliente = clienteRepository.findById(idCliente)
+                .orElseThrow(() -> new ApiException("Cliente no encontrado", HttpStatus.NOT_FOUND));
+
         List<EstadoServicio> estadosActivos = List.of(
                 EstadoServicio.PENDIENTE, EstadoServicio.PROGRAMANDO, EstadoServicio.EN_EJECUCION);
         List<EstadoServicio> estadosFinalizados = List.of(
@@ -77,7 +80,8 @@ public class DashboardClienteService {
                 .sum();
 
         return new DashboardClienteResponse(
-                serviciosActivos, serviciosPendientes, finalizadosMes, serviciosDisponibles, ultimasSolicitudes);
+                serviciosActivos, serviciosPendientes, finalizadosMes, serviciosDisponibles, ultimasSolicitudes,
+                cliente.getTipoCliente().name());
     }
 
     @Transactional(readOnly = true)

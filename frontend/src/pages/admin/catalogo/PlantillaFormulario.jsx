@@ -12,6 +12,8 @@ const TIPOS_DATO = [
   { value: 'FECHA', label: 'Fecha', icono: '📅' },
   { value: 'BOOLEANO', label: 'Sí / No', icono: '✓' },
   { value: 'LISTA', label: 'Lista desplegable', icono: '▾' },
+  { value: 'CIUDAD', label: 'Ciudad (catálogo)', icono: '📍' },
+  { value: 'BARRIO', label: 'Barrio (catálogo)', icono: '🏘' },
   { value: 'ARCHIVO', label: 'Archivo (una o varias imágenes/documentos)', icono: '📎' },
 ]
 
@@ -39,6 +41,114 @@ const TABLAS_HOJA_VIDA = [
   { clave: 'inactividades', etiqueta: 'Inactividades laborales', columnas: ['fecha_inicio', 'fecha_fin', 'dias_inactivo', 'justificacion', 'requiere_cuestionario'] },
 ]
 
+
+/* ─── Calificación de riesgo por respuesta (docs/modelo-calificacion-riesgo.md §3) ─── */
+const TIPOS_CALIFICABLES = ['LISTA', 'BOOLEANO']
+
+function esCalificable(c) {
+  return TIPOS_CALIFICABLES.includes(c.tipoDato) && !c.campoCandidato && !c.campoCliente
+}
+
+// Respuestas posibles de un campo calificable: en Sí/No se guardan como "true"/"false".
+function respuestasDe(c) {
+  if (c.tipoDato === 'BOOLEANO') return [{ valor: 'true', etiqueta: 'Sí' }, { valor: 'false', etiqueta: 'No' }]
+  return (c.opcionesTexto || '').split(',').map(o => o.trim()).filter(Boolean).map(o => ({ valor: o, etiqueta: o }))
+}
+
+// Columna tal como llega del servidor -> estado local del constructor (conId=false al duplicar
+// desde otra plantilla: se guarda como columna nueva).
+function columnaDesdeServidor(c, conId) {
+  return {
+    localId: idLocal(), idColumna: conId ? c.idColumna : null, nombre: c.nombre ?? '', tipoDato: c.tipoDato,
+    campoCandidato: c.campoCandidato ?? '', campoCliente: c.campoCliente ?? '', clave: c.clave ?? '',
+    opcionesTexto: (c.opciones ?? []).join(', '),
+    calificaRiesgo: !!c.calificaRiesgo,
+    puntajes: Object.fromEntries((c.puntajes ?? []).map(pt => [pt.opcion, { puntos: String(Number(pt.puntos)), esCritico: !!pt.esCritico }])),
+  }
+}
+
+const numPuntos = (t) => {
+  if (t === '' || t == null) return 0
+  const n = Number(String(t).replace(',', '.'))
+  return Number.isFinite(n) ? n : NaN
+}
+
+// Tabla de puntos de un campo: una fila por respuesta posible. Avisa si hay puntos guardados de
+// opciones que ya no existen (renombradas/quitadas): se perderán al guardar.
+function PuntajesColumna({ c, onPuntaje }) {
+  const respuestas = respuestasDe(c)
+  const huerfanas = Object.entries(c.puntajes || {})
+    .filter(([op, v]) => !respuestas.some(r => r.valor === op) && (numPuntos(v.puntos) > 0 || v.esCritico))
+    .map(([op]) => op)
+  if (respuestas.length === 0) {
+    return <p className="text-[11px] text-amber-600 mt-1">Escribe las opciones de la lista para asignarles puntos.</p>
+  }
+  return (
+    <div className="mt-2 rounded-lg border border-primary-100 overflow-hidden">
+      <div className="grid grid-cols-[minmax(0,1fr)_90px_80px] gap-2 px-3 py-1.5 bg-primary-50/60 text-[10px] font-semibold uppercase tracking-wider text-primary-700">
+        <span>Respuesta</span><span className="text-right">Puntos</span><span className="text-center">Crítica</span>
+      </div>
+      {respuestas.map(r => {
+        const v = c.puntajes?.[r.valor] ?? { puntos: '', esCritico: false }
+        const n = numPuntos(v.puntos)
+        const invalido = Number.isNaN(n) || n < 0 || n > 100
+        return (
+          <div key={r.valor} className={`grid grid-cols-[minmax(0,1fr)_90px_80px] gap-2 items-center px-3 py-1.5 border-t border-primary-50 ${v.esCritico ? 'bg-red-50/40' : ''}`}>
+            <span className="text-xs text-gray-700 truncate" title={r.etiqueta}>{r.etiqueta}</span>
+            <input value={v.puntos} onChange={e => onPuntaje(r.valor, 'puntos', e.target.value.replace(/[^0-9.,]/g, ''))}
+              inputMode="decimal" placeholder="0"
+              className={`text-right border rounded-md px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 ${invalido ? 'border-red-300 bg-red-50' : 'border-gray-200'}`} />
+            <label className="flex justify-center" title="Si eligen esta respuesta, el subproceso queda en 100 y el estudio en ALTO">
+              <input type="checkbox" checked={!!v.esCritico} onChange={e => onPuntaje(r.valor, 'esCritico', e.target.checked)}
+                className="rounded border-gray-300 text-red-600 focus:ring-red-500" />
+            </label>
+          </div>
+        )
+      })}
+      {huerfanas.length > 0 && (
+        <p className="px-3 py-1.5 border-t border-amber-100 bg-amber-50 text-[11px] text-amber-700">
+          Estas respuestas ya no existen y sus puntos se perderán al guardar: {huerfanas.join(', ')}.
+        </p>
+      )}
+    </div>
+  )
+}
+
+// Resumen de la escala de riesgo de toda la plantilla — para ver de un vistazo si quedó bien armada.
+function ResumenCalificacion({ secciones }) {
+  let campos = 0, criticas = 0, maximoCampos = 0, maximoPorFila = 0
+  for (const s of secciones) {
+    for (const c of s.columnas) {
+      if (!esCalificable(c) || !c.calificaRiesgo) continue
+      campos++
+      const valores = respuestasDe(c).map(r => c.puntajes?.[r.valor] ?? { puntos: '', esCritico: false })
+      criticas += valores.filter(v => v.esCritico).length
+      const max = Math.max(0, ...valores.map(v => numPuntos(v.puntos)).filter(n => Number.isFinite(n)))
+      if (s.tipo === 'TABLA') maximoPorFila += max
+      else maximoCampos += max
+    }
+  }
+  if (campos === 0) {
+    return (
+      <div className="bg-white border border-dashed border-gray-300 rounded-2xl px-5 py-3 text-xs text-gray-500">
+        <span className="font-semibold text-gray-700">Calificación de riesgo:</span> ningún campo califica todavía. Enciende
+        "Califica riesgo" en un campo Lista o Sí/No para asignar puntos a sus respuestas.
+      </div>
+    )
+  }
+  return (
+    <div className="bg-white border border-primary-100 rounded-2xl px-5 py-3 flex flex-wrap items-center gap-x-6 gap-y-1.5">
+      <p className="text-xs font-semibold text-primary-700">Calificación de riesgo</p>
+      <p className="text-xs text-gray-600"><span className="font-bold text-gray-900">{campos}</span> campo{campos === 1 ? '' : 's'} califica{campos === 1 ? '' : 'n'}</p>
+      <p className="text-xs text-gray-600">
+        Puntaje máximo posible <span className="font-bold text-gray-900">{Math.round(maximoCampos * 100) / 100}</span>
+        {maximoPorFila > 0 && <> + <span className="font-bold text-gray-900">{Math.round(maximoPorFila * 100) / 100}</span> por cada fila de tabla</>}
+        <span className="text-gray-400"> (tope 100)</span>
+      </p>
+      <p className="text-xs text-gray-600"><span className={`font-bold ${criticas > 0 ? 'text-red-600' : 'text-gray-900'}`}>{criticas}</span> respuesta{criticas === 1 ? '' : 's'} crítica{criticas === 1 ? '' : 's'}</p>
+    </div>
+  )
+}
 
 /* ─── Iconos ─── */
 function IconoFlechaArriba() {
@@ -208,7 +318,7 @@ function CamposAntiguos({ idTipoProgreso, onRestaurado, onError }) {
   return (
     <div className="mb-6 bg-white border border-gray-200 rounded-2xl overflow-hidden">
       <button type="button" onClick={() => setAbierto(v => !v)}
-        className="w-full flex items-center gap-3 px-5 py-3.5 text-left hover:bg-gray-50 transition-colors">
+        className="w-full flex items-center gap-3 px-5 py-3.5 text-left hover:bg-gray-50/70 transition-colors">
         <span className="flex-shrink-0 w-8 h-8 rounded-xl bg-gray-100 text-gray-500 flex items-center justify-center">
           <IconoArchivo />
         </span>
@@ -407,12 +517,17 @@ const PlantillaWordPanel = forwardRef(function PlantillaWordPanel(
       g.doc.setFontSize(10); g.doc.setFont('helvetica', 'bold'); g.doc.setTextColor(21, 128, 61)
       g.doc.text('El documento coincide con los campos del constructor — no se encontraron diferencias.', g.MAR, g.y())
     } else {
+      if (analisis.errorGeneracion) {
+        g.titulo('El documento NO se puede generar', [185, 28, 28])
+        g.parrafos([analisis.errorGeneracion])
+      }
+
       const tablasMalUsadas = analisis.tablasMalUsadas ?? []
       if (tablasMalUsadas.length > 0) {
         g.titulo(`Tablas mal puestas — no se van a repetir (${tablasMalUsadas.length})`, [185, 28, 28])
         g.tabla(['Marcador'], tablasMalUsadas.map(m => [`\${${m}}`]), [185, 28, 28])
         g.doc.setFontSize(7); g.doc.setFont('helvetica', 'italic'); g.doc.setTextColor(153, 27, 27)
-        g.doc.text('Van dentro de un comentario repeatTableRow(...) sobre la fila de la tabla, no sueltos en el texto.', g.MAR, g.y() - 4)
+        g.doc.text('Van dentro de un comentario repeatTableRow(...) (fila) o repeatDocPart(...) (bloque/cuadro), no sueltos en el texto.', g.MAR, g.y() - 4)
       }
 
       g.titulo(`Marcadores sin campo en el constructor (${analisis.marcadoresDesconocidos.length})`, [185, 28, 28])
@@ -436,17 +551,51 @@ const PlantillaWordPanel = forwardRef(function PlantillaWordPanel(
     const pasos = [
       'Escribe cada marcador tal cual — mayúsculas y comillas incluidas — en el texto del documento.',
       "Para un campo simple: ${campos['clave']} o ${candidato['CLAVE']} — se reemplaza por el valor real.",
-      'Para una tabla: arma la tabla en Word con su fila de encabezado normal, y UNA sola fila de datos debajo — una celda por columna, sin combinar/fusionar celdas entre filas. Esa fila de datos es la que se repite tal cual, no un bloque de varias filas.',
-      "En esa fila de DATOS, escribe en cada celda la clave entre corchetes: ${['clave']} — nunca ${campos[...]} ni ${tablas[...]} adentro de la fila.",
-      "Selecciona esa fila completa → clic derecho → Nuevo comentario → escribe EXACTAMENTE (sin \"${}\" alrededor): repeatTableRow(tablas['clave_de_la_tabla']) — escribir ${tablas['clave_de_la_tabla']} ahí en vez de eso es el error más común: el comentario queda como letra muerta, no repite nada.",
+      'Para una tabla (una lista de registros: referencias, educación, listas nacionales...) hay DOS formas, según cómo quieras que se vea cada registro — ver las dos secciones siguientes.',
       'Una columna tipo Archivo (📎) incrusta la imagen solo si el analista subió exactamente un .jpg/.jpeg/.png — si no, se ve como texto.',
     ]
     g.parrafos(pasos.map((paso, i) => `${i + 1}. ${paso}`))
 
-    g.titulo('¿El diseño de cada registro es un "cuadro" de varias filas?', [180, 83, 9])
+    g.titulo('Tablas: ¿cuál de las dos formas uso?', [67, 56, 202])
+    g.tabla(['', 'Tabla SECUENCIAL', 'Tabla tipo DISEÑO'], [
+      ['Función (en el comentario)', "repeatTableRow(tablas['clave'])", "repeatDocPart(tablas['clave'])"],
+      ['Ejemplo', "repeatTableRow(tablas['listas_nacionales'])", "repeatDocPart(tablas['educacion'])"],
+      ['Qué repite', 'UNA fila de la tabla, una debajo de otra', 'Un bloque completo (tabla entera, varias filas, celdas combinadas, párrafos) — una copia por registro'],
+      ['Cómo se ve', 'Listado: encabezado + una fila por registro', 'Un "cuadro" / tarjeta por registro, una debajo de la otra'],
+      ['Se selecciona para comentar', 'Solo la fila de datos', 'Todo el bloque (desde el párrafo de arriba hasta el de abajo)'],
+      ['Marcador de cada celda', "${['clave_columna']}", "${['clave_columna']}"],
+    ], [67, 56, 202], { font: 'helvetica', columnStyles: { 0: { cellWidth: 38, fontStyle: 'bold' } } })
+
+    g.titulo("A. Tabla SECUENCIAL — repeatTableRow(tablas['listas_nacionales'])", [21, 128, 61])
     g.parrafos([
-      'Si para cada registro ya armaste un bloque de varias filas con celdas combinadas (una tarjeta/formulario) en vez de una fila sencilla, repeatTableRow no sirve — repite exactamente UNA fila, nunca un bloque de varias.',
-      'La forma confiable de resolverlo es rehacer esa parte como una tabla simple: una fila de encabezado + una sola fila de datos con una celda por columna (ver pasos arriba) — comprobado que funciona.',
+      'Úsala cuando cada registro cabe en UNA fila: un listado clásico con columnas.',
+      '1. En Word: Insertar → Tabla, con tantas columnas como datos quieras mostrar y DOS filas: la de encabezado (títulos normales, ej. "Lista", "Resultado", "Fecha") y UNA sola fila de datos debajo.',
+      "2. En la fila de DATOS, escribe en cada celda el marcador de la columna entre corchetes, sin prefijo: ${['clave_columna']} — ej. ${['lista']} | ${['resultado']} | ${['fecha']}. Nunca ${campos[...]} ni ${tablas[...]} dentro de la fila.",
+      '3. La fila de datos debe ser una celda por columna, SIN combinar/fusionar celdas con otra fila — se repite exactamente esa fila, no un bloque.',
+      "4. Selecciona esa fila de datos completa (clic en el margen izquierdo de la fila) → Revisar → Nuevo comentario → escribe EXACTAMENTE, sin \"${}\" alrededor: repeatTableRow(tablas['listas_nacionales'])",
+      '5. Resultado: el encabezado queda una sola vez y la fila de datos se repite una vez por cada registro. Si no hay registros, la fila desaparece y queda solo el encabezado.',
+    ])
+
+    g.titulo("B. Tabla tipo DISEÑO — repeatDocPart(tablas['educacion'])", [180, 83, 9])
+    g.parrafos([
+      'Úsala cuando cada registro es un "cuadro" o tarjeta con diseño propio: varias filas, celdas combinadas, títulos dentro del cuadro, etc. (ej. un bloque por cada estudio con Institución, Título, Fechas y Ciudad acomodados a tu gusto).',
+      '1. Diseña en Word el cuadro para UN solo registro, como quieras que se vea: puedes combinar celdas, poner varias filas, etiquetas fijas ("Institución:", "Título obtenido:") y colores.',
+      "2. Donde va cada dato, escribe el marcador de la columna entre corchetes, sin prefijo: ${['institucion']}, ${['titulo']}, ${['fecha_inicio']}, ${['fecha_fin']}, ${['ciudad']}... Igual que en la secuencial: nunca ${campos[...]} ni ${tablas[...]} dentro del cuadro.",
+      '3. Deja un párrafo normal (un Enter) justo ARRIBA y otro justo DEBAJO del cuadro. Selecciona desde ese párrafo de arriba hasta el de abajo, de modo que la tabla completa quede dentro de la selección — no selecciones solo unas celdas.',
+      "4. Con todo eso seleccionado → Revisar → Nuevo comentario → escribe EXACTAMENTE, sin \"${}\" alrededor: repeatDocPart(tablas['educacion'])",
+      '5. Resultado: el bloque completo se copia una vez por cada registro, uno debajo del otro, cada copia con los datos de su registro. Si no hay registros, el bloque desaparece.',
+      '6. Si el cuadro es una tabla "flotante" (con ajuste de texto / posición fija en la página), el sistema le quita la posición fija a las copias y les pone un espacio entre una y otra, para que no queden encimadas — no hace falta hacer nada.',
+      'Si quieres un título de sección que salga UNA sola vez (ej. "FORMACIÓN ACADÉMICA"), ponlo FUERA de la selección del comentario — todo lo que quede dentro se repite por cada registro.',
+    ])
+
+    g.titulo('Errores comunes con tablas', [185, 28, 28])
+    g.parrafos([
+      "• Escribir ${tablas['clave']} en el comentario (o suelto en el texto) en vez de repeatTableRow(tablas['clave']) / repeatDocPart(tablas['clave']). Así es letra muerta: no repite nada y en el texto sale el listado como texto corrido.",
+      '• Usar repeatTableRow sobre un cuadro de varias filas combinadas: solo repite una fila y el diseño se rompe. Para cuadros, usa repeatDocPart.',
+      '• Con repeatDocPart, seleccionar solo algunas celdas en vez de la tabla completa (desde el párrafo de arriba hasta el de abajo).',
+      "• Usar un marcador ${['clave']} FUERA de la fila/bloque comentado: no tiene de dónde tomar el dato y el documento no se genera.",
+      "• Escribir mal la clave de la tabla o de la columna — deben coincidir exactamente con las de este manual (mayúsculas, guiones bajos, comillas simples).",
+      '• Poner dos funciones en el mismo comentario, o un comentario que además tenga texto de otra cosa — un comentario = una sola función.',
     ])
 
     g.titulo('Dónde SÍ funcionan los marcadores', [21, 128, 61])
@@ -462,6 +611,18 @@ const PlantillaWordPanel = forwardRef(function PlantillaWordPanel(
       "Una columna tipo Archivo (📎) con el marcador puesto en un párrafo o celda normal incrusta la imagen de verdad en el documento — no hace falta nada especial, solo que el analista haya subido exactamente un .jpg/.jpeg/.png en esa columna (con varios adjuntos, o un PDF, se ve como texto con el nombre del archivo en vez de la imagen).",
     ])
 
+    g.titulo('Calificación de riesgo — siempre disponibles', [194, 65, 12])
+    g.parrafos([
+      'Los calcula el motor de riesgo del estudio. El nivel es el que vale para el informe: el automático del motor, o el que puso el gestor si lo cambió. El puntaje va con un decimal y coma (ej. 31,0).',
+      "Si el estudio aún tiene subprocesos pendientes, ${riesgo['nivel']} dice «En proceso»; si no se puede calificar, «Sin calificar». En ambos casos el puntaje queda vacío y el documento se genera igual.",
+    ])
+    g.tabla(['Marcador', 'Qué muestra'], [
+      ["${riesgo['nivel']}", 'Nivel final del estudio (BAJO / MEDIO / ALTO)'],
+      ["${riesgo['puntaje']}", 'Puntaje final del estudio (0 a 100)'],
+      ["${calificacion['nivel']}", 'Nivel de ESTE subproceso (el del formulario)'],
+      ["${calificacion['puntaje']}", 'Puntaje de ESTE subproceso (0 a 100)'],
+    ], [194, 65, 12], { columnStyles: { 0: { cellWidth: 75 } } })
+
     g.titulo(`Datos del candidato — siempre disponibles (${disponiblesCandidato.length})`, [55, 65, 81])
     g.tabla(['Marcador', 'Campo'],
       disponiblesCandidato.map(c => [`\${candidato['${c.clave}']}`, c.etiqueta]),
@@ -469,9 +630,17 @@ const PlantillaWordPanel = forwardRef(function PlantillaWordPanel(
 
     g.titulo('Hoja de vida del candidato — tablas fijas, siempre disponibles', [185, 28, 28])
     TABLAS_HOJA_VIDA.forEach(t => {
+      // Si esta plantilla agregó columnas de VALIDACIÓN a esta tabla fija (ver el bloque
+      // "Columnas de validación" del constructor), van en la MISMA fila que las columnas fijas
+      // (ver FormularioPlantillaWordService) — se documentan juntas acá para que el manual no
+      // quede desactualizado apenas alguien agrega una.
+      const seccionOrigenFijo = secciones.find(s => s.origenFijo === t.clave)
+      const columnasValidacion = seccionOrigenFijo?.columnas ?? []
       g.subtitulo(`tablas['${t.clave}']`, t.etiqueta, [185, 28, 28])
-      g.tabla(['Marcador por fila (dentro de repeatTableRow)', 'Columna'],
-        t.columnas.map(c => [`\${['${c}']}`, c]), [185, 28, 28])
+      g.tabla(['Marcador por registro (dentro de repeatTableRow / repeatDocPart)', 'Columna', 'Origen'], [
+        ...t.columnas.map(c => [`\${['${c}']}`, c, 'Fija — hoja de vida']),
+        ...columnasValidacion.map(c => [`\${['${c.clave || '?'}']}`, c.nombre || '(sin título)', 'Validación — la agregaste tú']),
+      ], [185, 28, 28])
     })
 
     if (marcadoresCampos.length > 0) {
@@ -485,7 +654,7 @@ const PlantillaWordPanel = forwardRef(function PlantillaWordPanel(
       g.titulo(`Tus secciones tipo tabla (${marcadoresTablas.length})`, [109, 40, 217])
       marcadoresTablas.forEach(s => {
         g.subtitulo(`tablas['${s.clave || '?'}']`, s.nombre, [109, 40, 217])
-        g.tabla(['Marcador por fila (dentro de repeatTableRow)', 'Columna'],
+        g.tabla(['Marcador por registro (dentro de repeatTableRow / repeatDocPart)', 'Columna'],
           s.columnas.map(c => [`\${['${c.clave || '?'}']}`, c.nombre || '(sin título)']), [109, 40, 217])
       })
     }
@@ -570,8 +739,8 @@ const PlantillaWordPanel = forwardRef(function PlantillaWordPanel(
     return base.replace(/^[0-9a-fA-F-]{36}_/, '')
   }
 
-  const sinDiferencias = analisis && analisis.marcadoresDesconocidos.length === 0 && analisis.camposSinUsar.length === 0
-    && (analisis.tablasMalUsadas ?? []).length === 0
+  const sinDiferencias = analisis && !analisis.errorGeneracion && analisis.marcadoresDesconocidos.length === 0
+    && analisis.camposSinUsar.length === 0 && (analisis.tablasMalUsadas ?? []).length === 0
 
   return (
     <div className="mb-5 bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
@@ -688,6 +857,22 @@ const PlantillaWordPanel = forwardRef(function PlantillaWordPanel(
             </div>
           ) : (
             <div className="mt-3 space-y-2">
+              {analisis.errorGeneracion && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs">
+                  <p className="flex items-center gap-1.5 font-semibold text-red-700 mb-1.5">
+                    <IconoAlertaTriangulo /> El documento NO se puede generar
+                  </p>
+                  <p className="text-red-700 mb-1.5">
+                    Esto es más grave que las diferencias de abajo: si lo intentas generar de verdad (o le das a
+                    "Vista previa"), va a fallar. Suele ser un marcador suelto <span className="font-mono">{"${['clave']}"}</span> mal
+                    ubicado (fuera de una fila con repeatTableRow/repeatDocPart) — esta comparación por nombre no
+                    lo detecta, pero generar el documento sí lo revienta.
+                  </p>
+                  <p className="font-mono text-red-600 bg-white border border-red-100 rounded px-2 py-1.5 break-words">
+                    {analisis.errorGeneracion}
+                  </p>
+                </div>
+              )}
               {(analisis.tablasMalUsadas ?? []).length > 0 && (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs">
                   <p className="flex items-center gap-1.5 font-semibold text-red-700 mb-1.5">
@@ -700,10 +885,10 @@ const PlantillaWordPanel = forwardRef(function PlantillaWordPanel(
                     No van a repetir ninguna fila. Dos causas posibles: están sueltos en el texto del documento (sale
                     el listado completo como texto corrido), o están dentro de un comentario pero con esta misma
                     sintaxis <span className="font-mono">{'${tablas[...]}'}</span> en vez de la función real
-                    <span className="font-mono"> repeatTableRow(tablas['clave'])</span> — ese comentario no hace
-                    nada. Además, la fila que se repite debe ser UNA sola fila con una celda por columna, nunca un
-                    bloque de varias filas combinadas (celdas fusionadas) — descarga el manual de marcadores más
-                    abajo para ver la guía completa.
+                    <span className="font-mono"> repeatTableRow(tablas['clave'])</span> (tabla secuencial, repite
+                    una fila) o <span className="font-mono">repeatDocPart(tablas['clave'])</span> (tabla tipo diseño,
+                    repite un cuadro de varias filas/celdas combinadas) — ese comentario no hace nada. Descarga el
+                    manual de marcadores más abajo para ver la guía completa de las dos formas.
                   </p>
                 </div>
               )}
@@ -810,7 +995,13 @@ function PlantillaFormularioContenido({ subproceso }) {
   const [tiposDisponibles, setTiposDisponibles] = useState([])
   const [origenDuplicar, setOrigenDuplicar] = useState('')
   const [duplicando, setDuplicando] = useState(false)
+  const [versionPlantilla, setVersionPlantilla] = useState(null)
   const panelWordRef = useRef(null)
+
+  const cargarVersion = () => {
+    formulariosService.obtenerConfigPlantilla(subproceso.idTipoProgreso)
+      .then(c => setVersionPlantilla(c.versionPlantilla)).catch(() => {})
+  }
 
   const mostrarToast = (mensaje, tipo = 'exito') => setToast({ mensaje, tipo })
 
@@ -822,7 +1013,10 @@ function PlantillaFormularioContenido({ subproceso }) {
     const hayProblemas = resultado.marcadoresDesconocidos.length > 0
       || resultado.camposSinUsar.length > 0
       || (resultado.tablasMalUsadas ?? []).length > 0
-    if (hayProblemas) {
+      || !!resultado.errorGeneracion
+    if (resultado.errorGeneracion) {
+      mostrarToast('Guardado, pero el documento Word ya subido NO SE PUEDE GENERAR — revisa el panel de abajo antes de que alguien intente imprimir.', 'error')
+    } else if (hayProblemas) {
       mostrarToast('Guardado, pero el documento Word ya subido quedó con marcadores que no coinciden — revisa el panel de abajo antes de que alguien intente imprimir.', 'error')
     }
   }
@@ -831,6 +1025,7 @@ function PlantillaFormularioContenido({ subproceso }) {
     formulariosService.obtenerCamposCandidatoDisponibles().then(setDisponiblesCandidato).catch(() => {})
     formulariosService.obtenerCamposClienteDisponibles().then(setDisponiblesCliente).catch(() => {})
     api.get('/catalogo/tipos-progreso').then(r => setTiposDisponibles(r.data)).catch(() => {})
+    cargarVersion()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subproceso.idTipoProgreso])
 
@@ -844,7 +1039,7 @@ function PlantillaFormularioContenido({ subproceso }) {
         clave: s.clave ?? '',
         origenFijo: s.origenFijo ?? '',
         columnasOcultas: s.columnasOcultas ?? [],
-        columnas: s.columnas.map(c => ({ localId: idLocal(), idColumna: c.idColumna, nombre: c.nombre ?? '', tipoDato: c.tipoDato, campoCandidato: c.campoCandidato ?? '', campoCliente: c.campoCliente ?? '', clave: c.clave ?? '', opcionesTexto: (c.opciones ?? []).join(', ') })),
+        columnas: s.columnas.map(c => columnaDesdeServidor(c, true)),
         filasSugeridas: s.filasSugeridas.map(f => ({ localId: idLocal(), etiqueta: f.etiqueta })),
       }))))
       .catch(() => setError('No se pudo cargar la plantilla.'))
@@ -872,7 +1067,7 @@ function PlantillaFormularioContenido({ subproceso }) {
         clave: s.clave ?? '',
         origenFijo: s.origenFijo ?? '',
         columnasOcultas: s.columnasOcultas ?? [],
-        columnas: s.columnas.map(c => ({ localId: idLocal(), idColumna: null, nombre: c.nombre ?? '', tipoDato: c.tipoDato, campoCandidato: c.campoCandidato ?? '', campoCliente: c.campoCliente ?? '', clave: c.clave ?? '', opcionesTexto: (c.opciones ?? []).join(', ') })),
+        columnas: s.columnas.map(c => columnaDesdeServidor(c, false)),
         filasSugeridas: s.filasSugeridas.map(f => ({ localId: idLocal(), etiqueta: f.etiqueta })),
       })))
       mostrarToast('Estructura duplicada — revísala y dale Guardar cuando esté lista.')
@@ -897,9 +1092,11 @@ function PlantillaFormularioContenido({ subproceso }) {
   const editarSeccion = (sId, campo, valor) => actualizarSecciones(prev =>
     prev.map(s => s.localId === sId ? { ...s, [campo]: valor } : s))
 
-  // Al elegir un origen automático, se sugiere el nombre (si está vacío) y se vacían columnas/
-  // filas sugeridas — dejan de aplicar, la forma de los datos ya está fija (ver TABLAS_HOJA_VIDA).
-  // Al volver a "Manual" se limpia el origen para que el admin arme sus propias columnas.
+  // Al elegir un origen automático, se sugiere el nombre (si está vacío) y se vacían las filas
+  // sugeridas — no aplican, las filas ya vienen fijas de la hoja de vida (ver TABLAS_HOJA_VIDA).
+  // Las columnas NO se vacían: si ya había alguna, pasa a ser una columna de VALIDACIÓN (la llena
+  // analista/poligrafista/visitador por cada fila, aparte de las columnas fijas de solo lectura —
+  // ver el bloque "Columnas de validación" más abajo). Al volver a "Manual" se limpia el origen.
   const elegirOrigenFijo = (sId, origenFijo) => actualizarSecciones(prev => prev.map(s => {
     if (s.localId !== sId) return s
     const tabla = TABLAS_HOJA_VIDA.find(t => t.clave === origenFijo)
@@ -908,7 +1105,6 @@ function PlantillaFormularioContenido({ subproceso }) {
       origenFijo,
       nombre: origenFijo && !s.nombre.trim() ? tabla.etiqueta : s.nombre,
       columnasOcultas: origenFijo ? s.columnasOcultas : [],
-      columnas: origenFijo ? [] : s.columnas,
       filasSugeridas: origenFijo ? [] : s.filasSugeridas,
     }
   }))
@@ -922,7 +1118,11 @@ function PlantillaFormularioContenido({ subproceso }) {
   }))
 
   const agregarColumna = (sId) => actualizarSecciones(prev => prev.map(s =>
-    s.localId === sId ? { ...s, columnas: [...s.columnas, { localId: idLocal(), nombre: '', tipoDato: 'TEXTO', campoCandidato: '', campoCliente: '', opcionesTexto: '' }] } : s))
+    s.localId === sId ? { ...s, columnas: [...s.columnas, { localId: idLocal(), nombre: '', tipoDato: 'TEXTO', campoCandidato: '', campoCliente: '', opcionesTexto: '', calificaRiesgo: false, puntajes: {} }] } : s))
+  const editarPuntaje = (sId, cId, opcion, campo, valor) => actualizarSecciones(prev => prev.map(s =>
+    s.localId === sId ? { ...s, columnas: s.columnas.map(c => c.localId === cId
+      ? { ...c, puntajes: { ...(c.puntajes || {}), [opcion]: { ...(c.puntajes?.[opcion] ?? { puntos: '', esCritico: false }), [campo]: valor } } }
+      : c) } : s))
   const quitarColumna = (sId, cId) => actualizarSecciones(prev => prev.map(s =>
     s.localId === sId ? { ...s, columnas: s.columnas.filter(c => c.localId !== cId) } : s))
   const editarColumna = (sId, cId, campo, valor) => actualizarSecciones(prev => prev.map(s =>
@@ -954,6 +1154,14 @@ function PlantillaFormularioContenido({ subproceso }) {
       for (const c of s.columnas) {
         if (c.tipoDato === 'LISTA' && !(c.opcionesTexto || '').split(',').map(o => o.trim()).filter(Boolean).length) {
           return `La columna "${c.nombre || '(sin título)'}" es de tipo lista desplegable — escribe al menos una opción.`
+        }
+        if (esCalificable(c) && c.calificaRiesgo) {
+          for (const r of respuestasDe(c)) {
+            const n = numPuntos(c.puntajes?.[r.valor]?.puntos)
+            if (Number.isNaN(n) || n < 0 || n > 100) {
+              return `"${c.nombre || '(sin título)'}": los puntos de "${r.etiqueta}" deben estar entre 0 y 100.`
+            }
+          }
         }
         const nombreNormalizado = (c.nombre || '').trim().toLowerCase()
         if (nombreNormalizado) {
@@ -992,6 +1200,10 @@ function PlantillaFormularioContenido({ subproceso }) {
       campoCliente: c.campoCliente || null,
       clave: c.clave?.trim() || null,
       opciones: c.tipoDato === 'LISTA' ? (c.opcionesTexto || '').split(',').map(o => o.trim()).filter(Boolean) : null,
+      calificaRiesgo: esCalificable(c) && !!c.calificaRiesgo,
+      puntajes: esCalificable(c) && c.calificaRiesgo
+        ? respuestasDe(c).map(r => ({ opcion: r.valor, puntos: numPuntos(c.puntajes?.[r.valor]?.puntos), esCritico: !!c.puntajes?.[r.valor]?.esCritico }))
+        : [],
     })),
     filasSugeridas: s.tipo === 'TABLA'
       ? s.filasSugeridas.filter(f => f.etiqueta.trim()).map(f => ({ etiqueta: f.etiqueta.trim() }))
@@ -1027,6 +1239,7 @@ function PlantillaFormularioContenido({ subproceso }) {
       await formulariosService.guardarEstructura(subproceso.idTipoProgreso, payload ?? impactoPendiente.payload)
       setImpactoPendiente(null)
       mostrarToast('Plantilla guardada')
+      cargarVersion()
       // Si ya hay un .docx subido, se revisa solo apenas se guarda — así un campo/sección que se
       // borró o renombró y dejó un marcador huérfano en el documento se detecta de inmediato, sin
       // esperar a que alguien le dé clic a "Analizar" a mano (o peor, a que un analista se
@@ -1071,7 +1284,15 @@ function PlantillaFormularioContenido({ subproceso }) {
             <IconoTabla />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-primary-500 mb-0.5">Catálogo · Plantilla</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-primary-500 mb-0.5">Catálogo · Plantilla</p>
+              {versionPlantilla != null && (
+                <span title="Sube cada vez que guardas cambios de secciones/columnas — los subprocesos ya completados quedan con la versión que tenían al completarse."
+                  className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-primary-100 text-primary-700 whitespace-nowrap">
+                  Versión {versionPlantilla}
+                </span>
+              )}
+            </div>
             <h2 className="text-2xl font-bold text-gray-900 truncate">{subproceso.nombreProgreso}</h2>
             <p className="text-sm text-gray-500 mt-1 max-w-2xl">
               Arma las secciones, columnas y filas que necesites. El documento Word con marcadores que subas
@@ -1104,6 +1325,7 @@ function PlantillaFormularioContenido({ subproceso }) {
         </div>
       ) : (
         <div className="space-y-4">
+          {secciones.length > 0 && <ResumenCalificacion secciones={secciones} />}
           {secciones.length === 0 && (
             <div className="bg-white border border-dashed border-gray-300 rounded-2xl text-center py-10 px-6">
               <p className="text-sm text-gray-400">Esta plantilla todavía no tiene secciones.</p>
@@ -1194,10 +1416,10 @@ function PlantillaFormularioContenido({ subproceso }) {
               )}
 
               <div className="p-4 space-y-4">
-                {s.origenFijo ? (
+                {s.origenFijo && (
                   <div className="bg-red-50/50 border border-red-100 rounded-xl px-4 py-3">
                     <p className="text-xs font-semibold text-red-700 mb-1">
-                      Columnas — {TABLAS_HOJA_VIDA.find(t => t.clave === s.origenFijo)?.etiqueta}
+                      Columnas fijas (solo lectura) — {TABLAS_HOJA_VIDA.find(t => t.clave === s.origenFijo)?.etiqueta}
                     </p>
                     <p className="text-[11px] text-gray-400 mb-2.5">
                       Elige cuáles se ven en el formulario del analista — no hay que crearlas, ya vienen fijas de la
@@ -1215,10 +1437,17 @@ function PlantillaFormularioContenido({ subproceso }) {
                       ))}
                     </div>
                   </div>
-                ) : (
+                )}
+                {(
                   <div>
                     <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-                      Columnas {s.tipo === 'TABLA' && <span className="normal-case text-gray-400">(lo que se llena por cada fila)</span>}
+                      {s.origenFijo ? (
+                        <>Columnas de validación <span className="normal-case text-gray-400">
+                          (opcional — las llena analista/poligrafista/visitador por cada fila, ej. "¿verificada?",
+                          "observación"; se guardan aparte, nunca modifican la hoja de vida del candidato)</span></>
+                      ) : (
+                        <>Columnas {s.tipo === 'TABLA' && <span className="normal-case text-gray-400">(lo que se llena por cada fila)</span>}</>
+                      )}
                     </p>
                     <div className="space-y-1.5">
                       {s.columnas.map(c => (
@@ -1267,6 +1496,20 @@ function PlantillaFormularioContenido({ subproceso }) {
                               onChange={e => editarColumna(s.localId, c.localId, 'opcionesTexto', e.target.value)}
                               placeholder="Opciones separadas por coma — ej: Sí, No, N/A"
                               className="ml-9 w-[calc(100%-2.25rem)] border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                          )}
+                          {esCalificable(c) && (
+                            <div className="ml-9">
+                              <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+                                <input type="checkbox" checked={!!c.calificaRiesgo}
+                                  onChange={e => editarColumna(s.localId, c.localId, 'calificaRiesgo', e.target.checked)}
+                                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+                                <span className="font-medium">Califica riesgo</span>
+                                <span className="text-gray-400">— asigna puntos a cada respuesta{s.tipo === 'TABLA' ? ' (suma por cada fila)' : ''}</span>
+                              </label>
+                              {c.calificaRiesgo && (
+                                <PuntajesColumna c={c} onPuntaje={(opcion, campo, valor) => editarPuntaje(s.localId, c.localId, opcion, campo, valor)} />
+                              )}
+                            </div>
                           )}
                         </div>
                       ))}

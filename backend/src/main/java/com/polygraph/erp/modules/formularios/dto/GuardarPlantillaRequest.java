@@ -37,10 +37,21 @@ public record GuardarPlantillaRequest(@Valid List<SeccionRequest> secciones) {
      *  — null/vacío = se autogenera del nombre; si se manda uno, se respeta (edición manual del
      *  admin). opciones: solo cuando tipoDato es "LISTA" — las opciones de la lista desplegable,
      *  en el orden en que las escribió el admin; se ignora para cualquier otro tipo de dato. */
+    /** calificaRiesgo/puntajes: calificación de riesgo (solo Lista o Sí/No) — puntos y marca
+     *  crítica por respuesta; en Sí/No la opción es "true" o "false". */
     public record ColumnaRequest(Integer idColumna,
                                   @Size(max = 150, message = "El nombre de la columna no puede pasar de 150 caracteres.") String nombre,
                                   @NotBlank String tipoDato,
-                                  String campoCandidato, String campoCliente, String clave, List<String> opciones) {}
+                                  String campoCandidato, String campoCliente, String clave, List<String> opciones,
+                                  Boolean calificaRiesgo,
+                                  @Valid List<PuntajeOpcionRequest> puntajes) {}
+
+    public record PuntajeOpcionRequest(
+            String opcion,
+            @jakarta.validation.constraints.DecimalMin(value = "0", message = "Los puntos no pueden ser negativos.")
+            @jakarta.validation.constraints.DecimalMax(value = "100", message = "Una respuesta no puede valer más de 100 puntos.")
+            java.math.BigDecimal puntos,
+            Boolean esCritico) {}
 
     public record FilaSugeridaRequest(String etiqueta) {}
 }
