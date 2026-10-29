@@ -283,6 +283,7 @@ function NewRequest() {
     let vigente = true
     solicitudService.entregaEstimada(serviciosSeleccionados).then((r) => { if (vigente) setEntrega(r) }).catch(() => { if (vigente) setEntrega(null) })
     return () => { vigente = false }
+  }, [serviciosSeleccionados, enConfirmacion])
 
   // NS-11: qué se usa y qué queda (bolsa o cupo), calculado en el servidor; se vuelve a pedir al entrar a la confirmación y si cambia el servicio o la ciudad.
   const [resumenCobro, setResumenCobro] = useState(null)
@@ -296,7 +297,6 @@ function NewRequest() {
       .finally(() => { if (vigente) setCargandoResumen(false) })
     return () => { vigente = false }
   }, [enConfirmacion, serviciosSeleccionados, evaluado.idCiudad])
-  }, [serviciosSeleccionados, enConfirmacion])
   const ciudadSeleccionada = ciudades.find((c) => c.idCiudad === evaluado.idCiudad)
 
   // Lo extra de la poligrafía tal como lo verá el poligrafista (misma pieza que la ficha del candidato)
