@@ -36,6 +36,7 @@ public class DashboardClienteService {
     private final ServicioRepository servicioRepository;
     private final UsuarioRepository usuarioRepository;
     private final ClienteRepository clienteRepository;
+    private final com.polygraph.erp.modules.servicios.repository.ServicioSubprocesoRepository subprocesoRepository;
     private final UsuariosIntenosRepository empleadoRepository;
     private final SaldoServicioClienteService saldoServicioClienteService;
     private final com.polygraph.erp.shared.service.TiempoServicioService tiempoServicioService;
@@ -50,27 +51,26 @@ public class DashboardClienteService {
 
         List<EstadoServicio> estadosActivos = List.of(
                 EstadoServicio.PENDIENTE, EstadoServicio.PROGRAMANDO, EstadoServicio.EN_EJECUCION);
-        List<EstadoServicio> estadosFinalizados = List.of(
-                EstadoServicio.FINALIZADO, EstadoServicio.PUBLICADO);
 
         long serviciosActivos = servicioRepository
                 .countByCliente_IdClienteAndEstadoIn(idCliente, estadosActivos);
         long serviciosPendientes = servicioRepository
                 .countByCliente_IdClienteAndEstado(idCliente, EstadoServicio.PENDIENTE);
 
-        LocalDate inicioMes = LocalDate.now().withDayOfMonth(1);
-        LocalDate finMes = LocalDate.now().withDayOfMonth(LocalDate.now().lengthOfMonth());
-        long finalizadosMes = servicioRepository
-                .countByCliente_IdClienteAndEstadoInAndFechaSolicitudBetween(
-                        idCliente, estadosFinalizados, inicioMes, finMes);
+        // AJ-02: "Publicados este mes" = informes publicados en el mes (por fecha de publicación, hora de Colombia), no solicitudes hechas en el mes.
+        LocalDate hoyBogota = LocalDate.now(java.time.ZoneId.of("America/Bogota"));
+        long publicadosMes = subprocesoRepository.contarPublicadosDeClienteEntre(idCliente,
+                hoyBogota.withDayOfMonth(1).atStartOfDay(), hoyBogota.withDayOfMonth(1).plusMonths(1).atStartOfDay());
 
-        log.info("Dashboard idCliente={}: activos={}, pendientes={}, finalizadosMes={}",
-                idCliente, serviciosActivos, serviciosPendientes, finalizadosMes);
+        log.info("Dashboard idCliente={}: activos={}, pendientes={}, publicadosMes={}",
+                idCliente, serviciosActivos, serviciosPendientes, publicadosMes);
 
-        List<SolicitudResumenResponse> ultimasSolicitudes = servicioRepository
-                .findByCliente_IdClienteOrderByFechaSolicitudDescHoraSolicitudDesc(
-                        idCliente, PageRequest.of(0, 5))
-                .map(this::toResumen)
+        List<Servicio> ultimas = servicioRepository
+                .findByCliente_IdClienteOrderByFechaSolicitudDescHoraSolicitudDesc(idCliente, PageRequest.of(0, 5))
+                .toList();
+        var subprocesos = subprocesosPorServicio(ultimas);
+        List<SolicitudResumenResponse> ultimasSolicitudes = ultimas.stream()
+                .map(s -> toResumen(s, subprocesos.getOrDefault(s.getIdServicio(), List.of())))
                 .toList();
 
         // Suma de cantidadDisponible de todos los procesos de la bolsa prepago — antes esto
@@ -79,7 +79,7 @@ public class DashboardClienteService {
         long serviciosDisponibles = saldoServicioClienteService.totalDisponible(idCliente);
 
         return new DashboardClienteResponse(
-                serviciosActivos, serviciosPendientes, finalizadosMes, serviciosDisponibles, ultimasSolicitudes,
+                serviciosActivos, serviciosPendientes, publicadosMes, serviciosDisponibles, ultimasSolicitudes,
                 cliente.getTipoCliente().name(),
                 servicioRepository.countByCliente_IdClienteAndEstadoTiempo(idCliente, com.polygraph.erp.shared.enums.EstadoTiempo.VENCIDA));
     }
@@ -100,7 +100,8 @@ public class DashboardClienteService {
                         tiempo));
         Page<Servicio> pagina = servicioRepository.findAll(filtro, org.springframework.data.domain.PageRequest.of(
                 pageable.getPageNumber(), pageable.getPageSize(), com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.orden(orden)));
-        return pagina.map(this::toResumen);
+        var subprocesos = subprocesosPorServicio(pagina.getContent());
+        return pagina.map(s -> toResumen(s, subprocesos.getOrDefault(s.getIdServicio(), List.of())));
     }
 
     @Transactional(readOnly = true)
@@ -140,7 +141,17 @@ public class DashboardClienteService {
         return usuario.getIdCliente();
     }
 
-    private SolicitudResumenResponse toResumen(Servicio s) {
+    /** Los subprocesos de las solicitudes de la página, en una sola consulta: de ahí sale el estado que ve el cliente (el de cada subproceso). */
+    private java.util.Map<Integer, List<com.polygraph.erp.modules.servicios.entity.ServicioSubproceso>> subprocesosPorServicio(List<Servicio> servicios) {
+        if (servicios.isEmpty()) return java.util.Map.of();
+        return subprocesoRepository
+                .findByServicio_IdServicioInOrderByServicio_IdServicioAscTipoProgreso_OrdenAsc(servicios.stream().map(Servicio::getIdServicio).toList())
+                .stream().collect(java.util.stream.Collectors.groupingBy(sp -> sp.getServicio().getIdServicio()));
+    }
+
+    private SolicitudResumenResponse toResumen(Servicio s, List<com.polygraph.erp.modules.servicios.entity.ServicioSubproceso> sps) {
+        var estados = sps.stream().map(com.polygraph.erp.modules.servicios.entity.ServicioSubproceso::getEstado).toList();
+        var avance = com.polygraph.erp.shared.estados.SemaforoEstados.avance(estados);
         return new SolicitudResumenResponse(
                 s.getIdServicio(),
                 s.getCandidato() != null ? s.getCandidato().getCedula()     : null,
@@ -151,7 +162,10 @@ public class DashboardClienteService {
                 s.getEstado(),
                 s.getFechaSolicitud(),
                 s.fechaParaMostrar(),
-                tiempoServicioService.de(s)
+                tiempoServicioService.de(s),
+                com.polygraph.erp.modules.servicios.dto.ServicioSemaforoFila.ResumenEstado.de(estados),
+                avance.publicados(), avance.vigentes(),
+                com.polygraph.erp.shared.estados.SemaforoEstados.etiqueta(avance).texto()
         );
     }
 }

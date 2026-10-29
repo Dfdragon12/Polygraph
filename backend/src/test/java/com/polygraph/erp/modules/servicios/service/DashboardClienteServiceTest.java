@@ -40,7 +40,9 @@ class DashboardClienteServiceTest {
 
     @Mock private ServicioRepository servicioRepository;
     @Mock private UsuarioRepository usuarioRepository;
+    @Mock private com.polygraph.erp.modules.clientes.repository.ClienteRepository clienteRepository;
     @Mock private SaldoServicioClienteService saldoServicioClienteService;
+    @Mock private com.polygraph.erp.modules.servicios.repository.ServicioSubprocesoRepository subprocesoRepository;
 
     @Mock private com.polygraph.erp.shared.service.DiasHabilesService diasHabilesService;
     @Mock private com.polygraph.erp.shared.service.TiempoServicioService tiempoServicioService;
@@ -70,6 +72,9 @@ class DashboardClienteServiceTest {
         // lenient(): no todas las pruebas de esta clase llegan a leer la bolsa prepago (ej. la de
         // "sin cliente asociado" revienta antes) — con un stub estricto en @BeforeEach, Mockito
         // marcaría ese stub como "unnecessary" en esas pruebas y fallaría igual.
+        org.mockito.Mockito.lenient().when(clienteRepository.findById(ID_CLIENTE)).thenReturn(Optional.of(
+                com.polygraph.erp.modules.clientes.entity.Cliente.builder().idCliente(ID_CLIENTE)
+                        .tipoCliente(com.polygraph.erp.shared.enums.TipoCliente.PREPAGO).build()));
         org.mockito.Mockito.lenient().when(saldoServicioClienteService.obtenerSaldos(anyInt()))
                 .thenReturn(List.of());
     }
@@ -89,8 +94,7 @@ class DashboardClienteServiceTest {
                 .thenReturn(5L);
         when(servicioRepository.countByCliente_IdClienteAndEstado(ID_CLIENTE, EstadoServicio.PENDIENTE))
                 .thenReturn(3L);
-        when(servicioRepository.countByCliente_IdClienteAndEstadoInAndFechaSolicitudBetween(
-                eq(ID_CLIENTE), any(), any(), any()))
+        when(subprocesoRepository.contarPublicadosDeClienteEntre(eq(ID_CLIENTE), any(), any()))
                 .thenReturn(2L);
         when(servicioRepository.findByCliente_IdClienteOrderByFechaSolicitudDescHoraSolicitudDesc(eq(ID_CLIENTE), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of()));
@@ -99,7 +103,7 @@ class DashboardClienteServiceTest {
 
         assertThat(respuesta.serviciosActivos()).isEqualTo(5L);
         assertThat(respuesta.serviciosPendientes()).isEqualTo(3L);
-        assertThat(respuesta.serviciosFinalizadosMes()).isEqualTo(2L);
+        assertThat(respuesta.publicadosMes()).isEqualTo(2L);
         assertThat(respuesta.ultimasSolicitudes()).isNotNull().isEmpty();
     }
 
@@ -109,8 +113,8 @@ class DashboardClienteServiceTest {
         when(usuarioRepository.findByEmail(EMAIL_CLIENTE)).thenReturn(Optional.of(usuarioCliente));
         when(servicioRepository.countByCliente_IdClienteAndEstadoIn(any(), any())).thenReturn(0L);
         when(servicioRepository.countByCliente_IdClienteAndEstado(any(), any())).thenReturn(0L);
-        when(servicioRepository.countByCliente_IdClienteAndEstadoInAndFechaSolicitudBetween(
-                any(), any(), any(), any())).thenReturn(0L);
+        when(subprocesoRepository.contarPublicadosDeClienteEntre(any(), any(), any()))
+                .thenReturn(0L);
         when(servicioRepository.findByCliente_IdClienteOrderByFechaSolicitudDescHoraSolicitudDesc(any(), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of()));
 
@@ -118,7 +122,7 @@ class DashboardClienteServiceTest {
 
         assertThat(respuesta.serviciosActivos()).isZero();
         assertThat(respuesta.serviciosPendientes()).isZero();
-        assertThat(respuesta.serviciosFinalizadosMes()).isZero();
+        assertThat(respuesta.publicadosMes()).isZero();
         assertThat(respuesta.serviciosDisponibles()).isZero();
         assertThat(respuesta.ultimasSolicitudes()).isNotNull();
     }
@@ -129,8 +133,8 @@ class DashboardClienteServiceTest {
         when(usuarioRepository.findByEmail(EMAIL_CLIENTE)).thenReturn(Optional.of(usuarioCliente));
         when(servicioRepository.countByCliente_IdClienteAndEstadoIn(any(), any())).thenReturn(0L);
         when(servicioRepository.countByCliente_IdClienteAndEstado(any(), any())).thenReturn(0L);
-        when(servicioRepository.countByCliente_IdClienteAndEstadoInAndFechaSolicitudBetween(
-                any(), any(), any(), any())).thenReturn(0L);
+        when(subprocesoRepository.contarPublicadosDeClienteEntre(any(), any(), any()))
+                .thenReturn(0L);
 
         List<Servicio> servicios = crearServiciosDePrueba(3);
         when(servicioRepository.findByCliente_IdClienteOrderByFechaSolicitudDescHoraSolicitudDesc(eq(ID_CLIENTE), any(Pageable.class)))
@@ -167,8 +171,8 @@ class DashboardClienteServiceTest {
         when(servicioRepository.countByCliente_IdClienteAndEstadoIn(eq(ID_CLIENTE), any()))
                 .thenReturn(6L);
         when(servicioRepository.countByCliente_IdClienteAndEstado(any(), any())).thenReturn(3L);
-        when(servicioRepository.countByCliente_IdClienteAndEstadoInAndFechaSolicitudBetween(
-                any(), any(), any(), any())).thenReturn(0L);
+        when(subprocesoRepository.contarPublicadosDeClienteEntre(any(), any(), any()))
+                .thenReturn(0L);
         when(servicioRepository.findByCliente_IdClienteOrderByFechaSolicitudDescHoraSolicitudDesc(any(), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of()));
 

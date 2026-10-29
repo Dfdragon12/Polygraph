@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import dashboardService from '../../services/dashboardService'
 import pospagoService from '../../services/pospagoService'
-import ServiceStatusBadge from '../../components/ServiceStatusBadge'
+import EtiquetaEstado from '../../components/semaforo/EtiquetaEstado'
 import { useCambios } from '../../hooks/useCambios'
 import { EncabezadoPagina, EsqueletoPagina, botonPrimario, botonSecundario } from '../../components/admin/PaginaAdmin'
 import EstadoTiempo, { Reprogramada } from '../../components/EstadoTiempo'
@@ -159,7 +159,7 @@ export default function Dashboard() {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Atencion titulo="Por programar" valor={datos?.serviciosPendientes ?? 0} detalle="Esperan fecha" vacio="Nada por programar"
               icono={I.reloj('h-4 w-4')} tono="ambar" onClick={() => irA('/cliente/solicitudes')} />
-            <Atencion titulo="Entregados este mes" valor={datos?.serviciosFinalizadosMes ?? 0} detalle="Resultados listos" vacio="Aún ninguno este mes"
+            <Atencion titulo="Publicados este mes" valor={datos?.publicadosMes ?? 0} detalle="Informes listos para descargar" vacio="Aún ninguno este mes"
               icono={I.check('h-4 w-4')} tono="primario" onClick={() => irA('/cliente/solicitudes')} />
             <Atencion titulo="Solicitudes en total" valor={totalServicios ?? 0} detalle="Desde que empezaste" vacio="Aún no hay solicitudes"
               icono={I.carpeta('h-4 w-4')} tono="primario" onClick={() => irA('/cliente/solicitudes')} />
@@ -181,14 +181,14 @@ export default function Dashboard() {
                 </div>
               ) : (
                 <div className="-mx-5 -mb-5 border-t border-gray-100">
-                  <div className="hidden grid-cols-[1fr_8rem_12rem] gap-4 bg-gray-50/60 px-5 py-2 text-[11px] font-semibold uppercase tracking-wider text-gray-600 sm:grid">
+                  <div className="hidden grid-cols-[1fr_11rem_12rem] gap-4 bg-gray-50/60 px-5 py-2 text-[11px] font-semibold uppercase tracking-wider text-gray-600 sm:grid">
                     <span>Candidato</span><span>Estado</span><span className="text-right">Tiempo</span>
                   </div>
                   <ul className="divide-y divide-gray-50">
                     {datos.ultimasSolicitudes.map(s => (
                       <li key={s.idServicio}>
                         <button type="button" onClick={() => irA(`/cliente/solicitudes/${s.idServicio}`)}
-                          className="grid w-full grid-cols-[1fr_11rem] items-center gap-4 px-5 py-3 text-left transition-colors hover:bg-gray-50 sm:grid-cols-[1fr_8rem_12rem]">
+                          className="grid w-full grid-cols-[1fr_11rem] items-center gap-4 px-5 py-3 text-left transition-colors hover:bg-gray-50 sm:grid-cols-[1fr_11rem_12rem]">
                           <span className="flex min-w-0 items-center gap-3">
                             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-50 text-xs font-semibold text-primary-700">
                               {`${(s.nombresEvaluado ?? '').trim()[0] ?? ''}${(s.apellidosEvaluado ?? '').trim()[0] ?? ''}`.toUpperCase() || '—'}
@@ -198,7 +198,14 @@ export default function Dashboard() {
                               <span className="block truncate text-xs text-gray-500">#{s.idServicio} · {s.proceso || 'Servicio'}{s.cargo ? ` · ${s.cargo}` : ''}</span>
                             </span>
                           </span>
-                          <span className="hidden sm:block"><ServiceStatusBadge status={s.estado} /></span>
+                          <ul className="hidden flex-wrap gap-1 sm:flex" aria-label="Subprocesos por estado">
+                            {(s.resumen ?? []).map(r => (
+                              <li key={r.codigo}>
+                                <EtiquetaEstado estado={r.codigo} pequena /><span className="sr-only">{r.cantidad}</span>
+                                <span aria-hidden="true" className="ml-0.5 text-[11px] font-semibold text-gray-700">{r.cantidad}</span>
+                              </li>
+                            ))}
+                          </ul>
                           <Entrega s={s} />
                         </button>
                       </li>

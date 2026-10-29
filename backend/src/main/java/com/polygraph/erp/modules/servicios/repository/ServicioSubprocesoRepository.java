@@ -31,6 +31,11 @@ public interface ServicioSubprocesoRepository
     @Query("select sp from ServicioSubproceso sp where sp.estado = :estado and sp.tipoProgreso.rolResponsable in :roles order by sp.fechaProgramada")
     List<ServicioSubproceso> porEstadoYRoles(@Param("estado") EstadoSubproceso estado, @Param("roles") List<com.polygraph.erp.shared.enums.Rol> roles);
 
+    /** AJ-02: informes (subprocesos) publicados de un cliente en un rango de fechas de publicación; el Dashboard del cliente los cuenta por mes. */
+    @Query("select count(sp) from ServicioSubproceso sp where sp.servicio.cliente.idCliente = :idCliente and sp.estado = com.polygraph.erp.shared.enums.EstadoSubproceso.PUBLICADO "
+            + "and sp.fechaPublicado >= :desde and sp.fechaPublicado < :hasta")
+    long contarPublicadosDeClienteEntre(@Param("idCliente") Integer idCliente, @Param("desde") LocalDateTime desde, @Param("hasta") LocalDateTime hasta);
+
     boolean existsByServicio_IdServicioAndTipoProgreso_IdTipoProgreso(Integer idServicio, Integer idTipoProgreso);
 
     /** Carga actual de un empleado — usada para repartir la autoasignación al que tenga menos pendientes. */

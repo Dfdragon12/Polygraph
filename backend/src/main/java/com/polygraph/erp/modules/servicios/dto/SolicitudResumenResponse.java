@@ -15,5 +15,10 @@ public record SolicitudResumenResponse(
     LocalDate fechaSolicitud,
     LocalDate fechaEntregaEstimada,
     // Estado de tiempo en días hábiles (null si está cancelada o sin fecha).
-    com.polygraph.erp.shared.dto.TiempoServicio tiempo
+    com.polygraph.erp.shared.dto.TiempoServicio tiempo,
+    // Subprocesos por estado (el mismo resumen de Mis solicitudes) y avance de publicación.
+    java.util.List<ServicioSemaforoFila.ResumenEstado> resumen,
+    int publicados,
+    int vigentes,
+    String etiquetaPublicacion
 ) {}

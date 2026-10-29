@@ -5,7 +5,8 @@ import java.util.List;
 public record DashboardClienteResponse(
     long serviciosActivos,
     long serviciosPendientes,
-    long serviciosFinalizadosMes,
+    // Informes (subprocesos) publicados en el mes en curso, hora de Colombia.
+    long publicadosMes,
     long serviciosDisponibles,
     List<SolicitudResumenResponse> ultimasSolicitudes,
     // Tipo de cliente en vivo (leído del cliente en BD, no del JWT cacheado en el navegador) — el
