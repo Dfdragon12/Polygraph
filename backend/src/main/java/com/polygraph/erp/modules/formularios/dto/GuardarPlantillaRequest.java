@@ -28,7 +28,31 @@ public record GuardarPlantillaRequest(@Valid List<SeccionRequest> secciones) {
             String origenFijo,
             List<String> columnasOcultas,
             @Valid List<ColumnaRequest> columnas,
-            List<FilaSugeridaRequest> filasSugeridas) {}
+            List<FilaSugeridaRequest> filasSugeridas,
+            /** Solo TABLA: las filas las arma el código del subservicio, no el analista. */
+            Boolean calculada,
+            /** Quien diligencia puede quitarla de su formulario (V212); null/false = obligatoria. */
+            Boolean opcional,
+            /** Grupo con el que se clasifica la sección (V217); vacío = sin grupo. */
+            @Size(max = 60, message = "El grupo no puede pasar de 60 caracteres.") String grupo) {
+
+        public SeccionRequest(Integer idSeccion, String nombre, String tipo, String clave, String origenFijo,
+                              List<String> columnasOcultas, List<ColumnaRequest> columnas, List<FilaSugeridaRequest> filasSugeridas,
+                              Boolean calculada, Boolean opcional) {
+            this(idSeccion, nombre, tipo, clave, origenFijo, columnasOcultas, columnas, filasSugeridas, calculada, opcional, null);
+        }
+
+        public SeccionRequest(Integer idSeccion, String nombre, String tipo, String clave, String origenFijo,
+                              List<String> columnasOcultas, List<ColumnaRequest> columnas, List<FilaSugeridaRequest> filasSugeridas) {
+            this(idSeccion, nombre, tipo, clave, origenFijo, columnasOcultas, columnas, filasSugeridas, null, null);
+        }
+
+        public SeccionRequest(Integer idSeccion, String nombre, String tipo, String clave, String origenFijo,
+                              List<String> columnasOcultas, List<ColumnaRequest> columnas, List<FilaSugeridaRequest> filasSugeridas,
+                              Boolean calculada) {
+            this(idSeccion, nombre, tipo, clave, origenFijo, columnasOcultas, columnas, filasSugeridas, calculada, null);
+        }
+    }
 
     /** nombre es opcional: si viene vacío, el documento muestra solo el valor, sin etiqueta.
      *  campoCandidato/campoCliente no-nulo (mutuamente excluyentes) marca esta columna como un
@@ -44,7 +68,39 @@ public record GuardarPlantillaRequest(@Valid List<SeccionRequest> secciones) {
                                   @NotBlank String tipoDato,
                                   String campoCandidato, String campoCliente, String clave, List<String> opciones,
                                   Boolean calificaRiesgo,
-                                  @Valid List<PuntajeOpcionRequest> puntajes) {}
+                                  @Valid List<PuntajeOpcionRequest> puntajes,
+                                  /** Dato del estudio (CampoServicio) — excluyente con campoCandidato/campoCliente. */
+                                  String campoServicio,
+                                  /** Lo llena el código del subservicio; el analista solo lo ve. */
+                                  Boolean calculado,
+                                  @Size(max = 200, message = "El valor por defecto no puede pasar de 200 caracteres.") String valorDefecto,
+                                  Boolean obligatorio,
+                                  /** Calificación por hallazgos (V205); null = campo normal. */
+                                  CalificacionColumnaDto calificacion,
+                                  /** Máximo de caracteres de un campo de texto (V209); null = el de por defecto. */
+                                  Integer longitudMaxima) {
+
+        public ColumnaRequest(Integer idColumna, String nombre, String tipoDato, String campoCandidato, String campoCliente,
+                              String clave, List<String> opciones, Boolean calificaRiesgo, List<PuntajeOpcionRequest> puntajes,
+                              String campoServicio, Boolean calculado, String valorDefecto, Boolean obligatorio,
+                              CalificacionColumnaDto calificacion) {
+            this(idColumna, nombre, tipoDato, campoCandidato, campoCliente, clave, opciones, calificaRiesgo, puntajes,
+                    campoServicio, calculado, valorDefecto, obligatorio, calificacion, null);
+        }
+
+        public ColumnaRequest(Integer idColumna, String nombre, String tipoDato, String campoCandidato, String campoCliente,
+                              String clave, List<String> opciones, Boolean calificaRiesgo, List<PuntajeOpcionRequest> puntajes) {
+            this(idColumna, nombre, tipoDato, campoCandidato, campoCliente, clave, opciones, calificaRiesgo, puntajes,
+                    null, null, null, null, null, null);
+        }
+
+        public ColumnaRequest(Integer idColumna, String nombre, String tipoDato, String campoCandidato, String campoCliente,
+                              String clave, List<String> opciones, Boolean calificaRiesgo, List<PuntajeOpcionRequest> puntajes,
+                              String campoServicio, Boolean calculado, String valorDefecto, Boolean obligatorio) {
+            this(idColumna, nombre, tipoDato, campoCandidato, campoCliente, clave, opciones, calificaRiesgo, puntajes,
+                    campoServicio, calculado, valorDefecto, obligatorio, null, null);
+        }
+    }
 
     public record PuntajeOpcionRequest(
             String opcion,

@@ -1,5 +1,5 @@
 import InternalLayout from './InternalLayout'
-import { IconoDashboard, IconoCasa, IconoDocumento } from './IconosNav'
+import { IconoDashboard, IconoCasa, IconoCuenta, IconoCatalogo } from './IconosNav'
 
 const SECCIONES = [
   {
@@ -12,7 +12,18 @@ const SECCIONES = [
     titulo: 'Mis Visitas',
     items: [
       { ruta: '/visitador/visitas',   etiqueta: 'Mis Visitas', icono: <IconoCasa /> },
-      { ruta: '/visitador/informes',  etiqueta: 'Informes',    icono: <IconoDocumento /> },
+    ],
+  },
+  {
+    titulo: 'Reportes',
+    items: [
+      { ruta: '/visitador/productividad', etiqueta: 'Productividad', icono: <IconoCatalogo /> },
+    ],
+  },
+  {
+    titulo: 'Mi Perfil',
+    items: [
+      { ruta: '/visitador/perfil', etiqueta: 'Mis datos', icono: <IconoCuenta /> },
     ],
   },
 ]

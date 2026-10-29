@@ -5,6 +5,8 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDateTime;
+import java.util.HashSet;
+import java.util.Set;
 
 /** Encabezado del formulario diligenciado por el analista para UN subproceso — uno por
  *  servicio_subproceso, sin importar de qué tipo sea (Antecedentes, Académica, lo que venga).
@@ -33,4 +35,14 @@ public class Formulario {
 
     @Column(name = "fecha_actualizacion")
     private LocalDateTime fechaActualizacion;
+
+    /** Secciones OPCIONALES (FormularioSeccion.opcional) que quien diligencia quitó de este
+     *  formulario (V212): no se llenan, sus obligatorios no bloquean y no salen en el Word. */
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "formulario_secciones_omitidas", joinColumns = @JoinColumn(name = "id_formulario"))
+    @Column(name = "id_seccion")
+    @Builder.Default
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    private Set<Integer> seccionesOmitidas = new HashSet<>();
 }

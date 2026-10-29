@@ -14,5 +14,12 @@ public record ProcesoPublicoResponse(
         List<TramoPrecioResponse> tramosPrecio,
         List<String> puntosClave,
         Boolean aplicaPrecioCiudad,
-        List<PrecioCiudadResponse> preciosCiudad
+        List<PrecioCiudadResponse> preciosCiudad,
+        // Formato adicional que se diligencia al solicitar este proceso (PRE_EMPLEO, RUTINA, ESPECIFICA) o null
+        String formatoSolicitud,
+        // El servicio es de poligrafía: el cliente puede elegir hasta 4 temas a evaluar
+        boolean admitePreguntasPoligrafia,
+        // NS-08: qué pide Nueva solicitud según el servicio
+        boolean requiereDireccion,
+        boolean ciudadEsDePrueba
 ) {}

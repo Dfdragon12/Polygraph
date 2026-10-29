@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useId, useState, useEffect, useCallback } from 'react'
 import asignacionService from '../services/asignacionService'
+import { useCambios } from '../hooks/useCambios'
 import { Modal } from './ui/Modal'
 import { colorNovedad } from '../utils/paletaNovedades'
 
@@ -46,6 +47,7 @@ function IconoChevron({ abierto }) {
 
 /* ─── Reportar novedad (ventana aparte, para no amontonar la lista) ─── */
 function ModalNuevaNovedad({ tipos, onRegistrar, onCerrar, enviando }) {
+  const idCampos = useId()
   const [tipo, setTipo] = useState('')
   const [descripcion, setDescripcion] = useState('')
 
@@ -68,11 +70,11 @@ function ModalNuevaNovedad({ tipos, onRegistrar, onCerrar, enviando }) {
     <Modal titulo="Reportar novedad" subtitulo="Queda registrada y se le avisa a quien coordina el servicio" onClose={onCerrar} ancho="max-w-lg">
       <form onSubmit={enviar} className="px-6 py-5 space-y-5">
         <div>
-          <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1.5">
+          <label htmlFor={`${idCampos}-1`} className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1.5">
             <span className="w-5 h-5 rounded-full bg-amber-100 text-amber-700 text-[11px] font-bold flex items-center justify-center">1</span>
             ¿Qué pasó?
           </label>
-          <select value={tipo} onChange={e => setTipo(e.target.value)} className={inputCls} autoFocus>
+          <select id={`${idCampos}-1`} value={tipo} onChange={e => setTipo(e.target.value)} className={inputCls} autoFocus>
             <option value="">Selecciona el tipo de novedad…</option>
             {categorias.map(c => (
               <optgroup key={c.codigo} label={c.etiqueta}>
@@ -88,11 +90,11 @@ function ModalNuevaNovedad({ tipos, onRegistrar, onCerrar, enviando }) {
           )}
         </div>
         <div>
-          <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1.5">
+          <label htmlFor={`${idCampos}-2`} className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1.5">
             <span className="w-5 h-5 rounded-full bg-amber-100 text-amber-700 text-[11px] font-bold flex items-center justify-center">2</span>
             Cuéntanos el detalle
           </label>
-          <textarea value={descripcion} onChange={e => setDescripcion(e.target.value)} rows={4} maxLength={2000}
+          <textarea id={`${idCampos}-2`} value={descripcion} onChange={e => setDescripcion(e.target.value)} rows={4} maxLength={2000}
             placeholder={seleccionado?.textoAyuda || AYUDA_GENERAL} className={inputCls} />
           <p className="text-[10px] text-gray-400 text-right mt-0.5">{descripcion.length}/2000</p>
         </div>
@@ -241,7 +243,7 @@ function TarjetaNovedad({ n, permisos, abierta: expandida, onAlternar, onResolve
               ) : (
                 <div className="space-y-2.5">
                   <p className="text-xs font-semibold text-gray-600">{modo === 'comentar' ? 'Nueva observación' : 'Resolver la novedad'}</p>
-                  <textarea value={texto} onChange={e => setTexto(e.target.value)} rows={2} maxLength={2000} autoFocus
+                  <textarea aria-label={modo === 'comentar' ? 'Nueva observación' : 'Respuesta a la novedad'} value={texto} onChange={e => setTexto(e.target.value)} rows={2} maxLength={2000} autoFocus
                     placeholder={modo === 'comentar'
                       ? 'Ej: El candidato llamó a las 9:15, dice que llega en 30 minutos.'
                       : 'Ej: Se habló con el cliente y se corre la cita para mañana a las 8:00.'}
@@ -255,7 +257,7 @@ function TarjetaNovedad({ n, permisos, abierta: expandida, onAlternar, onResolve
                       </label>
                       {reprogramar && (
                         <div className="mt-2 flex flex-wrap items-center gap-2">
-                          <input type="datetime-local" value={nuevaFecha} onChange={e => setNuevaFecha(e.target.value)}
+                          <input type="datetime-local" aria-label="Nueva fecha y hora programada" value={nuevaFecha} onChange={e => setNuevaFecha(e.target.value)}
                             className="border border-sky-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 bg-white" />
                           <p className="text-[11px] text-sky-700">
                             {permisos.fechaProgramadaActual ? `Hora actual: ${formatoFecha(permisos.fechaProgramadaActual)}. ` : ''}
@@ -336,6 +338,9 @@ export default function NovedadesSubproceso({ idServicioSubproceso, onError, onE
       .finally(() => setCargando(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idServicioSubproceso])
+
+  // Tiempo real: si alguien registra, comenta o resuelve una novedad, la lista se actualiza sola.
+  useCambios(() => asignacionService.novedades(idServicioSubproceso).then(aplicar).catch(() => {}))
 
   const reemplazar = (actualizada) =>
     aplicar({ ...datos, novedades: datos.novedades.map(n => n.id === actualizada.id ? actualizada : n) })

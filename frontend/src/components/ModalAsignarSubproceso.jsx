@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useId, useState, useEffect } from 'react'
 import asignacionService from '../services/asignacionService'
 import { Modal, ConfirmModal } from './ui/Modal'
+import SelectorMotivo, { motivoIncompleto, MOTIVO_VACIO } from './SelectorMotivo'
 
 function formatFechaHora(iso) {
   if (!iso) return '—'
@@ -38,8 +39,10 @@ function yaPaso(iso) {
 
 const BADGE_ESTADO = {
   PENDIENTE:  'bg-amber-100 text-amber-700',
-  ASIGNADO:   'bg-blue-100 text-blue-700',
-  COMPLETADO: 'bg-violet-100 text-violet-700',
+  PROGRAMANDO: 'bg-sky-100 text-sky-700',
+  REPROGRAMADO: 'bg-orange-100 text-orange-700',
+  EN_EJECUCION:   'bg-blue-100 text-blue-700',
+  FINALIZADO: 'bg-violet-100 text-violet-700',
   PUBLICADO:  'bg-emerald-100 text-emerald-700',
   CANCELADO:  'bg-red-100 text-red-600',
 }
@@ -113,6 +116,7 @@ function describirEvento(h) {
 
 /* ─── Modal: asignar / editar / completar / desasignar un subproceso ─── */
 export default function ModalAsignarSubproceso({ asignacion, onClose, onGuardado, onToast }) {
+  const idCampos = useId()
   const [empleados, setEmpleados] = useState([])
   const [cargandoEmpleados, setCargandoEmpleados] = useState(true)
   const [errorEmpleados, setErrorEmpleados] = useState(null)
@@ -130,6 +134,7 @@ export default function ModalAsignarSubproceso({ asignacion, onClose, onGuardado
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState(null)
   const [confirmarAccion, setConfirmarAccion] = useState(null) // 'completar' | 'desasignar' | 'cancelar' | 'reasignar'
+  const [motivoCancelar, setMotivoCancelar] = useState(MOTIVO_VACIO)
   const [historial, setHistorial] = useState([])
   const [cargandoHistorial, setCargandoHistorial] = useState(true)
   const [mostrarHistorial, setMostrarHistorial] = useState(false)
@@ -149,6 +154,22 @@ export default function ModalAsignarSubproceso({ asignacion, onClose, onGuardado
   // hasta que la llamada quede en CONFIRMADO — si no contesta o hay que reprogramar, no tiene
   // sentido dejar asignar a nadie todavía.
   const formHabilitado = !requiereConfirmacion || estadoConfirmacion === 'CONFIRMADO'
+
+  // Poligrafía/visita: lugar de la cita (lo ve el candidato en su portal) y la sugerencia de
+  // horario que él mandó. Para una visita sin lugar, se prellena con su dirección registrada.
+  const [lugar, setLugar] = useState(asignacion.lugar ?? '')
+  const [citaCandidato, setCitaCandidato] = useState(null)
+  useEffect(() => {
+    if (!puedeConfirmar) return
+    asignacionService.citaCandidato(asignacion.id)
+      .then(c => {
+        setCitaCandidato(c)
+        if (!asignacion.lugar && asignacion.rolResponsable === 'VISITADOR' && c?.direccionCandidato) {
+          setLugar(c.direccionCandidato)
+        }
+      })
+      .catch(() => setCitaCandidato(null))
+  }, [asignacion.id, asignacion.lugar, asignacion.rolResponsable, puedeConfirmar])
 
   useEffect(() => {
     setCargandoEmpleados(true); setErrorEmpleados(null)
@@ -232,6 +253,7 @@ export default function ModalAsignarSubproceso({ asignacion, onClose, onGuardado
           fechaProgramada: fechaProgramada || null,
           observaciones: observaciones || null,
           duracionMinutos: ajustarDuracion && duracionMinutos ? Number(duracionMinutos) : null,
+          lugar: puedeConfirmar && lugar.trim() ? lugar.trim() : null,
         })
         onToast('Asignación guardada correctamente')
       }
@@ -242,13 +264,17 @@ export default function ModalAsignarSubproceso({ asignacion, onClose, onGuardado
   }
 
   const ejecutarAccion = async () => {
+    if (confirmarAccion === 'cancelar') {
+      const falta = motivoIncompleto(motivoCancelar)
+      if (falta) { onToast(falta, 'error'); return }
+    }
     setGuardando(true)
     try {
       if (confirmarAccion === 'completar') await asignacionService.completar(asignacion.id)
       // "Reasignar" es, en el fondo, un desasignar — vuelve a Pendiente para pedir la llamada de
       // confirmación de nuevo antes de poder elegir a quién y cuándo asignar.
       if (confirmarAccion === 'desasignar' || confirmarAccion === 'reasignar') await asignacionService.desasignar(asignacion.id)
-      if (confirmarAccion === 'cancelar')  await asignacionService.cancelar(asignacion.id)
+      if (confirmarAccion === 'cancelar')  await asignacionService.cancelar(asignacion.id, { idMotivo: motivoCancelar.idMotivo, texto: motivoCancelar.texto.trim() || null })
       onToast(
         confirmarAccion === 'completar'  ? 'Marcada como completada' :
         confirmarAccion === 'desasignar' ? 'Asignación removida — vuelve a Pendiente' :
@@ -279,13 +305,32 @@ export default function ModalAsignarSubproceso({ asignacion, onClose, onGuardado
           {asignacion.nombreCiudad && <span>· Ciudad: {asignacion.nombreCiudad}</span>}
         </div>
 
-        {puedeConfirmar && asignacion.estado === 'ASIGNADO' && (
-          <div className="border border-gray-200 rounded-lg px-3 py-2.5">
-            <button type="button" onClick={() => setConfirmarAccion('reasignar')}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary-600 hover:text-primary-800 hover:underline transition-colors">
-              <IconoTelefono /> Reasignar
-            </button>
-            <p className="text-[11px] text-gray-400 mt-1">Vuelve a llamar para confirmar antes de cambiar a quién o cuándo está asignado.</p>
+        {citaCandidato?.sugerenciaPendiente && (
+          <div className="rounded-lg border border-primary-200 bg-primary-50/60 px-3 py-2.5">
+            <p className="text-xs font-semibold text-primary-900">El candidato propuso cuándo tiene tiempo</p>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {citaCandidato.sugerenciaPendiente.opciones.map(o => (
+                <button key={o.fecha} type="button" disabled={!formHabilitado}
+                  onClick={() => { setDia(o.fecha); setFechaProgramada('') }}
+                  title="Usar este día"
+                  className={`text-[11px] font-medium px-2 py-1 rounded-md border transition-colors ${
+                    dia === o.fecha ? 'bg-primary-600 border-primary-600 text-white' : 'bg-white border-primary-200 text-primary-800 hover:bg-primary-100'}`}>
+                  {new Date(`${o.fecha}T12:00:00`).toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' })}
+                  {' · '}{{ MANANA: 'mañana', TARDE: 'tarde', CUALQUIERA: 'cualquier hora' }[o.franja]}
+                </button>
+              ))}
+            </div>
+            {citaCandidato.sugerenciaPendiente.comentario && (
+              <p className="mt-1.5 text-[11px] italic text-primary-900/80">"{citaCandidato.sugerenciaPendiente.comentario}"</p>
+            )}
+            <p className="mt-1 text-[10px] text-primary-900/60">Al guardar la asignación, la sugerencia queda atendida.</p>
+          </div>
+        )}
+
+        {puedeConfirmar && (asignacion.estado === 'EN_EJECUCION' || asignacion.estado === 'REPROGRAMADO') && (
+          <div className="border border-gray-200 rounded-lg px-3 py-2.5 bg-gray-50 text-xs text-gray-700">
+            Esta cita ya está agendada y no se edita a mano. Si no se realizó, regístrala como «cita no realizada» (desde «Por confirmar», o con el
+            motivo que corresponda) y luego reprográmala con el mismo profesional o reasígnala a otro, siempre con motivo.
           </div>
         )}
 
@@ -318,7 +363,7 @@ export default function ModalAsignarSubproceso({ asignacion, onClose, onGuardado
                     </button>
                   ))}
                 </div>
-                <textarea value={notasConfirmacion} onChange={e => setNotasConfirmacion(e.target.value)} rows={2}
+                <textarea aria-label="Notas de la llamada…" value={notasConfirmacion} onChange={e => setNotasConfirmacion(e.target.value)} rows={2}
                   placeholder="Notas de la llamada…"
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" />
                 <p className="text-[11px] text-gray-400">
@@ -363,7 +408,7 @@ export default function ModalAsignarSubproceso({ asignacion, onClose, onGuardado
             // Si el subproceso requiere ciudad (poligrafista/visitador), el backend ya filtró la
             // lista a solo quienes cubren la ciudad del evaluado — no aparece ni se puede
             // seleccionar a quien no la cubre.
-            <select value={idUsuarioAsignado} onChange={e => { setIdUsuarioAsignado(e.target.value); setFechaProgramada('') }} required
+            <select aria-label="Persona a asignar" value={idUsuarioAsignado} onChange={e => { setIdUsuarioAsignado(e.target.value); setFechaProgramada('') }} required
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
               <option value="">Selecciona...</option>
               {empleados.map(emp => (
@@ -391,7 +436,7 @@ export default function ModalAsignarSubproceso({ asignacion, onClose, onGuardado
           </label>
           {ajustarDuracion && (
             <>
-              <input type="number" min={asignacion.duracionMinutos ?? 1} step={5} value={duracionMinutos}
+              <input aria-label="Duración en minutos" type="number" min={asignacion.duracionMinutos ?? 1} step={5} value={duracionMinutos}
                 onChange={e => { setDuracionMinutos(e.target.value); setFechaProgramada('') }}
                 placeholder="Minutos"
                 className="mt-2 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
@@ -401,10 +446,10 @@ export default function ModalAsignarSubproceso({ asignacion, onClose, onGuardado
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">
+          <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">
             Día <span className="text-red-500">*</span>
           </label>
-          <input type="date" value={dia} min={hoyLocal()} required
+          <input id={`${idCampos}-1`} type="date" value={dia} min={hoyLocal()} required
             onChange={e => { setDia(e.target.value); setFechaProgramada('') }}
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
         </div>
@@ -449,9 +494,26 @@ export default function ModalAsignarSubproceso({ asignacion, onClose, onGuardado
           )}
         </div>
 
+        {puedeConfirmar && (
+          <div>
+            <label htmlFor={`${idCampos}-2`} className="block text-xs font-medium text-gray-600 mb-1">
+              Lugar de la cita <span className="text-gray-400 font-normal">— lo ve el candidato en su portal</span>
+            </label>
+            <input id={`${idCampos}-2`} value={lugar} onChange={e => setLugar(e.target.value)} maxLength={300}
+              placeholder={asignacion.rolResponsable === 'VISITADOR' ? 'Dirección de la visita' : 'Dirección de la sede o "Virtual"'}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+            {asignacion.rolResponsable === 'VISITADOR' && citaCandidato?.direccionCandidato && lugar !== citaCandidato.direccionCandidato && (
+              <button type="button" onClick={() => setLugar(citaCandidato.direccionCandidato)}
+                className="mt-1 text-[11px] text-primary-600 hover:underline">
+                Usar la dirección del candidato: {citaCandidato.direccionCandidato}
+              </button>
+            )}
+          </div>
+        )}
+
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Observaciones</label>
-          <textarea value={observaciones} onChange={e => setObservaciones(e.target.value)} rows={3}
+          <label htmlFor={`${idCampos}-3`} className="block text-xs font-medium text-gray-600 mb-1">Observaciones</label>
+          <textarea id={`${idCampos}-3`} value={observaciones} onChange={e => setObservaciones(e.target.value)} rows={3}
             placeholder="Notas para quien ejecuta este subproceso…"
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" />
         </div>
@@ -527,20 +589,20 @@ export default function ModalAsignarSubproceso({ asignacion, onClose, onGuardado
 
         <div className="flex items-center justify-between gap-3 pt-2">
           <div className="flex items-center gap-2">
-            {asignacion.estado === 'ASIGNADO' && (
+            {asignacion.estado === 'EN_EJECUCION' && (
               <button type="button" onClick={() => setConfirmarAccion('completar')}
                 className="text-xs font-medium px-3 py-1.5 rounded-lg border border-green-200 text-green-700 hover:bg-green-50 transition-colors">
                 Completar
               </button>
             )}
-            {asignacion.estado === 'ASIGNADO' && (
+            {asignacion.estado === 'EN_EJECUCION' && !puedeConfirmar && (
               <button type="button" onClick={() => setConfirmarAccion('desasignar')}
                 className="text-xs font-medium px-3 py-1.5 rounded-lg border border-amber-200 text-amber-600 hover:bg-amber-50 transition-colors">
                 Desasignar
               </button>
             )}
-            {asignacion.estado !== 'CANCELADO' && asignacion.estado !== 'COMPLETADO' && (
-              <button type="button" onClick={() => setConfirmarAccion('cancelar')}
+            {asignacion.estado !== 'CANCELADO' && asignacion.estado !== 'FINALIZADO' && asignacion.estado !== 'PUBLICADO' && !asignacion.iniciado && (
+              <button type="button" onClick={() => { setMotivoCancelar(MOTIVO_VACIO); setConfirmarAccion('cancelar') }}
                 className="text-xs font-medium px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors">
                 Cancelar
               </button>
@@ -549,7 +611,7 @@ export default function ModalAsignarSubproceso({ asignacion, onClose, onGuardado
           <div className="flex gap-3">
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cerrar</button>
             <button type="submit"
-              disabled={guardando || (formHabilitado && empleados.length === 0) || (requiereConfirmacion && estadoConfirmacion === 'SIN_LLAMAR')}
+              disabled={guardando || (formHabilitado && empleados.length === 0) || (requiereConfirmacion && estadoConfirmacion === 'SIN_LLAMAR') || (puedeConfirmar && (asignacion.estado === 'EN_EJECUCION' || asignacion.estado === 'REPROGRAMADO'))}
               className="bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white text-sm font-medium px-5 py-2 rounded-lg transition-colors">
               {guardando ? 'Guardando...' : soloGuardaConfirmacion ? 'Guardar llamada' : 'Guardar asignación'}
             </button>
@@ -577,8 +639,13 @@ export default function ModalAsignarSubproceso({ asignacion, onClose, onGuardado
             {confirmarAccion === 'completar' && 'Se marcará este subproceso como completado.'}
             {confirmarAccion === 'desasignar' && 'Se quitará la persona y fecha asignadas; el subproceso vuelve a Pendiente.'}
             {confirmarAccion === 'reasignar' && 'Se quitará a la persona y la fecha/hora ya asignadas, y el subproceso vuelve a Pendiente — vas a tener que llamar de nuevo para confirmar antes de elegir a quién y cuándo asignar.'}
-            {confirmarAccion === 'cancelar' && 'Este subproceso quedará cancelado. Esta acción no elimina el registro.'}
+            {confirmarAccion === 'cancelar' && 'Este subproceso quedará cancelado; el motivo queda en el historial. Solo se cancela lo que aún no ha iniciado.'}
           </p>
+          {confirmarAccion === 'cancelar' && (
+            <div className="mt-4">
+              <SelectorMotivo tipo="CANCELACION" valor={motivoCancelar} onChange={setMotivoCancelar} etiqueta="Motivo de la cancelación" autoFocus />
+            </div>
+          )}
         </ConfirmModal>
       )}
     </Modal>

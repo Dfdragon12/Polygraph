@@ -15,6 +15,9 @@ public record ProcesoResponse(
         Integer                       diasHabilesEntrega,
         List<TramoPrecioResponse>     tramosPrecio,
         Boolean                       aplicaPrecioCiudad,
+        Boolean                       requiereHojaVida,
+        Boolean                       requiereDireccion,
+        Boolean                       ciudadEsDePrueba,
         List<PrecioCiudadResponse>    preciosCiudad,
         List<String>                  puntosClave,
         // Calificación de riesgo (ver CalificacionProcesoService): suma de pesos de los

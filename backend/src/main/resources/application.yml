@@ -1,5 +1,22 @@
 server:
   port: 8080
+  # Deploy/reinicio: deja terminar los requests en curso (hasta spring.lifecycle.timeout) en vez
+  # de cortarlos a la mitad.
+  shutdown: graceful
+  # JSON comprimido con gzip hacia el navegador (listas y detalles bajan 70-90% menos bytes).
+  # Los PDF/xlsx ya vienen comprimidos, por eso no están en la lista.
+  compression:
+    enabled: true
+    mime-types: application/json,text/plain,text/csv,text/html,text/css,application/javascript
+    min-response-size: 2048
+  tomcat:
+    # Más hilos HTTP que conexiones de BD no sirve de nada: se quedan esperando conexión. 100
+    # alcanza de sobra con un pool de 10 y lo pesado ya no corre en estos hilos (va a la cola).
+    threads:
+      max: ${TOMCAT_MAX_THREADS:100}
+    accept-count: 100
+    # Cliente que abre la conexión y no manda nada: se corta a los 20 s en vez de retener el hilo.
+    connection-timeout: 20s
 
 spring:
   # Carga backend/.env si existe (mismo formato que .properties: CLAVE=valor). "optional:" evita
@@ -11,15 +28,36 @@ spring:
   application:
     name: erp-polygraph
 
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+  # Hilos para los @Scheduled: con uno solo (el defecto), un job lento (ej. conciliación de
+  # pagos) atrasaba a todos los demás, incluido el despachador de la cola de trabajos.
+  task:
+    scheduling:
+      pool:
+        size: 3
+
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME}
     username: ${DB_USER}
     password: ${DB_PASS}
     driver-class-name: org.postgresql.Driver
+    # Pool de conexiones — ver módulo trabajos: lo pesado ya no retiene conexiones mientras hace
+    # CPU/disco, así que 10 alcanzan; subirlo solo si el panel de Trabajos muestra "esperando".
     hikari:
-      maximum-pool-size: 10
-      minimum-idle: 2
-      connection-timeout: 30000
+      maximum-pool-size: ${DB_POOL_MAX:10}
+      minimum-idle: ${DB_POOL_MIN:2}
+      # Falla rápido (10 s) en vez de dejar un request colgado 30 s esperando conexión.
+      connection-timeout: ${DB_POOL_CONNECTION_TIMEOUT_MS:10000}
+      idle-timeout: 600000
+      # Recicla cada conexión antes de 25 min — por debajo de los cortes por inactividad típicos
+      # de firewalls/balanceadores, que dejan conexiones "muertas" en el pool.
+      max-lifetime: 1500000
+      keepalive-time: 300000
+      # Si un código retiene una conexión más de 60 s, queda en el log con el stack de quién la
+      # tomó (así se habría visto el PDF que se convertía dentro de una transacción).
+      leak-detection-threshold: ${DB_POOL_LEAK_DETECTION_MS:60000}
 
   jpa:
     hibernate:
@@ -65,12 +103,69 @@ app:
   libreoffice:
     binario: ${LIBREOFFICE_BINARIO:soffice}
     timeout-segundos: ${LIBREOFFICE_TIMEOUT_SEGUNDOS:60}
+    # Cuántos soffice a la vez (cada uno ~150-300 MB fuera del heap + 1 núcleo), sumando todos
+    # los tipos de PDF de la cola (INFORME_PDF + FORMULARIO_PDF).
+    max-concurrentes: ${LIBREOFFICE_MAX_CONCURRENTES:2}
+    # Solo esperan hilos de la cola (ninguna conversión corre ya dentro de un request HTTP), así
+    # que se puede esperar el turno con calma; si se agota, el trabajo se reintenta solo.
+    espera-maxima-segundos: ${LIBREOFFICE_ESPERA_MAXIMA_SEGUNDOS:60}
+  # true solo UNA vez tras corregir una migración ya aplicada — ver config/FlywayConfig.
+  flyway:
+    reparar: ${FLYWAY_REPARAR:false}
+  # Ejecutor de @Async (correos, notificaciones, pagos) — ver config/AsyncConfig.
+  async:
+    hilos-minimos: ${ASYNC_HILOS_MINIMOS:4}
+    hilos-maximos: ${ASYNC_HILOS_MAXIMOS:8}
+    capacidad-cola: ${ASYNC_CAPACIDAD_COLA:500}
+  # Cola persistente de trabajos pesados — ver módulo trabajos y V194.
+  trabajos:
+    habilitado: ${TRABAJOS_HABILITADO:true}
+    intervalo-sondeo-ms: ${TRABAJOS_INTERVALO_SONDEO_MS:2000}
+    directorio: ${TRABAJOS_DIR:${UPLOADS_DIR:./uploads}/trabajos}
+    # Completados en HORAS (la limpieza corre cada hora); fallidos en días, para revisarlos.
+    retencion-horas-completados: ${TRABAJOS_RETENCION_HORAS_COMPLETADOS:24}
+    retencion-dias-fallidos: ${TRABAJOS_RETENCION_FALLIDOS:30}
+    retencion-dias-cache: ${TRABAJOS_RETENCION_CACHE:30}
+    max-filas-carga-masiva: ${TRABAJOS_MAX_FILAS_CARGA_MASIVA:1000}
+    tipos:
+      INFORME_PDF:
+        hilos: ${LIBREOFFICE_MAX_CONCURRENTES:2}
+        max-intentos: 3
+        timeout-minutos: 5
+        espera-base-segundos: 15
+      # "Descargar PDF" del formulario (roles internos). Comparte los LibreOffice con INFORME_PDF:
+      # entre los dos pools hay más hilos que conversiones permitidas, el resto espera turno en
+      # el semáforo (espera-maxima-segundos) — nunca más de max-concurrentes soffice a la vez.
+      FORMULARIO_PDF:
+        hilos: ${TRABAJOS_HILOS_FORMULARIO_PDF:2}
+        max-intentos: 3
+        timeout-minutos: 5
+        espera-base-segundos: 15
+      # Recalcula el semáforo de tiempo de todas las solicitudes en curso (a las 00:05 y a la hora de corte). Idempotente: se puede reintentar.
+      RECALCULO_TIEMPO:
+        hilos: 1
+        max-intentos: 3
+        timeout-minutos: 15
+        espera-base-segundos: 60
+      CARGA_MASIVA:
+        # 1 hilo = un Excel abierto en RAM a la vez. Sin reintento: no es idempotente.
+        hilos: ${TRABAJOS_HILOS_CARGA_MASIVA:1}
+        max-intentos: 1
+        timeout-minutos: 30
   jwt:
     secret: ${JWT_SECRET}
     expiration-ms: ${JWT_EXPIRATION_MS:86400000}
     refresh-expiration-ms: ${JWT_REFRESH_EXPIRATION_MS:604800000}
   link-evaluado:
     expiracion-horas: 36
+  # Documentos que carga el candidato desde su link: solo PDF, JPG o PNG (se revisa el contenido
+  # real, no solo la extensión). 5 MB alcanza para un PDF escaneado a 200-300 ppp o una foto de
+  # celular; más que eso suele ser un escaneo a resolución innecesaria. Debe ser menor que
+  # spring.servlet.multipart.max-file-size (10MB).
+  candidato:
+    documentos:
+      max-pdf-mb: ${CANDIDATO_MAX_PDF_MB:5}
+      max-imagen-mb: ${CANDIDATO_MAX_IMAGEN_MB:5}
   mensajes:
     retencion-dias: ${MENSAJES_RETENCION_DIAS:30}
   cors:

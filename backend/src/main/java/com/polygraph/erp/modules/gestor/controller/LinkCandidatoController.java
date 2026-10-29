@@ -24,6 +24,8 @@ import org.springframework.web.bind.annotation.*;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
+/** Links de candidato. Todo va con quien pide (auth): un gestor solo ve y opera los links de
+ *  servicios de SUS clientes (AccesoGestor, 403 si no). */
 @RestController
 @RequestMapping("/api/v1/gestor/tokens")
 @RequiredArgsConstructor
@@ -33,30 +35,31 @@ public class LinkCandidatoController {
     private final LinkCandidatoGestorService tokenService;
 
     @GetMapping("/estadisticas")
-    public ResponseEntity<LinkEstadisticasResponse> estadisticas() {
-        return ResponseEntity.ok(tokenService.estadisticas());
+    public ResponseEntity<LinkEstadisticasResponse> estadisticas(Authentication auth) {
+        return ResponseEntity.ok(tokenService.estadisticas(auth.getName()));
     }
 
     @GetMapping("/servicio/{idServicio}")
-    public ResponseEntity<LinkCandidatoResponse> porServicio(@PathVariable Integer idServicio) {
-        return tokenService.obtenerPorServicio(idServicio)
+    public ResponseEntity<LinkCandidatoResponse> porServicio(@PathVariable Integer idServicio, Authentication auth) {
+        return tokenService.obtenerPorServicio(idServicio, auth.getName())
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.noContent().build());
     }
 
     @GetMapping("/servicio/{idServicio}/historial")
-    public ResponseEntity<List<LinkCandidatoResponse>> historialPorServicio(@PathVariable Integer idServicio) {
-        return ResponseEntity.ok(tokenService.listarHistorialPorServicio(idServicio));
+    public ResponseEntity<List<LinkCandidatoResponse>> historialPorServicio(@PathVariable Integer idServicio, Authentication auth) {
+        return ResponseEntity.ok(tokenService.listarHistorialPorServicio(idServicio, auth.getName()));
     }
 
     @GetMapping("/servicio/{idServicio}/resumen")
-    public ResponseEntity<ResumenEvaluadoResponse> resumenPorServicio(@PathVariable Integer idServicio) {
-        return ResponseEntity.ok(tokenService.obtenerResumenPorServicio(idServicio));
+    public ResponseEntity<ResumenEvaluadoResponse> resumenPorServicio(@PathVariable Integer idServicio, Authentication auth) {
+        return ResponseEntity.ok(tokenService.obtenerResumenPorServicio(idServicio, auth.getName()));
     }
 
     @GetMapping("/servicio/{idServicio}/documentos/{idDocumento}/descargar")
-    public ResponseEntity<Resource> descargarDocumento(@PathVariable Integer idServicio, @PathVariable Long idDocumento) {
-        var descarga = tokenService.descargarDocumento(idServicio, idDocumento);
+    public ResponseEntity<Resource> descargarDocumento(@PathVariable Integer idServicio, @PathVariable Long idDocumento,
+                                                       Authentication auth) {
+        var descarga = tokenService.descargarDocumento(idServicio, idDocumento, auth.getName());
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(descarga.tipoContenido()))
                 .header(HttpHeaders.CONTENT_DISPOSITION,
@@ -69,8 +72,9 @@ public class LinkCandidatoController {
     @GetMapping
     public ResponseEntity<Page<LinkCandidatoResponse>> listar(
             @RequestParam(required = false) String estado,
-            @PageableDefault(size = 20) Pageable pageable) {
-        return ResponseEntity.ok(tokenService.listar(estado, pageable));
+            @PageableDefault(size = 20) Pageable pageable,
+            Authentication auth) {
+        return ResponseEntity.ok(tokenService.listar(estado, pageable, auth.getName()));
     }
 
     @PostMapping
@@ -84,25 +88,25 @@ public class LinkCandidatoController {
     }
 
     @PostMapping("/{id}/enviar-correo")
-    public ResponseEntity<Void> enviarCorreo(@PathVariable Long id) {
-        tokenService.enviarCorreo(id);
+    public ResponseEntity<Void> enviarCorreo(@PathVariable Long id, Authentication auth) {
+        tokenService.enviarCorreo(id, auth.getName());
         return ResponseEntity.ok().build();
     }
 
     @PatchMapping("/{id}/revocar")
-    public ResponseEntity<Void> revocar(@PathVariable Long id) {
-        tokenService.revocar(id);
+    public ResponseEntity<Void> revocar(@PathVariable Long id, Authentication auth) {
+        tokenService.revocar(id, auth.getName());
         return ResponseEntity.noContent().build();
     }
 
     @PatchMapping("/{id}/revertir")
-    public ResponseEntity<LinkCandidatoResponse> revertir(@PathVariable Long id) {
-        return ResponseEntity.ok(tokenService.revertir(id));
+    public ResponseEntity<LinkCandidatoResponse> revertir(@PathVariable Long id, Authentication auth) {
+        return ResponseEntity.ok(tokenService.revertir(id, auth.getName()));
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> eliminar(@PathVariable Long id) {
-        tokenService.eliminar(id);
+    public ResponseEntity<Void> eliminar(@PathVariable Long id, Authentication auth) {
+        tokenService.eliminar(id, auth.getName());
         return ResponseEntity.noContent().build();
     }
 }

@@ -81,7 +81,10 @@ public class PagoWompiWebhookService {
             return true;
         }
 
-        PagoWompi pago = pagoWompiRepository.findByReferencia(referencia).orElse(null);
+        // Un aviso tardío de un intento anterior trae una referencia vieja: se reconoce por la base (ReferenciaPago).
+        PagoWompi pago = pagoWompiRepository.findByReferencia(referencia)
+                .or(() -> pagoWompiRepository.findFirstByReferenciaStartingWith(ReferenciaPago.base(referencia)))
+                .orElse(null);
         if (pago == null) {
             // No es un pago del flujo genérico (pospago) — puede ser una orden de compra del
             // carrito prepago (flujo viejo, otra tabla). Un solo webhook de Wompi para ambos flujos,

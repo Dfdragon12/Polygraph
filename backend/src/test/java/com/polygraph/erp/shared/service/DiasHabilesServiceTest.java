@@ -28,12 +28,7 @@ class DiasHabilesServiceTest {
         // ser frágiles (ver comentario original más abajo), y un festivo colombiano real cayendo
         // sobre una de esas fechas los volvería flaky. El cálculo de festivos en sí se prueba
         // aparte en FestivosColombiaServiceTest.
-        service = new DiasHabilesService(new FestivosColombiaService() {
-            @Override
-            public boolean esFestivo(LocalDate fecha) {
-                return false;
-            }
-        });
+        service = new DiasHabilesService(new CalendarioHabilService(anio -> java.util.Set.of(), () -> ParametrosTiempo.POR_DEFECTO, java.time.Clock.systemUTC()));
         // Usar un lunes conocido relativo a la fecha actual para evitar tests frágiles
         proximoLunes = LocalDate.now().with(TemporalAdjusters.nextOrSame(DayOfWeek.MONDAY));
         proximoJueves = proximoLunes.plusDays(3);
@@ -187,5 +182,64 @@ class DiasHabilesServiceTest {
 
         // Empieza martes → +1 = miércoles
         assertThat(resultado).isEqualTo(proximoLunes.plusDays(2));
+    }
+
+    // ───────────────────────────── retraso en días hábiles ─────────────────────────────
+
+    @Test
+    @DisplayName("Retraso: entrega el viernes y hoy es lunes → 1 día hábil (el fin de semana no cuenta)")
+    void retraso_cuenta_solo_dias_habiles() {
+        assertThat(service.diasRetraso(proximoViernes, proximoViernes.plusDays(3))).isEqualTo(1);   // lunes
+        assertThat(service.diasRetraso(proximoViernes, proximoViernes.plusDays(7))).isEqualTo(5);   // viernes siguiente
+    }
+
+    @Test
+    @DisplayName("Retraso: el sábado y el domingo después de una entrega del viernes aún no son retraso")
+    void retraso_fin_de_semana_no_es_retraso() {
+        assertThat(service.diasRetraso(proximoViernes, proximoViernes)).isZero();
+        assertThat(service.diasRetraso(proximoViernes, proximoViernes.plusDays(1))).isZero();
+        assertThat(service.diasRetraso(proximoViernes, proximoViernes.plusDays(2))).isZero();
+        assertThat(service.diasRetraso((LocalDate) null, proximoViernes)).isZero();
+    }
+
+    @Test
+    @DisplayName("El corte de vencidas es el último día hábil: en fin de semana es el viernes")
+    void corte_de_vencidas() {
+        assertThat(service.ultimoDiaHabilHasta(proximoLunes)).isEqualTo(proximoLunes);
+        assertThat(service.ultimoDiaHabilHasta(proximoSabado)).isEqualTo(proximoViernes);
+        assertThat(service.ultimoDiaHabilHasta(proximoSabado.plusDays(1))).isEqualTo(proximoViernes);
+        // Vencida (fecha < corte) coincide con "al menos un día hábil de retraso" en cualquier día de la semana.
+        for (int i = 0; i < 14; i++) {
+            LocalDate hoy = proximoLunes.plusDays(i);
+            for (int j = 1; j <= 10; j++) {
+                LocalDate entrega = hoy.minusDays(j);
+                assertThat(entrega.isBefore(service.ultimoDiaHabilHasta(hoy))).as("entrega %s, hoy %s", entrega, hoy)
+                        .isEqualTo(service.diasRetraso(entrega, hoy) >= 1);
+            }
+        }
+    }
+
+    // ───────── ejemplos reales del prompt de tiempos, con los festivos reales de Colombia ─────────
+
+    private DiasHabilesService conFestivosReales() {
+        return new DiasHabilesService(new CalendarioHabilService(anio -> FestivosColombiaGenerator.generar(anio).keySet(), () -> ParametrosTiempo.POR_DEFECTO, java.time.Clock.systemUTC()));
+    }
+
+    @Test
+    @DisplayName("Plazo: recibida el miércoles 16 sep 2026 con plazo 5 vence el miércoles 23 sep; el jueves 15 oct con plazo 2, el lunes 19 oct")
+    void ejemplos_de_plazo() {
+        assertThat(conFestivosReales().calcularFechaEntrega(LocalDate.of(2026, 9, 16).atTime(10, 0), 5)).isEqualTo(LocalDate.of(2026, 9, 23));
+        assertThat(conFestivosReales().calcularFechaEntrega(LocalDate.of(2026, 10, 15).atTime(10, 0), 2)).isEqualTo(LocalDate.of(2026, 10, 19));
+        // Después de las 4 p. m. cuenta como del día hábil siguiente.
+        assertThat(conFestivosReales().calcularFechaEntrega(LocalDate.of(2026, 9, 16).atTime(16, 30), 5)).isEqualTo(LocalDate.of(2026, 9, 24));
+    }
+
+    @Test
+    @DisplayName("Retraso: compromiso 23 sep y hoy 19 oct 2026 son 17 días hábiles (26 en calendario); viernes 16 a lunes 19 oct, 1")
+    void ejemplos_de_retraso() {
+        DiasHabilesService s = conFestivosReales();
+        assertThat(s.diasRetraso(LocalDate.of(2026, 9, 23), LocalDate.of(2026, 10, 19))).isEqualTo(17);
+        assertThat(s.diasRetraso(LocalDate.of(2026, 10, 16), LocalDate.of(2026, 10, 19))).isEqualTo(1);
+        // Solicitud #12: compromiso 1 sep, publicada 25 sep 2026.
     }
 }

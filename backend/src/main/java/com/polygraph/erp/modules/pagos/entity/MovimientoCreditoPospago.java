@@ -49,4 +49,8 @@ public class MovimientoCreditoPospago {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "id_factura")
     private FacturaPospago factura;
+
+    /** NS-04: cargo de una solicitud cancelada — no entra en la factura (no se borra). */
+    @Column(name = "anulado_en")
+    private LocalDateTime anuladoEn;
 }

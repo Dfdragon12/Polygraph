@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import mensajeService from '../services/mensajeService'
 import dashboardService from '../services/dashboardService'
+import { iniciarIntervaloVisible } from '../hooks/useIntervaloVisible'
 
 function formatHora(iso) {
   if (!iso) return ''
@@ -28,17 +29,23 @@ export default function HeaderMensajesCliente() {
 
   useEffect(() => {
     cargarBadge()
-    const t = setInterval(cargarBadge, 30000)
-    return () => clearInterval(t)
+    return iniciarIntervaloVisible(cargarBadge, 30000)
   }, [cargarBadge])
 
   useEffect(() => {
     if (!abierto) return
     cargarHilo()
     dashboardService.obtenerGestor().then(setGestor).catch(() => setGestor(null))
-    const t = setInterval(cargarHilo, 6000)
-    return () => clearInterval(t)
+    return iniciarIntervaloVisible(cargarHilo, 6000)
   }, [abierto, cargarHilo])
+
+  // Otras pantallas (ej. el detalle de una solicitud) abren este panel con
+  // window.dispatchEvent(new Event('abrir-mensajes-gestor')).
+  useEffect(() => {
+    const abrir = () => setAbierto(true)
+    window.addEventListener('abrir-mensajes-gestor', abrir)
+    return () => window.removeEventListener('abrir-mensajes-gestor', abrir)
+  }, [])
 
   useEffect(() => {
     const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setAbierto(false) }
@@ -126,12 +133,12 @@ export default function HeaderMensajesCliente() {
           </div>
 
           <form onSubmit={enviar} className="border-t border-gray-100 px-3 py-2.5 flex items-center gap-2 flex-shrink-0">
-            <input value={texto} onChange={e => setTexto(e.target.value)}
+            <input aria-label="Escribir un mensaje" value={texto} onChange={e => setTexto(e.target.value)}
               placeholder={tieneGestor ? 'Escribe un mensaje...' : 'Sin gestor asignado'}
               disabled={!tieneGestor}
               maxLength={2000}
               className="flex-1 border border-gray-200 rounded-full px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:bg-gray-50" />
-            <button type="submit" disabled={enviando || !texto.trim() || !tieneGestor}
+            <button type="submit" aria-label="Enviar mensaje" disabled={enviando || !texto.trim() || !tieneGestor}
               className="bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white p-1.5 rounded-full transition-colors flex-shrink-0">
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />

@@ -55,4 +55,9 @@ public class TipoProgreso {
     @Column(name = "version_plantilla", nullable = false)
     @Builder.Default
     private Integer versionPlantilla = 1;
+
+    /** Grupo del catálogo codigos_calificacion con que califica este subservicio (ej.
+     *  "ANTECEDENTES", ver V202). null = califica con los puntos por opción del constructor. */
+    @Column(name = "grupo_calificacion", length = 30)
+    private String grupoCalificacion;
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useId, useState, useEffect, useCallback } from 'react'
 import perfilService from '../../services/perfilService'
 import Toast from '../../components/Toast'
 import { Modal } from '../../components/ui/Modal'
@@ -20,6 +20,7 @@ function iniciales(nombre, apellido) {
 }
 
 function ModalCrearUsuario({ onClose, onCreado, onToast }) {
+  const idCampos = useId()
   const [form, setForm] = useState({ nombre: '', apellido: '', email: '', password: '' })
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState(null)
@@ -52,25 +53,25 @@ function ModalCrearUsuario({ onClose, onCreado, onToast }) {
         {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{error}</div>}
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Nombre <span className="text-red-500">*</span></label>
-            <input name="nombre" value={form.nombre} onChange={cambiar} required maxLength={100}
+            <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">Nombre <span className="text-red-500">*</span></label>
+            <input id={`${idCampos}-1`} name="nombre" value={form.nombre} onChange={cambiar} required maxLength={100}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Apellido</label>
-            <input name="apellido" value={form.apellido} onChange={cambiar} maxLength={100}
+            <label htmlFor={`${idCampos}-2`} className="block text-xs font-medium text-gray-600 mb-1">Apellido</label>
+            <input id={`${idCampos}-2`} name="apellido" value={form.apellido} onChange={cambiar} maxLength={100}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
           </div>
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Correo electrónico <span className="text-red-500">*</span></label>
-          <input type="email" name="email" value={form.email} onChange={cambiar} required maxLength={150}
+          <label htmlFor={`${idCampos}-3`} className="block text-xs font-medium text-gray-600 mb-1">Correo electrónico <span className="text-red-500">*</span></label>
+          <input id={`${idCampos}-3`} type="email" name="email" value={form.email} onChange={cambiar} required maxLength={150}
             placeholder="usuario@empresa.com"
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Contraseña temporal <span className="text-red-500">*</span></label>
-          <input type="password" name="password" value={form.password} onChange={cambiar} required minLength={8} maxLength={50}
+          <label htmlFor={`${idCampos}-4`} className="block text-xs font-medium text-gray-600 mb-1">Contraseña temporal <span className="text-red-500">*</span></label>
+          <input id={`${idCampos}-4`} type="password" name="password" value={form.password} onChange={cambiar} required minLength={8} maxLength={50}
             placeholder="Mínimo 8 caracteres"
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
           <p className="text-xs text-gray-400 mt-1">Se le pedirá cambiarla la primera vez que inicie sesión.</p>
@@ -88,6 +89,7 @@ function ModalCrearUsuario({ onClose, onCreado, onToast }) {
 }
 
 function ModalEditarUsuario({ usuario, onClose, onGuardado, onToast }) {
+  const idCampos = useId()
   const [form, setForm] = useState({ nombre: usuario.nombre, apellido: usuario.apellido ?? '', email: usuario.email, password: '' })
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState(null)
@@ -120,24 +122,24 @@ function ModalEditarUsuario({ usuario, onClose, onGuardado, onToast }) {
         {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{error}</div>}
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Nombre <span className="text-red-500">*</span></label>
-            <input name="nombre" value={form.nombre} onChange={cambiar} required maxLength={100}
+            <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">Nombre <span className="text-red-500">*</span></label>
+            <input id={`${idCampos}-1`} name="nombre" value={form.nombre} onChange={cambiar} required maxLength={100}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Apellido</label>
-            <input name="apellido" value={form.apellido} onChange={cambiar} maxLength={100}
+            <label htmlFor={`${idCampos}-2`} className="block text-xs font-medium text-gray-600 mb-1">Apellido</label>
+            <input id={`${idCampos}-2`} name="apellido" value={form.apellido} onChange={cambiar} maxLength={100}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
           </div>
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Correo electrónico <span className="text-red-500">*</span></label>
-          <input type="email" name="email" value={form.email} onChange={cambiar} required maxLength={150}
+          <label htmlFor={`${idCampos}-3`} className="block text-xs font-medium text-gray-600 mb-1">Correo electrónico <span className="text-red-500">*</span></label>
+          <input id={`${idCampos}-3`} type="email" name="email" value={form.email} onChange={cambiar} required maxLength={150}
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Nueva contraseña</label>
-          <input type="password" name="password" value={form.password} onChange={cambiar} minLength={8} maxLength={50}
+          <label htmlFor={`${idCampos}-4`} className="block text-xs font-medium text-gray-600 mb-1">Nueva contraseña</label>
+          <input id={`${idCampos}-4`} type="password" name="password" value={form.password} onChange={cambiar} minLength={8} maxLength={50}
             placeholder="Déjalo vacío para no cambiarla"
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
         </div>

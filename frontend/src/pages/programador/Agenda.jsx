@@ -1,11 +1,20 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import SemaforoEstados from '../../components/semaforo/SemaforoEstados'
+import AlertasAparte from '../../components/semaforo/AlertasAparte'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import asignacionService from '../../services/asignacionService'
+import { useCambios } from '../../hooks/useCambios'
 import formulariosService from '../../services/formulariosService'
 import Toast from '../../components/Toast'
 import Paginacion from '../../components/ui/Paginacion'
 import MenuAcciones from '../../components/ui/MenuAcciones'
 import ModalAsignarSubproceso from '../../components/ModalAsignarSubproceso'
+import EstadoTiempo from '../../components/EstadoTiempo'
+import ModalCitaAccion from '../../components/citas/ModalCitaAccion'
+import { useDiasNoHabiles } from '../../hooks/useDiasNoHabiles'
+import DisponibilidadEquipo from '../../components/agenda/DisponibilidadEquipo'
+import BandejaParaReprogramar from '../../components/agenda/BandejaParaReprogramar'
+import BandejaCitas from '../../components/citas/BandejaCitas'
 import CronogramaDia from '../../components/CronogramaDia'
 import { toLocalDateTimeString, toLocalDateString, hoyLocalDateString, rangoDelDia } from '../../utils/fechas'
 
@@ -70,7 +79,7 @@ function CeldaFechas({ asignacion: a, abierta, onToggle }) {
       <span className="font-medium text-blue-500">Asig.</span><span className="text-gray-600">{formatFechaHora(a.fechaAsignacion)}</span>
       <span className="font-medium text-gray-400">Prog.</span><span className="text-gray-600">{formatFechaHora(a.fechaProgramada)}</span>
       <span className="font-medium text-gray-400">Listo</span><span className="text-gray-600">{formatHoraLimite(a.fechaProgramada, a.duracionMinutos)}</span>
-      {(a.estado === 'COMPLETADO' || a.estado === 'PUBLICADO') && (
+      {(a.estado === 'FINALIZADO' || a.estado === 'PUBLICADO') && (
         <>
           <span className="font-medium text-violet-500">Compl.</span>
           <span className="text-gray-600">{formatFechaHora(a.fechaCompletado)}</span>
@@ -113,37 +122,23 @@ function IconoHoja() {
   )
 }
 
-const CAMPO_CONTEO = {
-  PENDIENTE:  'pendientes',
-  ASIGNADO:   'asignados',
-  COMPLETADO: 'completados',
-  PUBLICADO:  'publicados',
-  CANCELADO:  'cancelados',
-}
-
-// Semáforo: ámbar = pendiente de asignar, azul = en progreso, violeta = diligenciado pero
-// pendiente de que el gestor lo apruebe, verde = cerrado de verdad (publicado, ya aprobado), rojo
-// = cancelado.
-const TARJETAS_ESTADO = [
-  { estado: 'PENDIENTE',  label: 'Pendientes',  desc: 'Por asignar',        border: 'border-amber-200',  dot: 'bg-amber-400',  texto: 'text-amber-600',  bgActivo: 'bg-amber-50/70',  ring: 'ring-amber-300' },
-  { estado: 'ASIGNADO',   label: 'Asignados',   desc: 'Ya tienen fecha',    border: 'border-blue-200',   dot: 'bg-blue-400',   texto: 'text-blue-600',   bgActivo: 'bg-blue-50/70',   ring: 'ring-blue-300' },
-  { estado: 'COMPLETADO', label: 'Completados', desc: 'Por revisar',        border: 'border-violet-200', dot: 'bg-violet-400', texto: 'text-violet-600', bgActivo: 'bg-violet-50/70', ring: 'ring-violet-300' },
-  { estado: 'PUBLICADO',  label: 'Publicados',  desc: 'Aprobados',          border: 'border-emerald-200', dot: 'bg-emerald-400', texto: 'text-emerald-600', bgActivo: 'bg-emerald-50/70', ring: 'ring-emerald-300' },
-  { estado: 'CANCELADO',  label: 'Cancelados',  desc: 'No activos',         border: 'border-red-200',    dot: 'bg-red-400',    texto: 'text-red-500',    bgActivo: 'bg-red-50/70',    ring: 'ring-red-300' },
-]
 
 const BADGE_ESTADO = {
   PENDIENTE:  'bg-amber-100 text-amber-700',
-  ASIGNADO:   'bg-blue-100 text-blue-700',
-  COMPLETADO: 'bg-violet-100 text-violet-700',
+  PROGRAMANDO: 'bg-sky-100 text-sky-700',
+  REPROGRAMADO: 'bg-orange-100 text-orange-700',
+  EN_EJECUCION:   'bg-blue-100 text-blue-700',
+  FINALIZADO: 'bg-violet-100 text-violet-700',
   PUBLICADO:  'bg-emerald-100 text-emerald-700',
   CANCELADO:  'bg-red-100 text-red-600',
 }
 
 const ACENTO_ESTADO = {
   PENDIENTE:  'border-l-amber-400',
-  ASIGNADO:   'border-l-blue-500',
-  COMPLETADO: 'border-l-violet-400',
+  PROGRAMANDO: 'border-l-sky-400',
+  REPROGRAMADO: 'border-l-orange-400',
+  EN_EJECUCION:   'border-l-blue-500',
+  FINALIZADO: 'border-l-violet-400',
   PUBLICADO:  'border-l-emerald-500',
   CANCELADO:  'border-l-red-400',
 }
@@ -169,23 +164,6 @@ function formatHoraLimite(fechaProgramadaIso, duracionMinutos) {
   return limite.toLocaleString('es-CO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
-// Mismo cálculo que en MisAsignaciones.jsx (vista de analista/poligrafista/visitador) — en horas
-// si todavía no llega a un día completo de retraso (antes un retraso de unas horas no mostraba
-// nada), en días una vez pasa las 24h. null si todavía no llega la fecha o no tiene fecha. Solo
-// tiene sentido mientras sigue ASIGNADO.
-function textoRetraso(fechaProgramadaIso) {
-  if (!fechaProgramadaIso) return null
-  const ms = Date.now() - new Date(fechaProgramadaIso).getTime()
-  if (ms <= 0) return null
-  const horas = ms / (1000 * 60 * 60)
-  if (horas < 24) {
-    const h = Math.max(1, Math.floor(horas))
-    return `${h} ${h === 1 ? 'hora' : 'horas'} de retraso`
-  }
-  const dias = Math.floor(horas / 24)
-  return `${dias} ${dias === 1 ? 'día' : 'días'} de retraso`
-}
-
 function inicioDeSemana(fecha) {
   const d = new Date(fecha)
   const dia = d.getDay() // 0 = domingo
@@ -196,7 +174,7 @@ function inicioDeSemana(fecha) {
 }
 
 function formatFechaCorta(d) {
-  return d.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'short' })
+  return d.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long' })   // lunes, 26 de octubre
 }
 
 function mismoDia(a, b) {
@@ -228,11 +206,6 @@ function IconoFlecha({ direccion }) {
   )
 }
 
-// Tamaño de bloque fijo para "Disponibilidad" — no depende de un subproceso puntual, así que no
-// tiene sentido pedirle al usuario que lo escriba. Se usa 15 min (el estimado más chico del
-// catálogo, ej. "Antecedentes") para que ninguna franja ocupada quede oculta dentro de un bloque
-// más grande — con 60 min, 4 citas de 15 min pegadas en la misma hora se veían como "1 ocupada".
-const DURACION_DISPONIBILIDAD_MIN = 15
 
 /* Agenda de Programador: un solo módulo con tres pestañas — "Servicios" (la cola de trabajo por
    programar, con tarjetas de estado y filtros), "Cronograma" (semana/día) y "Disponibilidad"
@@ -241,9 +214,14 @@ const DURACION_DISPONIBILIDAD_MIN = 15
    que saltar entre pantallas para lo mismo. */
 export default function ProgramadorAgenda() {
   const navigate = useNavigate()
-  const [seccion, setSeccion] = useState('servicios') // 'servicios' | 'cronograma' | 'disponibilidad'
+  // 'servicios' | 'cronograma' | 'disponibilidad' — ?seccion= abre directo una (ej. desde el tablero)
+  const [seccion, setSeccion] = useState(() => {
+    const s = new URLSearchParams(window.location.search).get('seccion')
+    return ['servicios', 'cronograma', 'disponibilidad'].includes(s) ? s : 'servicios'
+  })
   const [seleccionado, setSeleccionado] = useState(null)
   const [toast, setToast]               = useState(null)
+  const [accionCita, setAccionCita]       = useState(null)   // { cita, modo } — cita no realizada / reprogramar / reasignar (SE-07)
   const [fechasAbiertas, setFechasAbiertas] = useState(() => new Set())
   const toggleFechas = (id) => setFechasAbiertas(prev => {
     const next = new Set(prev)
@@ -257,6 +235,8 @@ export default function ProgramadorAgenda() {
   const [errorServicios, setErrorServicios]         = useState(null)
   const [estadoServicios, setEstadoServicios]       = useState('PENDIENTE')
   const [busquedaServicios, setBusquedaServicios]   = useState('')
+  const [buscarServicios, setBuscarServicios]       = useState('')
+  const buscarServiciosRef                          = useRef('')
   const [filtroSubprocesoServicios, setFiltroSubprocesoServicios] = useState('')
   const [filtroEmpleadoServicios, setFiltroEmpleadoServicios]     = useState('')
   const [opcionesSubprocesoServicios, setOpcionesSubprocesoServicios] = useState([])
@@ -266,22 +246,30 @@ export default function ProgramadorAgenda() {
   const [conteosServicios, setConteosServicios]       = useState(null)
   const POR_PAGINA = 10
 
+  const [conSugerencia, setConSugerencia] = useState(new Set())
+
   useEffect(() => {
     asignacionService.subprocesos().then(setOpcionesSubprocesoServicios).catch(() => {})
   }, [])
 
-  const cargarServicios = useCallback(async (estadoActual, subprocesoActual, empleadoActual, page = 0) => {
-    setCargandoServicios(true); setErrorServicios(null)
+  const cargarServicios = useCallback(async (estadoActual, subprocesoActual, empleadoActual, page = 0, silencioso = false) => {
+    if (!silencioso) { setCargandoServicios(true); setErrorServicios(null) }
     try {
+      // Subprocesos donde el candidato propuso horario desde su portal — se marcan en la tabla.
+      asignacionService.sugerenciasPendientes()
+        .then(ids => setConSugerencia(new Set(ids)))
+        .catch(() => {})
       const [rLista, rConteo] = await Promise.all([
         asignacionService.listar({
           estado: estadoActual || undefined,
           idTipoProgreso: subprocesoActual || undefined,
           idUsuarioAsignado: empleadoActual || undefined,
           page, size: POR_PAGINA,
+          // El buscador filtra en el servidor: busca en TODOS los servicios, no solo en esta página.
+          buscar: buscarServiciosRef.current || undefined,
           // Más antiguo primero — igual que MisAsignaciones.jsx, lo que lleva más tiempo
           // esperando queda arriba en vez de enterrado al final de la página.
-          sort: 'fechaAsignacion,asc',
+          sort: 'servicio.fechaCompromisoAjustada,asc',   // lo que vence antes al cliente primero (SE-08)
         }),
         asignacionService.conteo(),
       ])
@@ -296,23 +284,25 @@ export default function ProgramadorAgenda() {
         lista.forEach(a => { if (a.idUsuarioAsignado != null) nuevo.set(a.idUsuarioAsignado, a.nombreAsignado) })
         return nuevo
       })
-    } catch { setErrorServicios('Error al cargar los servicios.') }
-    finally { setCargandoServicios(false) }
+    } catch { if (!silencioso) setErrorServicios('Error al cargar los servicios.') }
+    finally { if (!silencioso) setCargandoServicios(false) }
   }, [])
 
   useEffect(() => {
+    const t = setTimeout(() => setBuscarServicios(busquedaServicios.trim()), 350)
+    return () => clearTimeout(t)
+  }, [busquedaServicios])
+
+  useEffect(() => {
+    buscarServiciosRef.current = buscarServicios
     setPaginaServicios(0)
     cargarServicios(estadoServicios, filtroSubprocesoServicios, filtroEmpleadoServicios, 0)
-  }, [estadoServicios, filtroSubprocesoServicios, filtroEmpleadoServicios, cargarServicios])
+  }, [estadoServicios, filtroSubprocesoServicios, filtroEmpleadoServicios, buscarServicios, cargarServicios])
 
   const alternarTarjeta = (e) => setEstadoServicios(prev => prev === e ? '' : e)
 
-  const serviciosFiltrados = busquedaServicios.trim()
-    ? listaServicios.filter(a =>
-        `${a.nombresEvaluado ?? ''} ${a.apellidosEvaluado ?? ''}`.toLowerCase().includes(busquedaServicios.toLowerCase()) ||
-        a.cedulaEvaluado?.includes(busquedaServicios)
-      )
-    : listaServicios
+  // El filtro del buscador ya lo aplicó el servidor (parámetro buscar).
+  const serviciosFiltrados = listaServicios
 
   // ══════════════════════ Pestaña: Cronograma (semana / día) ══════════════════════
   const [vista, setVista] = useState('semana') // 'semana' | 'dia'
@@ -345,28 +335,33 @@ export default function ProgramadorAgenda() {
     return d
   })
 
-  const cargarSemana = useCallback(async (desdeFecha) => {
-    setCargandoSemana(true); setErrorSemana(null)
+  // Sábados, domingos y festivos de la semana (y del día elegido): no se muestran como días de trabajo.
+  const desdeNoHabiles = [toLocalDateString(inicioSemana), diaSeleccionado].sort()[0]
+  const hastaNoHabiles = [toLocalDateString(dias[6]), diaSeleccionado].sort()[1]
+  const noHabiles = useDiasNoHabiles(desdeNoHabiles, hastaNoHabiles)
+
+  const cargarSemana = useCallback(async (desdeFecha, silencioso = false) => {
+    if (!silencioso) { setCargandoSemana(true); setErrorSemana(null) }
     try {
       const hasta = new Date(desdeFecha)
       hasta.setDate(hasta.getDate() + 7)
       const data = await asignacionService.calendario(toLocalDateTimeString(desdeFecha), toLocalDateTimeString(hasta))
       setAsignacionesSemana((data ?? []).filter(a => a.fechaProgramada).sort((a, b) => new Date(a.fechaProgramada) - new Date(b.fechaProgramada)))
-    } catch { setErrorSemana('Error al cargar la agenda.') }
-    finally { setCargandoSemana(false) }
+    } catch { if (!silencioso) setErrorSemana('Error al cargar la agenda.') }
+    finally { if (!silencioso) setCargandoSemana(false) }
   }, [])
 
   useEffect(() => { cargarSemana(inicioSemana) }, [inicioSemana, cargarSemana])
   useEffect(() => { setDiasExpandidosSemana(new Set()) }, [inicioSemana])
 
-  const cargarDia = useCallback(async (dia) => {
-    setCargandoDia(true); setErrorDia(null)
+  const cargarDia = useCallback(async (dia, silencioso = false) => {
+    if (!silencioso) { setCargandoDia(true); setErrorDia(null) }
     try {
       const { desde, hasta } = rangoDelDia(dia)
       const data = await asignacionService.calendario(desde, hasta)
       setAsignacionesDia(data ?? [])
-    } catch { setErrorDia('Error al cargar el cronograma del día.') }
-    finally { setCargandoDia(false) }
+    } catch { if (!silencioso) setErrorDia('Error al cargar el cronograma del día.') }
+    finally { if (!silencioso) setCargandoDia(false) }
   }, [])
 
   useEffect(() => { if (seccion === 'cronograma' && vista === 'dia') cargarDia(diaSeleccionado) }, [seccion, vista, diaSeleccionado, cargarDia])
@@ -402,40 +397,6 @@ export default function ProgramadorAgenda() {
     (!filtroEmpleadoSemana || String(a.idUsuarioAsignado) === filtroEmpleadoSemana)
   )
 
-  // ══════════════════════ Pestaña: Disponibilidad (un empleado, un día) ══════════════════════
-  // Igual estilo que el selector de horas del modal de asignar (franjas libres/ocupadas), pero
-  // sin depender de un subproceso puntual — solo para consultar de un vistazo la agenda de alguien.
-  const [empleadoDisponibilidad, setEmpleadoDisponibilidad] = useState('')
-  const [diaDisponibilidad, setDiaDisponibilidad] = useState(() => hoyLocalDateString())
-  const [franjasDisponibilidad, setFranjasDisponibilidad] = useState([])
-  const [cargandoDisponibilidad, setCargandoDisponibilidad] = useState(false)
-  const [errorDisponibilidad, setErrorDisponibilidad]       = useState(null)
-
-  const cargarDisponibilidad = useCallback(async (idEmpleado, dia) => {
-    if (!idEmpleado) { setFranjasDisponibilidad([]); return }
-    setCargandoDisponibilidad(true); setErrorDisponibilidad(null)
-    try {
-      const data = await asignacionService.franjasDisponibles(idEmpleado, dia, undefined, DURACION_DISPONIBILIDAD_MIN, undefined)
-      setFranjasDisponibilidad(data ?? [])
-    } catch { setErrorDisponibilidad('Error al cargar la disponibilidad.') }
-    finally { setCargandoDisponibilidad(false) }
-  }, [])
-
-  useEffect(() => {
-    if (seccion === 'disponibilidad') cargarDisponibilidad(empleadoDisponibilidad, diaDisponibilidad)
-  }, [seccion, empleadoDisponibilidad, diaDisponibilidad, cargarDisponibilidad])
-
-  const cambiarDiaDisponibilidad = (delta) => {
-    const [y, m, d] = diaDisponibilidad.split('-').map(Number)
-    setDiaDisponibilidad(toLocalDateString(new Date(y, m - 1, d + delta)))
-  }
-
-  // El catálogo de empleados no está expuesto a Programador — se combinan las opciones vistas
-  // esta semana y en Servicios para tener la lista más completa posible.
-  const opcionesEmpleadoDisponibilidad = useMemo(() => {
-    const map = new Map([...opcionesEmpleadoServicios, ...opcionesEmpleadoSemana])
-    return [...map.entries()].sort((a, b) => (a[1] ?? '').localeCompare(b[1] ?? ''))
-  }, [opcionesEmpleadoServicios, opcionesEmpleadoSemana])
 
   // ══════════════════════ Compartido: modal ══════════════════════
   const onGuardado = () => {
@@ -443,11 +404,18 @@ export default function ProgramadorAgenda() {
     cargarServicios(estadoServicios, filtroSubprocesoServicios, filtroEmpleadoServicios, paginaServicios)
     cargarSemana(inicioSemana)
     if (vista === 'dia') cargarDia(diaSeleccionado)
-    if (seccion === 'disponibilidad') cargarDisponibilidad(empleadoDisponibilidad, diaDisponibilidad)
   }
+
+  // Tiempo real: si alguien agenda, reasigna o completa algo, la agenda se actualiza sola (sin spinner).
+  useCambios(() => {
+    cargarServicios(estadoServicios, filtroSubprocesoServicios, filtroEmpleadoServicios, paginaServicios, true)
+    cargarSemana(inicioSemana, true)
+    if (seccion === 'cronograma' && vista === 'dia') cargarDia(diaSeleccionado, true)
+  })
 
   return (
     <div>
+      <BandejaCitas rol="programador" />
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-4 mb-5">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
@@ -509,7 +477,7 @@ export default function ProgramadorAgenda() {
                 <button onClick={() => cambiarDia(-1)} title="Día anterior" className={CLASE_BOTON_NAV}>
                   <IconoFlecha direccion="izq" />
                 </button>
-                <input type="date" value={diaSeleccionado} onChange={e => setDiaSeleccionado(e.target.value)}
+                <input type="date" aria-label="Día de la agenda" value={diaSeleccionado} onChange={e => setDiaSeleccionado(e.target.value)}
                   className="px-3 py-1.5 text-xs rounded-lg border border-gray-200 text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500" />
                 <button onClick={() => setDiaSeleccionado(hoyLocalDateString())} className={CLASE_BOTON_HOY}>
                   Hoy
@@ -520,24 +488,10 @@ export default function ProgramadorAgenda() {
               </div>
             ))}
 
-            {seccion === 'disponibilidad' && (
-              <div className="flex items-center gap-1.5">
-                <button onClick={() => cambiarDiaDisponibilidad(-1)} title="Día anterior" className={CLASE_BOTON_NAV}>
-                  <IconoFlecha direccion="izq" />
-                </button>
-                <input type="date" value={diaDisponibilidad} onChange={e => setDiaDisponibilidad(e.target.value)}
-                  className="px-3 py-1.5 text-xs rounded-lg border border-gray-200 text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500" />
-                <button onClick={() => setDiaDisponibilidad(hoyLocalDateString())} className={CLASE_BOTON_HOY}>
-                  Hoy
-                </button>
-                <button onClick={() => cambiarDiaDisponibilidad(1)} title="Día siguiente" className={CLASE_BOTON_NAV}>
-                  <IconoFlecha direccion="der" />
-                </button>
-              </div>
-            )}
           </div>
         </div>
       </div>
+
 
       {/* ══════════════════════ Contenido: Servicios ══════════════════════ */}
       {seccion === 'servicios' && (
@@ -548,35 +502,20 @@ export default function ProgramadorAgenda() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-4">
-            {TARJETAS_ESTADO.map(t => {
-              const activo = estadoServicios === t.estado
-              return (
-                <button key={t.estado} type="button" onClick={() => alternarTarjeta(t.estado)}
-                  className={`text-left bg-white rounded-xl border shadow-sm p-4 cursor-pointer hover:shadow-md transition-shadow ${t.border} ${
-                    activo ? `${t.bgActivo} ring-2 ${t.ring}` : ''
-                  }`}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className={`w-2 h-2 rounded-full ${t.dot}`} />
-                    <span className="text-xs font-medium text-gray-500">{t.label}</span>
-                  </div>
-                  <p className={`text-3xl font-bold ${t.texto}`}>{conteosServicios ? conteosServicios[CAMPO_CONTEO[t.estado]] : '—'}</p>
-                  <p className="text-xs text-gray-400 mt-1">{t.desc}</p>
-                </button>
-              )
-            })}
-          </div>
+          <SemaforoEstados seleccionado={estadoServicios} onSeleccionar={setEstadoServicios} titulo="Estado de los subprocesos" />
+          <AlertasAparte />
+          <BandejaParaReprogramar rolUsuario="programador" onReprogramar={setSeleccionado} onNoRealizada={(a) => setAccionCita({ cita: a, modo: 'no-realizada' })} />
 
           <div className="flex items-center gap-2 flex-wrap mb-4">
-            <input type="search" value={busquedaServicios} onChange={e => setBusquedaServicios(e.target.value)}
+            <input aria-label="Buscar por nombre o cédula del evaluado…" type="search" value={busquedaServicios} onChange={e => setBusquedaServicios(e.target.value)}
               placeholder="Buscar por nombre o cédula del evaluado…"
               className="flex-1 min-w-[220px] max-w-sm border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
-            <select value={filtroSubprocesoServicios} onChange={e => setFiltroSubprocesoServicios(e.target.value)}
+            <select aria-label="Todos los subprocesos" value={filtroSubprocesoServicios} onChange={e => setFiltroSubprocesoServicios(e.target.value)}
               className="border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
               <option value="">Todos los subprocesos</option>
               {opcionesSubprocesoServicios.map(o => <option key={o.idTipoProgreso} value={o.idTipoProgreso}>{o.nombreProgreso}</option>)}
             </select>
-            <select value={filtroEmpleadoServicios} onChange={e => setFiltroEmpleadoServicios(e.target.value)}
+            <select aria-label="Todos los empleados" value={filtroEmpleadoServicios} onChange={e => setFiltroEmpleadoServicios(e.target.value)}
               className="border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
               <option value="">Todos los empleados</option>
               {[...opcionesEmpleadoServicios.entries()].sort((a, b) => (a[1] ?? '').localeCompare(b[1] ?? '')).map(([id, nombre]) => (
@@ -600,7 +539,7 @@ export default function ProgramadorAgenda() {
               <div className="text-center py-16 text-gray-400 text-sm">No hay servicios para este filtro.</div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full divide-y divide-gray-100 text-sm">
+                <table className="table-stack w-full divide-y divide-gray-100 text-sm">
                   <thead className="bg-gray-50/80">
                     <tr>
                       {/* Mismo criterio de MisAsignaciones.jsx (analista/poligrafista/visitador):
@@ -608,47 +547,49 @@ export default function ProgramadorAgenda() {
                           dentro de Acciones en vez de columna aparte, y "Retraso" solo se ve en
                           la pestaña "Asignados" — menos columnas, menos amontonado. */}
                       {['Evaluado', 'Subproceso', 'Fechas', 'Asignado a',
-                        ...(estadoServicios === 'ASIGNADO' ? ['Retraso'] : []),
+                        'Entrega al cliente',
                         'Estado', '···'].map(h => (
-                        <th key={h} className="px-4 py-3 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                        <th key={h} className="px-3 py-3 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {serviciosFiltrados.map(a => {
-                      const retraso = a.estado === 'ASIGNADO' ? textoRetraso(a.fechaProgramada) : null
                       return (
                       <tr key={a.id} className="hover:bg-gray-50/70 transition-colors">
-                        <td className="px-4 py-3">
-                          <p className="font-medium text-gray-900 whitespace-nowrap">{a.nombresEvaluado} {a.apellidosEvaluado ?? ''}</p>
+                        <td className="px-3 py-3">
+                          <p className="font-medium text-gray-900">{a.nombresEvaluado} {a.apellidosEvaluado ?? ''}</p>
                           <p className="text-xs text-gray-400">{a.cedulaEvaluado ?? '—'} · Servicio #{a.idServicio}</p>
                         </td>
-                        <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
+                        <td className="px-3 py-3 text-gray-700">
                           {a.subproceso}
-                          <span className="ml-1.5 text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-md whitespace-nowrap">{a.nombreCiudad ?? '—'}</span>
+                          <span className="ml-1.5 inline-block text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-md whitespace-nowrap">{a.nombreCiudad ?? '—'}</span>
+                          {conSugerencia.has(a.id) && (
+                            <span title="El candidato propuso cuándo tiene tiempo — ábrelo para verlo"
+                              className="ml-1.5 text-[11px] font-semibold bg-primary-50 text-primary-700 ring-1 ring-primary-200 px-1.5 py-0.5 rounded-md whitespace-nowrap">
+                              Propuso horario
+                            </span>
+                          )}
                         </td>
-                        <td className="px-4 py-3 text-xs whitespace-nowrap">
+                        <td className="px-3 py-3 text-xs whitespace-nowrap">
                           <CeldaFechas asignacion={a} abierta={fechasAbiertas.has(a.id)} onToggle={() => toggleFechas(a.id)} />
                         </td>
-                        <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{a.nombreAsignado ?? 'Sin asignar'}</td>
-                        {estadoServicios === 'ASIGNADO' && (
-                          <td className="px-4 py-3 whitespace-nowrap">
-                            {retraso ? (
-                              <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-red-50 text-red-700 ring-1 ring-red-100">
-                                {retraso}
-                              </span>
-                            ) : (
-                              <span className="text-xs text-gray-300">—</span>
-                            )}
-                          </td>
-                        )}
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-3 text-gray-500">{a.nombreAsignado ?? 'Sin asignar'}</td>
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          {a.tiempo ? <EstadoTiempo tiempo={a.tiempo} /> : <span className="text-xs text-gray-500">—</span>}
+                          {a.atrasadoAgenda && (
+                            <span className="mt-1 block w-fit text-[11px] font-semibold bg-orange-50 text-orange-800 ring-1 ring-orange-300 rounded-full px-2 py-0.5">
+                              Atrasado en agenda · {a.diasHabilesAtrasoAgenda} {a.diasHabilesAtrasoAgenda === 1 ? 'día hábil' : 'días hábiles'}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3">
                           <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${BADGE_ESTADO[a.estado] ?? 'bg-gray-100 text-gray-600'}`}>
                             <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
                             {a.estado}
                           </span>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-3">
                           <div className="flex items-center gap-1.5 justify-end">
                             {a.requiereDocumento && <BadgeProgresoFormulario idServicioSubproceso={a.id} />}
                             {/* Aprobar/Devolver ya no son íconos sueltos acá — se hacen dentro del
@@ -656,6 +597,17 @@ export default function ProgramadorAgenda() {
                                 analista/poligrafista/visitador), revisando de verdad lo
                                 diligenciado antes de aprobar o devolver. */}
                             <MenuAcciones opciones={[
+                              // SE-07: una cita ya agendada no se edita; si no se realizó (p. ej. el evaluado avisó que no asistirá) se registra con motivo.
+                              ['POLIGRAFISTA', 'VISITADOR'].includes(a.rolResponsable) && a.estado === 'EN_EJECUCION' && !a.iniciado && {
+                                label: 'Registrar cita no realizada', icono: <IconoLapiz />, destacado: 'text-red-600',
+                                onClick: () => setAccionCita({ cita: a, modo: 'no-realizada' }),
+                              },
+                              a.estado === 'REPROGRAMADO' && {
+                                label: 'Reprogramar', icono: <IconoAsignar />, onClick: () => setAccionCita({ cita: a, modo: 'reprogramar' }),
+                              },
+                              a.estado === 'REPROGRAMADO' && {
+                                label: 'Reasignar a otro profesional', icono: <IconoAsignar />, onClick: () => setAccionCita({ cita: a, modo: 'reasignar' }),
+                              },
                               a.requiereDocumento && {
                                 label: 'Formulario', icono: <IconoHoja />,
                                 onClick: () => navigate(`/programador/formulario/${a.id}`, { state: { origenSeccion: 'Agenda' } }),
@@ -699,12 +651,12 @@ export default function ProgramadorAgenda() {
         <>
           {vista === 'semana' && (
             <div className="flex items-center gap-2 flex-wrap mb-4">
-              <select value={filtroSubprocesoSemana} onChange={e => setFiltroSubprocesoSemana(e.target.value)}
+              <select aria-label="Todos los subprocesos" value={filtroSubprocesoSemana} onChange={e => setFiltroSubprocesoSemana(e.target.value)}
                 className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs text-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
                 <option value="">Todos los subprocesos</option>
                 {opcionesSubprocesoSemana.map(([id, nombre]) => <option key={id} value={id}>{nombre}</option>)}
               </select>
-              <select value={filtroEmpleadoSemana} onChange={e => setFiltroEmpleadoSemana(e.target.value)}
+              <select aria-label="Todos los empleados" value={filtroEmpleadoSemana} onChange={e => setFiltroEmpleadoSemana(e.target.value)}
                 className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs text-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
                 <option value="">Todos los empleados</option>
                 {opcionesEmpleadoSemana.map(([id, nombre]) => <option key={id} value={id}>{nombre}</option>)}
@@ -735,15 +687,17 @@ export default function ProgramadorAgenda() {
                   const claveDia = dia.toISOString()
                   const delDia = semanaFiltrada.filter(a => mismoDia(new Date(a.fechaProgramada), dia))
                   const esHoy = mismoDia(dia, hoy)
+                  const motivoNoHabil = noHabiles.get(toLocalDateString(dia))     // sábado, domingo o festivo: no es día de trabajo
                   const expandido = diasExpandidosSemana.has(claveDia)
                   return (
-                    <div key={claveDia} className={`bg-white rounded-xl border shadow-sm overflow-hidden transition-shadow hover:shadow-md ${esHoy ? 'border-primary-300 ring-1 ring-primary-100' : 'border-gray-200'}`}>
+                    <div key={claveDia} className={`${motivoNoHabil ? 'bg-slate-100' : 'bg-white'} rounded-xl border shadow-sm overflow-hidden transition-shadow hover:shadow-md ${esHoy ? 'border-primary-300 ring-1 ring-primary-100' : 'border-gray-200'}`}>
                       <button type="button" onClick={() => alternarDiaSemana(claveDia)} disabled={delDia.length === 0}
                         className={`w-full flex items-center justify-between px-4 py-3 border-b transition-colors ${esHoy ? 'bg-primary-50/70 border-primary-100' : 'bg-gray-50/80 border-gray-100'} ${delDia.length > 0 ? 'hover:bg-gray-100/70' : 'cursor-default'}`}>
                         <p className={`text-xs font-semibold capitalize ${esHoy ? 'text-primary-700' : 'text-gray-600'}`}>
                           {formatFechaCorta(dia)}
                         </p>
                         <div className="flex items-center gap-1.5">
+                          {motivoNoHabil && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-300 text-slate-900">No hábil · {motivoNoHabil}</span>}
                           {esHoy && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-primary-600 text-white">Hoy</span>}
                           {delDia.length > 0 && (
                             <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-gray-200 text-gray-600">{delDia.length}</span>
@@ -756,7 +710,7 @@ export default function ProgramadorAgenda() {
                         </div>
                       </button>
                       {delDia.length === 0 ? (
-                        <p className="text-xs text-gray-400 px-4 py-6 text-center">Sin servicios programados</p>
+                        <p className="text-xs text-gray-400 px-4 py-6 text-center">{motivoNoHabil ? 'No se trabaja este día' : 'Sin servicios programados'}</p>
                       ) : !expandido ? (
                         <p className="text-xs text-gray-400 px-4 py-3 text-center">Click para ver los {delDia.length} servicios</p>
                       ) : (
@@ -785,6 +739,13 @@ export default function ProgramadorAgenda() {
               </div>
             )
           ) : (
+            <>
+              <p className="mb-3 text-sm font-semibold text-gray-900 capitalize">
+                {formatDiaLargo(diaSeleccionado)}
+                {noHabiles.get(diaSeleccionado) && (
+                  <span className="ml-2 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-300 text-slate-900 normal-case">No hábil · {noHabiles.get(diaSeleccionado)}</span>
+                )}
+              </p>
             <CronogramaDia
               asignaciones={asignacionesDia}
               cargando={cargandoDia}
@@ -792,37 +753,13 @@ export default function ProgramadorAgenda() {
               onSeleccionar={setSeleccionado}
               dia={diaSeleccionado}
             />
+            </>
           )}
         </>
       )}
 
-      {/* ══════════════════════ Contenido: Disponibilidad ══════════════════════ */}
-      {seccion === 'disponibilidad' && (
-        <>
-          <div className="mb-4">
-            <select value={empleadoDisponibilidad} onChange={e => setEmpleadoDisponibilidad(e.target.value)}
-              className="border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white min-w-[240px]">
-              <option value="">Selecciona un empleado…</option>
-              {opcionesEmpleadoDisponibilidad.map(([id, nombre]) => <option key={id} value={id}>{nombre}</option>)}
-            </select>
-          </div>
-
-          {!empleadoDisponibilidad ? (
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm text-center py-16">
-              <p className="text-sm text-gray-500 font-medium">Selecciona un empleado para ver su disponibilidad.</p>
-              <p className="text-xs text-gray-400 mt-1">Verás sus horas libres y ocupadas de ese día.</p>
-            </div>
-          ) : (
-            <DisponibilidadEmpleado
-              nombre={opcionesEmpleadoDisponibilidad.find(([id]) => String(id) === String(empleadoDisponibilidad))?.[1]}
-              dia={diaDisponibilidad}
-              cargando={cargandoDisponibilidad}
-              error={errorDisponibilidad}
-              franjas={franjasDisponibilidad}
-            />
-          )}
-        </>
-      )}
+      {/* ══════════════════════ Contenido: Disponibilidad (equipo hoy y el día de cada persona) ══════════════════════ */}
+      {seccion === 'disponibilidad' && <DisponibilidadEquipo onToast={(mensaje, tipo = 'exito') => setToast({ mensaje, tipo })} onAsignado={onGuardado} />}
 
       {seleccionado && (
         <ModalAsignarSubproceso
@@ -834,107 +771,12 @@ export default function ProgramadorAgenda() {
       )}
 
 
+      {accionCita && (
+        <ModalCitaAccion cita={accionCita.cita} modo={accionCita.modo} onClose={() => setAccionCita(null)}
+          onHecho={() => { setAccionCita(null); setToast({ mensaje: 'Listo: quedó registrado.', tipo: 'exito' }) }} />
+      )}
       {toast && <Toast mensaje={toast.mensaje} tipo={toast.tipo} onClose={() => setToast(null)} />}
     </div>
   )
 }
 
-/** Tarjeta de disponibilidad de un empleado para un día: encabezado con avatar + resumen
- *  libre/ocupado, y la grilla de franjas agrupada en mañana/tarde. */
-function DisponibilidadEmpleado({ nombre, dia, cargando, error, franjas }) {
-  const libres = franjas.filter(f => f.disponible).length
-  const ocupadas = franjas.length - libres
-  const manana = franjas.filter(f => new Date(f.inicio).getHours() < 12)
-  const tarde = franjas.filter(f => new Date(f.inicio).getHours() >= 12)
-
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-      <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-3 flex-wrap justify-between">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center text-sm font-bold flex-shrink-0">
-            {iniciales(nombre)}
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-gray-900 truncate">{nombre ?? '—'}</p>
-            <p className="text-xs text-gray-400 capitalize truncate">{formatDiaLargo(dia)}</p>
-          </div>
-        </div>
-        {!cargando && !error && franjas.length > 0 && (
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-full px-2.5 py-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> {libres} libres
-            </span>
-            <span className="flex items-center gap-1.5 text-xs font-medium text-gray-500 bg-gray-50 border border-gray-100 rounded-full px-2.5 py-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-gray-400" /> {ocupadas} ocupadas
-            </span>
-          </div>
-        )}
-      </div>
-
-      <div className="p-5">
-        {cargando ? (
-          <div className="flex items-center gap-2 text-xs text-gray-400 py-2">
-            <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary-500 border-t-transparent" />
-            Cargando disponibilidad...
-          </div>
-        ) : error ? (
-          <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</p>
-        ) : franjas.length === 0 ? (
-          <p className="text-xs text-gray-400 py-2">Sin franjas para ese día (fuera de jornada 8:00–17:00).</p>
-        ) : (
-          <div className="space-y-5">
-            <BloqueFranjas titulo="Mañana" franjas={manana} />
-            <BloqueFranjas titulo="Tarde" franjas={tarde} />
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-/** Une franjas consecutivas del mismo estado (y, si están ocupadas, del mismo servicio — el
- *  texto de "ocupadoPor" ya incluye el número de servicio, así que dos citas distintas nunca se
- *  confunden) en un solo bloque con su rango real de horas. Así una cita de 45 min no se ve como
- *  3 casillas idénticas de 15 min sin relación entre sí — se ve como un solo bloque de 08:00 a
- *  08:45 con el nombre del servicio que la ocupa, sin depender de un hover para identificarlo. */
-function agruparFranjas(franjas) {
-  const grupos = []
-  franjas.forEach(f => {
-    const ultimo = grupos[grupos.length - 1]
-    const contiguo = ultimo && ultimo.fin === f.inicio && ultimo.disponible === f.disponible && ultimo.ocupadoPor === f.ocupadoPor
-    if (contiguo) ultimo.fin = f.fin
-    else grupos.push({ inicio: f.inicio, fin: f.fin, disponible: f.disponible, ocupadoPor: f.ocupadoPor, unidades: 1 })
-    if (contiguo) ultimo.unidades += 1
-  })
-  return grupos
-}
-
-function BloqueFranjas({ titulo, franjas }) {
-  const grupos = agruparFranjas(franjas)
-  if (grupos.length === 0) return null
-  return (
-    <div>
-      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{titulo}</p>
-      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
-        {grupos.map(g => (
-          <div key={g.inicio} style={{ gridColumn: `span ${g.unidades}` }}
-            title={!g.disponible ? g.ocupadoPor : undefined}
-            className={`text-xs rounded-lg px-2 py-1.5 border ${
-              g.disponible
-                ? 'border-gray-200 text-gray-600'
-                : 'border-gray-200 bg-gray-50 text-gray-700'
-            }`}>
-            <span className="block font-semibold tabular-nums">
-              {formatHora(g.inicio)} – {formatHora(g.fin)}
-            </span>
-            {g.disponible ? (
-              <span className="block text-[10px] text-emerald-600 font-medium mt-0.5">Libre</span>
-            ) : (
-              <span className="block text-[10px] text-gray-500 truncate mt-0.5">{g.ocupadoPor}</span>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}

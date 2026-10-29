@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { parseFecha } from '../../utils/fechas'
+import { useId, useEffect, useRef, useState } from 'react'
 import pagosService from '../../services/pagosService'
 import pospagoService from '../../services/pospagoService'
 import facturacionService from '../../services/facturacionService'
@@ -8,7 +9,7 @@ import Paginacion from '../../components/ui/Paginacion'
 import { Modal, ConfirmModal } from '../../components/ui/Modal'
 import MenuAcciones from '../../components/ui/MenuAcciones'
 
-const POR_PAGINA = 20
+const POR_PAGINA = 10
 
 function formatearPrecio(valor) {
   if (valor == null) return '—'
@@ -17,7 +18,7 @@ function formatearPrecio(valor) {
 
 function formatFecha(iso) {
   if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
+  return parseFecha(iso).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ de /g, ' ')
 }
 
 /** El número de documento visible (CP-000123 / FP-000123) es siempre prefijo + id correlativo
@@ -190,6 +191,7 @@ const MOTIVOS_NOTA = [
 /** Formulario para generar una nota crédito o débito sobre una orden o factura ya cargada en el
  *  modal de detalle — nunca navega a otra parte, todo pasa acá mismo. */
 function ModalNuevaNota({ tipo, generar, montoSugerido, onClose, onCreada, onToast }) {
+  const idCampos = useId()
   const [monto, setMonto] = useState(montoSugerido != null ? String(montoSugerido) : '')
   const [motivo, setMotivo] = useState('ANULACION')
   const [observaciones, setObservaciones] = useState('')
@@ -221,23 +223,23 @@ function ModalNuevaNota({ tipo, generar, montoSugerido, onClose, onCreada, onToa
         {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{error}</div>}
 
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Monto</label>
-          <input type="number" min="0.01" step="0.01" value={monto} onChange={(e) => setMonto(e.target.value)}
+          <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">Monto</label>
+          <input id={`${idCampos}-1`} type="number" min="0.01" step="0.01" value={monto} onChange={(e) => setMonto(e.target.value)}
             required placeholder="Ej: 50000"
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Motivo</label>
-          <select value={motivo} onChange={(e) => setMotivo(e.target.value)}
+          <label htmlFor={`${idCampos}-2`} className="block text-xs font-medium text-gray-600 mb-1">Motivo</label>
+          <select id={`${idCampos}-2`} value={motivo} onChange={(e) => setMotivo(e.target.value)}
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
             {MOTIVOS_NOTA.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Observaciones (opcional)</label>
-          <textarea value={observaciones} onChange={(e) => setObservaciones(e.target.value)} rows={3}
+          <label htmlFor={`${idCampos}-3`} className="block text-xs font-medium text-gray-600 mb-1">Observaciones (opcional)</label>
+          <textarea id={`${idCampos}-3`} value={observaciones} onChange={(e) => setObservaciones(e.target.value)} rows={3}
             placeholder="Detalle interno de por qué se genera esta nota..."
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" />
         </div>
@@ -577,6 +579,7 @@ function fechaVencimientoPorDefecto() {
  *  servicios pendientes y deja generar la factura eligiendo fecha de vencimiento, todo en el
  *  mismo modal (antes esto solo se veía entrando al cliente puntual). */
 function ModalConsumoPendiente({ idCliente, nombreCliente, onClose, onCambio, onToast }) {
+  const idCampos = useId()
   const [movimientos, setMovimientos] = useState(null)
   const [error, setError] = useState(null)
   const [fechaVencimiento, setFechaVencimiento] = useState(fechaVencimientoPorDefecto)
@@ -658,8 +661,8 @@ function ModalConsumoPendiente({ idCliente, nombreCliente, onClose, onCambio, on
 
               <div className="flex items-end gap-3 pt-3 border-t border-gray-100">
                 <div className="flex-1">
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Fecha de vencimiento</label>
-                  <input type="date" value={fechaVencimiento} onChange={(e) => setFechaVencimiento(e.target.value)}
+                  <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">Fecha de vencimiento</label>
+                  <input id={`${idCampos}-1`} type="date" value={fechaVencimiento} onChange={(e) => setFechaVencimiento(e.target.value)}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
                 </div>
                 <button type="button" onClick={generarFactura} disabled={generando || seleccionados.size === 0}
@@ -860,12 +863,12 @@ function TablaDocumentos({ onToast, vistaDocumento, setVistaDocumento, onListaAc
           ))}
         </div>
 
-        <select value={estado} onChange={(e) => setEstado(e.target.value)}
+        <select aria-label="Filtrar por estado" value={estado} onChange={(e) => setEstado(e.target.value)}
           className="border border-gray-200 rounded-lg px-3 py-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white text-gray-600">
           {FILTROS_ESTADO.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
         </select>
 
-        <input type="search" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder="Buscar por cliente o referencia..."
+        <input aria-label="Buscar por cliente o referencia..." type="search" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder="Buscar por cliente o referencia..."
           className="flex-1 min-w-[220px] max-w-xs border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
       </div>
 
@@ -887,18 +890,18 @@ function TablaDocumentos({ onToast, vistaDocumento, setVistaDocumento, onListaAc
             Mostrando {desde}-{hasta} de {total} resultado{total !== 1 ? 's' : ''}
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="table-stack w-full text-sm">
               <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
                 <tr>
-                  <th className="px-4 py-3 text-left">Estado</th>
-                  <th className="px-4 py-3 text-left">Cliente</th>
-                  <th className="px-4 py-3 text-left">Documento</th>
-                  <th className="px-4 py-3 text-left">Emisión</th>
-                  <th className="px-4 py-3 text-left">Vencimiento</th>
-                  <th className="px-4 py-3 text-right">Nota crédito</th>
-                  <th className="px-4 py-3 text-right">Nota débito</th>
-                  <th className="px-4 py-3 text-right">Total</th>
-                  <th className="px-4 py-3 text-center">···</th>
+                  <th className="px-3 py-3 text-left">Estado</th>
+                  <th className="px-3 py-3 text-left">Cliente</th>
+                  <th className="px-3 py-3 text-left">Documento</th>
+                  <th className="px-3 py-3 text-left">Emisión</th>
+                  <th className="hidden xl:table-cell px-3 py-3 text-left">Vencimiento</th>
+                  <th className="hidden 2xl:table-cell px-3 py-3 text-right">Nota crédito</th>
+                  <th className="hidden 2xl:table-cell px-3 py-3 text-right">Nota débito</th>
+                  <th className="px-3 py-3 text-right">Total</th>
+                  <th className="px-3 py-3 text-center">···</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -909,8 +912,8 @@ function TablaDocumentos({ onToast, vistaDocumento, setVistaDocumento, onListaAc
                   return (
                     <tr key={`${d.tipo}-${d.referencia}-${d.idCliente}`}
                       className={`transition-colors ${requiereAccion ? 'bg-amber-50/50 hover:bg-amber-50' : 'hover:bg-gray-50'}`}>
-                      <td className={`px-4 py-2.5 ${requiereAccion ? 'border-l-2 border-amber-400' : ''}`}><PillEstado estado={d.estado} /></td>
-                      <td className="px-4 py-2.5">
+                      <td className={`px-3 py-2.5 ${requiereAccion ? 'border-l-2 border-amber-400' : ''}`}><PillEstado estado={d.estado} /></td>
+                      <td className="px-3 py-2.5">
                         <button onClick={() => abrirDetalle(d)} className="text-left block group max-w-[220px]">
                           <span className={`text-[10px] font-semibold uppercase tracking-wide ${d.tipo === 'PREPAGO' ? 'text-blue-600' : 'text-purple-600'}`}>
                             {d.tipo === 'PREPAGO' ? 'Prepago' : 'Pospago'}
@@ -921,24 +924,24 @@ function TablaDocumentos({ onToast, vistaDocumento, setVistaDocumento, onListaAc
                           {d.nit && <div className="text-[11px] text-gray-400">NIT {d.nit}</div>}
                         </button>
                       </td>
-                      <td className="px-4 py-2.5 whitespace-nowrap">
+                      <td className="px-3 py-2.5 whitespace-nowrap">
                         {numero
                           ? <span className="font-mono text-xs font-medium text-gray-700">{numero}</span>
                           : <span className="text-xs text-gray-400 italic">Sin generar</span>}
                       </td>
-                      <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">{formatFecha(d.fechaEmision)}</td>
-                      <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">{formatFecha(d.fechaVencimiento)}</td>
-                      <td className="px-4 py-2.5 text-right whitespace-nowrap tabular-nums">
+                      <td className="px-3 py-2.5 text-gray-500 whitespace-nowrap">{formatFecha(d.fechaEmision)}</td>
+                      <td className="hidden xl:table-cell px-3 py-2.5 text-gray-500 whitespace-nowrap">{formatFecha(d.fechaVencimiento)}</td>
+                      <td className="stack-oculta hidden 2xl:table-cell px-3 py-2.5 text-right whitespace-nowrap tabular-nums">
                         {d.montoNotasCredito > 0
                           ? <span className="text-primary-600 font-medium">− {formatearPrecio(d.montoNotasCredito)}</span>
                           : <span className="text-gray-300">—</span>}
                       </td>
-                      <td className="px-4 py-2.5 text-right whitespace-nowrap tabular-nums">
+                      <td className="stack-oculta hidden 2xl:table-cell px-3 py-2.5 text-right whitespace-nowrap tabular-nums">
                         {d.montoNotasDebito > 0
                           ? <span className="text-gray-600 font-medium">+ {formatearPrecio(d.montoNotasDebito)}</span>
                           : <span className="text-gray-300">—</span>}
                       </td>
-                      <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                      <td className="px-3 py-2.5 text-right whitespace-nowrap">
                         {(d.montoNotasCredito > 0 || d.montoNotasDebito > 0) ? (
                           <div>
                             <div className="text-gray-400 text-[11px] line-through tabular-nums">{formatearPrecio(d.montoTotal)}</div>
@@ -950,7 +953,7 @@ function TablaDocumentos({ onToast, vistaDocumento, setVistaDocumento, onListaAc
                           <span className="font-semibold text-gray-800 tabular-nums">{formatearPrecio(d.montoTotal)}</span>
                         )}
                       </td>
-                      <td className="px-4 py-2.5 text-center">
+                      <td className="px-3 py-2.5 text-center">
                         <MenuAcciones opciones={[
                           {
                             label: d.esConsumoPendiente ? 'Ver y generar factura' : 'Ver detalle',

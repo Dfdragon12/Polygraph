@@ -39,6 +39,10 @@ public class Candidato {
     @Column(name = "fecha_expedicion")
     private LocalDate fechaExpedicion;
 
+    /** Ciudad donde se expidió el documento de identidad. */
+    @Column(name = "id_ciudad_expedicion")
+    private Integer idCiudadExpedicion;
+
     @Column(name = "id_ciudad_nacimiento")
     private Integer idCiudadNacimiento;
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../services/api'
 import { useAuth } from '../hooks/useAuth'
+import { iniciarIntervaloVisible } from '../hooks/useIntervaloVisible'
 
 // A qué portal pertenece el formulario de un servicio, según el rol de quien está viendo la
 // notificación — usado por FORMULARIO_ACTUALIZADO/SUBPROCESO_COMPLETADO (GESTOR/PROGRAMADOR),
@@ -21,6 +22,12 @@ const rutaFormulario = (sufijo = '') => (n, usuario) => {
   return n.referenciaId && prefijo ? `${prefijo}/formulario/${n.referenciaId}${sufijo}` : null
 }
 
+const rutaTiempo = (n, usuario) => {
+  if (usuario?.rol === 'GESTOR') return n.referenciaId ? `/gestor/solicitudes?id=${n.referenciaId}` : '/gestor/solicitudes'
+  if (usuario?.rol === 'ADMIN_POLYGRAPH') return '/admin/semaforo?estadoTiempo=VENCIDA,POR_VENCER'
+  return n.referenciaId ? `/cliente/solicitudes/${n.referenciaId}` : '/cliente/solicitudes'
+}
+
 // Adónde llevar al usuario al hacer clic en una notificación, según su tipo. Solo se resuelven
 // los tipos con una pantalla clara a la que aterrizar — el resto solo se marca como leída.
 const RUTA_POR_TIPO = {
@@ -29,6 +36,7 @@ const RUTA_POR_TIPO = {
   FORMULARIO_ACTUALIZADO: rutaFormulario(),
   SUBPROCESO_DEVUELTO:    rutaFormulario(),
   SUBPROCESO_PUBLICADO:   rutaFormulario(),
+  SUBPROCESO_PUBLICADO_CLIENTE: () => '/cliente/solicitudes',
   SUBPROCESO_ASIGNADO:    rutaFormulario(),
   // Quien diligenció lo marcó como completado — el revisor aterriza en el formulario para
   // aprobarlo o devolverlo.
@@ -38,8 +46,19 @@ const RUTA_POR_TIPO = {
   // Novedades — directo al paso "Novedades" del formulario (ver Formulario.jsx, ?paso=novedades).
   NOVEDAD_REGISTRADA:     rutaFormulario('?paso=novedades'),
   NOVEDAD_RESUELTA:       rutaFormulario('?paso=novedades'),
+  // El candidato propuso horario desde su portal — el programador a su agenda (donde agenda y ve
+  // la sugerencia); el gestor al formulario del subproceso.
+  SUGERENCIA_DISPONIBILIDAD: (n, usuario) => usuario?.rol === 'PROGRAMADOR'
+    ? '/programador/agenda'
+    : rutaFormulario()(n, usuario),
   // Cambio de estado de una solicitud — solo lo recibe el cliente, lleva al detalle de su solicitud.
   SOLICITUD_ESTADO: (n) => n.referenciaId ? `/cliente/solicitudes/${n.referenciaId}` : null,
+  // Avisos de tiempo (días hábiles): el cliente a su solicitud, el gestor a la lista de solicitudes y el administrador al Semáforo.
+  TIEMPO_POR_VENCER:  (n, usuario) => rutaTiempo(n, usuario),
+  TIEMPO_VENCIDA:     (n, usuario) => rutaTiempo(n, usuario),
+  TIEMPO_PAUSA_ABIERTA: (n, usuario) => rutaTiempo(n, usuario),
+  TIEMPO_PAUSA_CERRADA: (n, usuario) => rutaTiempo(n, usuario),
+  SOLICITUD_REPROGRAMADA: (n, usuario) => rutaTiempo(n, usuario),
   // Le aprobaron el cupo pospago — lleva a "Mi Crédito", no apunta a un registro puntual.
   POSPAGO_APROBADO: () => '/cliente/pospago',
   // Al gestor le asignaron un cliente nuevo — lleva a la ficha de ese cliente.
@@ -54,9 +73,15 @@ const TIPO_CONFIG = {
   USUARIO:           { color: 'bg-emerald-100 text-emerald-700', label: 'Usuario'    },
   CLIENTE:           { color: 'bg-amber-100 text-amber-700',     label: 'Cliente'    },
   CLIENTE_ASIGNADO:  { color: 'bg-amber-100 text-amber-700',     label: 'Cliente'    },
+  GESTOR_ASIGNADO:   { color: 'bg-amber-100 text-amber-700',     label: 'Gestor'     },
   NUEVA_SOLICITUD:   { color: 'bg-orange-100 text-orange-700',   label: 'Solicitud'  },
   SOLICITUD_CREADA:  { color: 'bg-blue-100 text-blue-700',       label: 'Solicitud'  },
   SOLICITUD_ESTADO:  { color: 'bg-blue-100 text-blue-700',       label: 'Solicitud'  },
+  TIEMPO_POR_VENCER: { color: 'bg-amber-100 text-amber-800',     label: 'Por vencer' },
+  TIEMPO_VENCIDA:    { color: 'bg-red-100 text-red-700',         label: 'Vencida'    },
+  TIEMPO_PAUSA_ABIERTA: { color: 'bg-slate-100 text-slate-700',  label: 'En pausa'   },
+  TIEMPO_PAUSA_CERRADA: { color: 'bg-slate-100 text-slate-700',  label: 'Reanudada'  },
+  SOLICITUD_REPROGRAMADA: { color: 'bg-sky-100 text-sky-700',    label: 'Reprogramada' },
   PROGRAMAR_ASIGNACION: { color: 'bg-indigo-100 text-indigo-700', label: 'Programar' },
   FORMULARIO_ACTUALIZADO: { color: 'bg-cyan-100 text-cyan-700',   label: 'Formulario' },
   SISTEMA:           { color: 'bg-slate-100 text-slate-600',     label: 'Sistema'    },
@@ -68,9 +93,11 @@ const TIPO_CONFIG = {
   SUBPROCESO_DEVUELTO:{ color: 'bg-amber-100 text-amber-700',     label: 'Devuelto'   },
   SUBPROCESO_REPROGRAMADO:{ color: 'bg-sky-100 text-sky-700',      label: 'Reprogramado'},
   SUBPROCESO_PUBLICADO:{ color: 'bg-emerald-100 text-emerald-700', label: 'Publicado'  },
+  SUBPROCESO_PUBLICADO_CLIENTE: { color: 'bg-emerald-100 text-emerald-700', label: 'Publicado' },
   SUBPROCESO_DESASIGNADO:{ color: 'bg-gray-100 text-gray-600',    label: 'Desasignado'},
   SUBPROCESO_CANCELADO:{ color: 'bg-red-100 text-red-600',        label: 'Cancelado'  },
   NOVEDAD_REGISTRADA:{ color: 'bg-amber-100 text-amber-800',      label: 'Novedad'    },
+  SUGERENCIA_DISPONIBILIDAD:{ color: 'bg-primary-100 text-primary-700', label: 'Horario'  },
   NOVEDAD_RESUELTA:  { color: 'bg-green-100 text-green-700',      label: 'Novedad'    },
   SOPORTE:           { color: 'bg-violet-100 text-violet-700',    label: 'Documento'  },
   FACTURACION:       { color: 'bg-rose-100 text-rose-700',        label: 'Facturación'},
@@ -146,11 +173,10 @@ export default function Campana() {
   // panel está abierto (así "Cargar más" no se pierde por un refresco que no aportaba nada).
   useEffect(() => {
     cargarConteo()
-    const t = setInterval(async () => {
+    return iniciarIntervaloVisible(async () => {
       const total = await cargarConteo()
       if (total != null && total > noLeidasRef.current && abierto) cargarPagina(0, filtro)
     }, 30000)
-    return () => clearInterval(t)
   }, [cargarConteo, cargarPagina, abierto, filtro])
 
   useEffect(() => { noLeidasRef.current = noLeidas }, [noLeidas])

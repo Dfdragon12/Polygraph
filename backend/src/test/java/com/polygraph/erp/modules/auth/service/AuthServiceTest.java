@@ -49,6 +49,7 @@ class AuthServiceTest {
     @Mock private AuthenticationManager authenticationManager;
     @Mock private EmailService emailService;
     @Mock private NotificacionService notificacionService;
+    @Mock private com.polygraph.erp.modules.auth.service.AceptacionLegalService aceptacionLegalService;
 
     @InjectMocks
     private AuthService authService;
@@ -149,13 +150,14 @@ class AuthServiceTest {
     @DisplayName("Registro persona natural crea usuario con rol ADMIN_CLIENTE activo de inmediato")
     void registro_natural_crea_usuario_correctamente() {
         RegistroNaturalRequest request = new RegistroNaturalRequest(
-                "María", "García", "maria@test.com", "Password1!", "3001234567");
+                "María", "García", "maria@test.com", "Password1!", "3001234567",
+                true, true, false, "1.0");
         when(usuarioRepository.existsByEmail("maria@test.com")).thenReturn(false);
         when(clienteRepository.save(any(Cliente.class))).thenReturn(new Cliente());
         when(passwordEncoder.encode("Password1!")).thenReturn("hashed-pass");
         when(usuarioRepository.save(any(Usuario.class))).thenReturn(usuarioActivo);
 
-        authService.registrarNatural(request);
+        authService.registrarNatural(request, "127.0.0.1");
 
         ArgumentCaptor<Usuario> captor = ArgumentCaptor.forClass(Usuario.class);
         verify(usuarioRepository).save(captor.capture());
@@ -172,10 +174,11 @@ class AuthServiceTest {
     @DisplayName("Registro con email duplicado lanza ApiException 409 CONFLICT")
     void registro_email_duplicado_lanza_excepcion() {
         RegistroNaturalRequest request = new RegistroNaturalRequest(
-                "Carlos", "López", "duplicado@test.com", "Password1!", null);
+                "Carlos", "López", "duplicado@test.com", "Password1!", null,
+                true, true, null, null);
         when(usuarioRepository.existsByEmail("duplicado@test.com")).thenReturn(true);
 
-        assertThatThrownBy(() -> authService.registrarNatural(request))
+        assertThatThrownBy(() -> authService.registrarNatural(request, "127.0.0.1"))
                 .isInstanceOf(ApiException.class)
                 .satisfies(ex -> {
                     ApiException apiEx = (ApiException) ex;

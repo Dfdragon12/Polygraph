@@ -5,8 +5,9 @@ import Campana from '../Campana'
 import PanelEnlaces from '../PanelEnlaces'
 import BuscadorGlobal from '../BuscadorGlobal'
 import SidebarSeccion from './SidebarSeccion'
-import { IconoDashboard, IconoEquipo, IconoClientes, IconoSemaforo, IconoReversion, IconoCatalogo, IconoFacturacion, IconoCuenta, IconoDescuento, IconoCiudades, IconoDepartamento, IconoLlave, IconoNovedad, IconoRiesgo } from './IconosNav'
+import { IconoDashboard, IconoEquipo, IconoClientes, IconoSemaforo, IconoReversion, IconoCatalogo, IconoFacturacion, IconoCuenta, IconoDescuento, IconoCiudades, IconoDepartamento, IconoLlave, IconoNovedad, IconoRiesgo, IconoTrabajos, IconoDiccionario, IconoCalendario } from './IconosNav'
 import api from '../../services/api'
+import { iniciarIntervaloVisible } from '../../hooks/useIntervaloVisible'
 import reversionService from '../../services/reversionService'
 import ciudadService from '../../services/ciudadService'
 
@@ -26,6 +27,7 @@ const SECCIONES_ADMIN = [
       { ruta: '/admin/dashboard',          etiqueta: 'Dashboard',         icono: <IconoDashboard /> },
       { ruta: '/admin/usuarios-internos',  etiqueta: 'Equipo Polygraph',  icono: <IconoEquipo /> },
       { ruta: '/admin/clientes',           etiqueta: 'Clientes',          icono: <IconoClientes /> },
+      { ruta: '/admin/productividad',      etiqueta: 'Productividad',     icono: <IconoCatalogo /> },
     ],
   },
   /*{
@@ -50,12 +52,17 @@ const SECCIONES_ADMIN = [
     titulo: 'Novedades',
     items: [
       { ruta: '/admin/tipos-novedad', etiqueta: 'Tipos de novedad', icono: <IconoNovedad /> },
+      { ruta: '/admin/hoja-vida-candidato', etiqueta: 'Hoja de vida del candidato', icono: <IconoDiccionario /> },
+      { ruta: '/admin/temas-poligrafia', etiqueta: 'Temas de poligrafía', icono: <IconoDiccionario /> },
+      { ruta: '/admin/motivos-subproceso', etiqueta: 'Motivos (cancelar, devolver…)', icono: <IconoDiccionario /> },
     ],
   },
   {
     titulo: 'Calificación de riesgo',
     items: [
+      { ruta: '/admin/riesgo/hallazgos', etiqueta: 'Catálogo de hallazgos', icono: <IconoDiccionario /> },
       { ruta: '/admin/riesgo/parametros', etiqueta: 'Parámetros', icono: <IconoRiesgo /> },
+      { ruta: '/admin/riesgo/centrales', etiqueta: 'Centrales de riesgo', icono: <IconoRiesgo /> },
     ],
   },
   {
@@ -73,6 +80,14 @@ const SECCIONES_ADMIN = [
       { ruta: '/admin/departamentos', etiqueta: 'Departamentos', icono: <IconoDepartamento /> },
     ],
   },
+  {
+    titulo: 'Sistema',
+    items: [
+      { ruta: '/admin/festivos', etiqueta: 'Festivos y días hábiles', icono: <IconoCalendario /> },
+      { ruta: '/admin/parametros-tiempo', etiqueta: 'Parámetros de tiempo', icono: <IconoCalendario /> },
+      { ruta: '/admin/trabajos', etiqueta: 'Trabajos en segundo plano', icono: <IconoTrabajos /> },
+    ],
+  },
 ]
 
 
@@ -85,16 +100,24 @@ const ETIQUETAS_RUTA = {
   procesos:            'Procesos',
   'tipos-progreso':    'Tipos de Subproceso',
   'tipos-novedad':     'Tipos de novedad',
+  'hoja-vida-candidato': 'Hoja de vida del candidato',
+  'temas-poligrafia':  'Temas de poligrafía',
+  'motivos-subproceso': 'Motivos de reprogramación, cancelación y devolución',
   riesgo:              'Calificación de riesgo',
   parametros:          'Parámetros',
+  hallazgos:           'Catálogo de hallazgos',
   semaforo:            'Semáforo de Servicios',
+  productividad:       'Productividad diaria',
   candidatos:          'Candidatos',
   reversiones:         'Solicitudes de reversión',
   descuentos:          'Descuentos',
   ciudades:            'Ciudades',
+  festivos:            'Festivos y días hábiles',
+  'parametros-tiempo': 'Parámetros de tiempo',
   departamentos:       'Departamentos',
   facturacion:         'Facturación',
   'gestion-cuentas':   'Gestión de cuentas',
+  trabajos:            'Trabajos en segundo plano',
   ordenes:             'Órdenes de compra',
   comprobantes:        'Comprobante',
   facturas:            'Factura',
@@ -295,8 +318,7 @@ export default function AdminLayout() {
         .catch(() => {})
     }
     cargarBadges()
-    const t = setInterval(cargarBadges, 30000)
-    return () => clearInterval(t)
+    return iniciarIntervaloVisible(cargarBadges, 30000)
   }, [])
 
   const toggleSidebar = () => {
@@ -317,7 +339,7 @@ export default function AdminLayout() {
         <>
           <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setMenuMovil(false)} />
           <aside className="fixed inset-y-0 left-0 z-50 flex flex-col w-72 bg-slate-900 text-white md:hidden shadow-2xl pt-safe pb-safe">
-            <button onClick={() => setMenuMovil(false)}
+            <button onClick={() => setMenuMovil(false)} aria-label="Cerrar menú"
               className="absolute top-4 right-4 p-1 text-slate-400 hover:text-white">
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -334,7 +356,7 @@ export default function AdminLayout() {
           {/* Izquierda — hamburger móvil + toggle desktop */}
           <div className="flex items-center gap-1">
             {/* Móvil: abre overlay */}
-            <button onClick={() => setMenuMovil(true)}
+            <button onClick={() => setMenuMovil(true)} aria-label="Abrir menú"
               className="md:hidden p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors">
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -369,7 +391,7 @@ export default function AdminLayout() {
 
         <Breadcrumb />
 
-        <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 pb-[calc(1rem+var(--sab))] md:pb-[calc(1.5rem+var(--sab))] scrollbar-thin">
+        <main id="contenido" tabIndex={-1} className="flex-1 overflow-y-auto focus:outline-none overflow-x-hidden p-4 md:p-6 pb-[calc(1rem+var(--sab))] md:pb-[calc(1.5rem+var(--sab))] scrollbar-thin">
           <Outlet />
         </main>
       </div>

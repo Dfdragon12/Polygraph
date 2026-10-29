@@ -11,5 +11,7 @@ public record ConteoEstadosResponse(
         long publicados,
         long cancelados,
         long reprogramados,
-        long total
+        long total,
+        // Abiertas con la fecha de entrega ya pasada (días hábiles); no es un estado, cruza los demás.
+        long vencidas
 ) {}

@@ -8,7 +8,13 @@ import java.util.Map;
 /** Guarda el formulario completo de una sola vez — reemplaza por completo lo que había
  *  (filas y datos), mismo patrón que el resto del sistema para evitar estados intermedios
  *  inconsistentes. */
-public record GuardarFormularioRequest(List<SeccionDatosRequest> secciones) {
+public record GuardarFormularioRequest(List<SeccionDatosRequest> secciones,
+                                       /** Secciones opcionales que quien diligencia quitó (V212); null = ninguna. */
+                                       List<Integer> seccionesOmitidas) {
+
+    public GuardarFormularioRequest(List<SeccionDatosRequest> secciones) {
+        this(secciones, null);
+    }
 
     /** justificaciones: idColumna -> explicación de una respuesta CRÍTICA (campo calificable). */
     public record SeccionDatosRequest(

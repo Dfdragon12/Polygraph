@@ -11,5 +11,7 @@ public record DashboardClienteResponse(
     // Tipo de cliente en vivo (leído del cliente en BD, no del JWT cacheado en el navegador) — el
     // frontend lo usa para decidir si pide bolsa prepago o cupo pospago, evitando que un cambio de
     // tipo hecho por un admin quede invisible mientras el JWT del cliente (24h) siga vigente.
-    String tipoCliente
+    String tipoCliente,
+    // Solicitudes abiertas con la fecha de entrega ya pasada (días hábiles).
+    long serviciosVencidos
 ) {}

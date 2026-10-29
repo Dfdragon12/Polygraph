@@ -1,11 +1,9 @@
 package com.polygraph.erp.modules.pagos.service;
 
-import com.polygraph.erp.modules.clientes.entity.ClientePospago;
 import com.polygraph.erp.modules.clientes.repository.ClientePospagoRepository;
 import com.polygraph.erp.modules.pagos.entity.PagoWompi;
 import com.polygraph.erp.modules.pagos.event.PagoAprobadoEvent;
 import com.polygraph.erp.modules.pagos.repository.PagoWompiRepository;
-import com.polygraph.erp.shared.enums.EstadoMora;
 import com.polygraph.erp.shared.enums.TipoConceptoPago;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +29,7 @@ public class PagoAplicacionService {
     private final ClientePospagoRepository clientePospagoRepository;
     private final PagoWompiRepository pagoWompiRepository;
     private final ClientePospagoService clientePospagoService;
+    private final MoraService moraService;
 
     @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -49,15 +48,7 @@ public class PagoAplicacionService {
 
     /** Regla de negocio: un pago APPROVED levanta la restricción de acceso por deuda del cliente. */
     public void levantarRestriccionPorDeuda(Integer idCliente) {
-        clientePospagoRepository.findByIdCliente(idCliente).ifPresent(this::normalizarMora);
-    }
-
-    private void normalizarMora(ClientePospago clientePospago) {
-        if (clientePospago.getEstadoMora() != EstadoMora.NORMAL) {
-            clientePospago.setEstadoMora(EstadoMora.NORMAL);
-            clientePospago.setDiasMora(0);
-            clientePospagoRepository.save(clientePospago);
-            log.info("Restricción de acceso por deuda levantada para cliente {}", clientePospago.getIdCliente());
-        }
+        // NS-05: la mora se calcula desde las facturas; pagar una de varias facturas vencidas no levanta la restricción.
+        moraService.sincronizar(idCliente);
     }
 }

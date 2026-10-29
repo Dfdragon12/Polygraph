@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useId, useState, useEffect, useCallback, useMemo } from 'react'
 import departamentoService from '../../services/departamentoService'
 import Toast from '../../components/Toast'
 import { Modal, ConfirmModal } from '../../components/ui/Modal'
 import MenuAcciones from '../../components/ui/MenuAcciones'
+import Paginacion, { usePaginacion } from '../../components/ui/Paginacion'
 
 const ICONO_LAPIZ = (
   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -19,6 +20,7 @@ const ICONO_BASURA = (
 
 /** Alta/edición de un departamento — mismo modal para ambos casos (si viene `departamento`, es edición). */
 function ModalDepartamento({ departamento, onClose, onGuardado }) {
+  const idCampos = useId()
   const esEdicion = !!departamento
   const [nombre, setNombre] = useState(departamento?.nombre ?? '')
   const [codigoDane, setCodigoDane] = useState(departamento?.codigoDane ?? '')
@@ -53,14 +55,14 @@ function ModalDepartamento({ departamento, onClose, onGuardado }) {
           <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{error}</div>
         )}
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Nombre <span className="text-red-500">*</span></label>
-          <input value={nombre} onChange={(e) => setNombre(e.target.value)} autoFocus
+          <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">Nombre <span className="text-red-500">*</span></label>
+          <input id={`${idCampos}-1`} value={nombre} onChange={(e) => setNombre(e.target.value)} autoFocus
             placeholder="Ej: Cundinamarca"
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none" />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Código DANE <span className="text-red-500">*</span></label>
-          <input value={codigoDane} inputMode="numeric" maxLength={2}
+          <label htmlFor={`${idCampos}-2`} className="block text-xs font-medium text-gray-600 mb-1">Código DANE <span className="text-red-500">*</span></label>
+          <input id={`${idCampos}-2`} value={codigoDane} inputMode="numeric" maxLength={2}
             onChange={(e) => setCodigoDane(e.target.value.replace(/\D/g, ''))}
             placeholder="Ej: 25"
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none" />
@@ -107,6 +109,7 @@ export default function Departamentos() {
     if (!q) return departamentos
     return departamentos.filter(d => d.nombre.toLowerCase().includes(q) || d.codigoDane.includes(q))
   }, [departamentos, busqueda])
+  const pag = usePaginacion(visibles, busqueda)
 
   const onGuardado = (data, esEdicion) => {
     setDepartamentos(prev => {
@@ -158,7 +161,7 @@ export default function Departamentos() {
         </div>
       )}
 
-      <input type="search" value={busqueda} onChange={e => setBusqueda(e.target.value)}
+      <input aria-label="Buscar por nombre o código DANE..." type="search" value={busqueda} onChange={e => setBusqueda(e.target.value)}
         placeholder="Buscar por nombre o código DANE..."
         className="mb-3 w-full max-w-sm border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
 
@@ -171,7 +174,7 @@ export default function Departamentos() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-100">
+            <table className="table-stack min-w-full divide-y divide-gray-100">
               <thead className="bg-gray-50">
                 <tr>
                   {['Departamento', 'Código DANE', 'Estado', '···'].map(h => (
@@ -180,7 +183,7 @@ export default function Departamentos() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {visibles.map(d => (
+                {pag.visibles.map(d => (
                   <tr key={d.idDepartamento} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">{d.nombre}</td>
                     <td className="px-4 py-3 text-sm text-gray-400 font-mono">{d.codigoDane}</td>
@@ -208,6 +211,7 @@ export default function Departamentos() {
             </table>
           </div>
         )}
+        <Paginacion pagina={pag.pagina} total={pag.total} porPagina={pag.porPagina} onChange={pag.setPagina} />
       </div>
 
       {toast && <Toast mensaje={toast.mensaje} tipo={toast.tipo} onClose={() => setToast(null)} />}

@@ -15,6 +15,9 @@ import java.util.Optional;
 
 public interface OrdenCompraRepository extends JpaRepository<OrdenCompra, Long> {
     Optional<OrdenCompra> findByReferencia(String referencia);
+
+    /** Los intentos de una misma orden comparten la base de la referencia (ver ReferenciaPago). */
+    Optional<OrdenCompra> findFirstByReferenciaStartingWith(String base);
     Optional<OrdenCompra> findByIdOrdenCompraAndCliente_IdCliente(Long idOrdenCompra, Integer idCliente);
     Page<OrdenCompra> findByCliente_IdClienteOrderByFechaCreacionDesc(Integer idCliente, Pageable pageable);
     Page<OrdenCompra> findByCliente_IdClienteAndEstadoOrderByFechaCreacionDesc(Integer idCliente, EstadoOrdenCompra estado, Pageable pageable);

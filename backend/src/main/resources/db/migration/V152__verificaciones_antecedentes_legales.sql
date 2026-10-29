@@ -4,6 +4,12 @@
 -- N filas de listas/fuentes consultadas (catálogo administrable) y tres bloques fijos
 -- (SIMIT, SIMUR, RUNT).
 
+-- Corrección 2026-09-28 (instalación limpia): V1 ya crea estas tablas con el modelo viejo; en la
+-- base de desarrollo se habían borrado a mano, por eso aquí pasaba, pero en una base nueva fallaba
+-- con "ya existe". Están vacías en ese punto (V1 no les inserta nada). Cambia el checksum: correr
+-- el backend una vez con FLYWAY_REPARAR=true en cada base existente (ver config/FlywayConfig).
+DROP TABLE IF EXISTS runt, simur, simit, antecedentes_consultados, verificaciones_antecedentes_legales CASCADE;
+
 -- Catálogo administrable de fuentes a consultar (Procuraduría, INPEC, OFAC, etc.) — vive en
 -- admin/catálogo → Subprocesos. Agregar una fuente nueva es un CRUD, no una migración.
 CREATE TABLE catalogo_fuentes_antecedentes (

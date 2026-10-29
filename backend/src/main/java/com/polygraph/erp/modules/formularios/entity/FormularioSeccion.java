@@ -79,6 +79,25 @@ public class FormularioSeccion {
     @Column(name = "version_creacion", nullable = false)
     private Integer versionCreacion = 1;
 
+    /** Solo secciones TABLA: las filas las arma el código del subservicio (ej. la tabla de
+     *  hallazgos de Antecedentes), no el analista — no puede agregar, quitar ni editar filas. */
+    @Builder.Default
+    @Column(name = "calculada", nullable = false)
+    private Boolean calculada = false;
+
+    /** Quien diligencia puede quitarla de SU formulario (V212): no la llena, sus obligatorios no
+     *  bloquean y no sale en el Word si el .docx la encierra en repeatDocPart(secciones['clave']).
+     *  false = obligatoria, siempre va. Lo decide el administrador en el constructor. */
+    @Builder.Default
+    @org.hibernate.annotations.ColumnDefault("false") // los INSERT de las migraciones no la mandan
+    @Column(name = "opcional", nullable = false)
+    private Boolean opcional = false;
+
+    /** Grupo con el que se clasifica la sección (V217), ej. "Datos del evaluado", "Resultado", "Verificación".
+     *  Solo organiza el índice del formulario y del constructor: nada más depende de él. Null = sin grupo. */
+    @Column(name = "grupo", length = 60)
+    private String grupo;
+
     @OneToMany(mappedBy = "seccion", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @Builder.Default
     private List<FormularioColumna> columnas = new ArrayList<>();

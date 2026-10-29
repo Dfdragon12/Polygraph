@@ -134,15 +134,13 @@
         </dependency>
 
         <!-- Test -->
-        <!-- Extrae texto de un PDF ya generado para poder afirmar en una prueba que cierto
-             contenido sí sobrevivió la conversión de DocumentoPdfConverter (LibreOffice headless,
-             ver esa clase) — sin esto no hay forma de verificar el PDF final, solo el .docx
-             intermedio. -->
+        <!-- PDFBox: convierte cada página de un PDF de soporte en imagen para el anexo del informe
+             (SoportesAnexoWord) y, en pruebas, verifica el texto del PDF final tras la conversión de
+             DocumentoPdfConverter (LibreOffice headless). -->
         <dependency>
             <groupId>org.apache.pdfbox</groupId>
             <artifactId>pdfbox</artifactId>
             <version>3.0.3</version>
-            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

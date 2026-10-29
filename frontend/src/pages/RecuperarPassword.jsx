@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -14,6 +14,7 @@ const esquema = z.object({
 /* ─── Componente principal — mismo lenguaje visual que Login.jsx/Register.jsx ── */
 
 export default function RecuperarPassword() {
+  const idCampos = useId()
   const [error, setError] = useState(null)
   const [cargando, setCargando] = useState(false)
   const [enviado, setEnviado] = useState(false)
@@ -126,12 +127,12 @@ export default function RecuperarPassword() {
                   )}
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Correo electrónico</label>
+                    <label htmlFor={`${idCampos}-1`} className="block text-sm font-medium text-gray-700 mb-1.5">Correo electrónico</label>
                     <div className="relative">
                       <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                       </svg>
-                      <input
+                      <input id={`${idCampos}-1`}
                         type="email"
                         autoComplete="email"
                         {...register('email')}

@@ -8,7 +8,7 @@ import com.polygraph.erp.modules.evaluados.repository.CandidatoRepository;
 import com.polygraph.erp.modules.servicios.entity.Proceso;
 import com.polygraph.erp.modules.servicios.entity.Servicio;
 import com.polygraph.erp.modules.servicios.entity.ServicioSubproceso;
-import com.polygraph.erp.shared.enums.EstadoAsignacion;
+import com.polygraph.erp.shared.enums.EstadoSubproceso;
 import com.polygraph.erp.shared.enums.EstadoServicio;
 import com.polygraph.erp.shared.enums.Rol;
 import com.polygraph.erp.shared.enums.TipoCliente;
@@ -129,6 +129,26 @@ class BusquedaAsignadaATest {
         assertThat(resultado).isEmpty();
     }
 
+    @Test
+    @DisplayName("Buscador de 'Mis asignaciones': por nombre, cédula o número de servicio, solo lo del usuario")
+    void buscadorMisAsignaciones() {
+        var mias = ServicioSubprocesoSpecifications.conFiltros(null, null, poligrafistaA.getIdUsuario(), null, null);
+
+        assertThat(servicioSubprocesoRepository.findAll(mias.and(ServicioSubprocesoSpecifications.buscar("diana"))))
+                .extracting(sp -> sp.getServicio().getCandidato().getCedula()).containsExactly("2000333444");
+        assertThat(servicioSubprocesoRepository.findAll(mias.and(ServicioSubprocesoSpecifications.buscar("carlos perez"))))
+                .hasSize(1);
+        assertThat(servicioSubprocesoRepository.findAll(mias.and(ServicioSubprocesoSpecifications.buscar("2000111"))))
+                .hasSize(1);
+        Integer idServicioB = candidatoDeB.getIdCandidato() == null ? null
+                : servicioSubprocesoRepository.findAll(mias.and(ServicioSubprocesoSpecifications.buscar("Lopez")))
+                        .get(0).getServicio().getIdServicio();
+        assertThat(servicioSubprocesoRepository.findAll(mias.and(ServicioSubprocesoSpecifications.buscar("#" + idServicioB))))
+                .extracting(sp -> sp.getServicio().getIdServicio()).containsExactly(idServicioB);
+        assertThat(servicioSubprocesoRepository.findAll(mias.and(ServicioSubprocesoSpecifications.buscar("nadie"))))
+                .isEmpty();
+    }
+
     private Usuario usuario(String email, Rol rol) {
         return Usuario.builder().nombre(email).email(email).password("x")
                 .rol(rol).activo(true).emailVerificado(true).build();
@@ -143,7 +163,7 @@ class BusquedaAsignadaATest {
         return ServicioSubproceso.builder().servicio(servicio)
                 .tipoProgreso(tipoProgresoDePrueba())
                 .usuarioAsignado(usuarioAsignado).programadorResponsable(programadorResponsable)
-                .estado(EstadoAsignacion.PENDIENTE).build();
+                .estado(EstadoSubproceso.PENDIENTE).build();
     }
 
     private com.polygraph.erp.modules.catalogo.entity.TipoProgreso tipoProgresoCache;

@@ -2,6 +2,8 @@ package com.polygraph.erp.modules.clientes.controller;
 
 import com.polygraph.erp.modules.auth.entity.Usuario;
 import com.polygraph.erp.modules.auth.repository.UsuarioRepository;
+import com.polygraph.erp.modules.auth.service.AuthService;
+import com.polygraph.erp.modules.usuarios.service.PerfilInternoService;
 import com.polygraph.erp.modules.clientes.dto.ActualizarClientePerfilRequest;
 import com.polygraph.erp.modules.clientes.dto.ActualizarUsuarioPropioRequest;
 import com.polygraph.erp.modules.clientes.dto.ClienteAdminResponse;
@@ -30,13 +32,15 @@ public class ClientePerfilController {
 
     @GetMapping
     public ResponseEntity<ClientePerfilResponse> obtener(Authentication auth) {
-        return ResponseEntity.ok(clienteAdminService.obtenerPerfilPropio(resolverIdCliente(auth)));
+        Usuario usuario = usuarioAutenticado(auth);
+        return ResponseEntity.ok(conCuenta(clienteAdminService.obtenerPerfilPropio(idClienteDe(usuario)), usuario));
     }
 
     @PutMapping
     public ResponseEntity<ClientePerfilResponse> actualizar(
             @Valid @RequestBody ActualizarClientePerfilRequest request, Authentication auth) {
-        return ResponseEntity.ok(clienteAdminService.actualizarPerfilPropio(resolverIdCliente(auth), request));
+        Usuario usuario = usuarioAutenticado(auth);
+        return ResponseEntity.ok(conCuenta(clienteAdminService.actualizarPerfilPropio(idClienteDe(usuario), request), usuario));
     }
 
     // Autoservicio: el ADMIN_CLIENTE crea sus propios usuarios ANALISTA_CLIENTE (tope de
@@ -73,11 +77,26 @@ public class ClientePerfilController {
     }
 
     private Integer resolverIdCliente(Authentication auth) {
-        Usuario usuario = usuarioRepository.findByEmail(auth.getName())
+        return idClienteDe(usuarioAutenticado(auth));
+    }
+
+    private Usuario usuarioAutenticado(Authentication auth) {
+        return usuarioRepository.findByEmail(auth.getName())
                 .orElseThrow(() -> new ApiException("Usuario no encontrado", HttpStatus.NOT_FOUND));
+    }
+
+    private static Integer idClienteDe(Usuario usuario) {
         if (usuario.getIdCliente() == null) {
             throw new ApiException("Usuario no asociado a ningún cliente", HttpStatus.FORBIDDEN);
         }
         return usuario.getIdCliente();
+    }
+
+    /** Agrega a la información de la empresa los datos de la cuenta de quien consulta (desde cuándo
+     *  es miembro, último acceso y el estado de su contraseña, con la misma regla del login). */
+    private static ClientePerfilResponse conCuenta(ClientePerfilResponse perfil, Usuario usuario) {
+        return perfil.conCuenta(usuario.getFechaCreacion(), usuario.getUltimoAcceso(), usuario.getFechaUltimoCambioPassword(),
+                PerfilInternoService.diasParaCambiarPassword(usuario, java.time.LocalDate.now()),
+                AuthService.DIAS_VIGENCIA_PASSWORD, Boolean.TRUE.equals(usuario.getRequiereCambioPassword()));
     }
 }

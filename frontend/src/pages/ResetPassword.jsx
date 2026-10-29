@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -43,6 +43,7 @@ function calcularFortaleza(password) {
 /* ─── Componente principal — mismo lenguaje visual que Login.jsx/Register.jsx ── */
 
 export default function ResetPassword() {
+  const idCampos = useId()
   const [searchParams] = useSearchParams()
   const token = searchParams.get('token')
   const [error, setError] = useState(null)
@@ -170,12 +171,12 @@ export default function ResetPassword() {
                   )}
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Nueva contraseña</label>
+                    <label htmlFor={`${idCampos}-1`} className="block text-sm font-medium text-gray-700 mb-1.5">Nueva contraseña</label>
                     <div className="relative">
                       <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                       </svg>
-                      <input
+                      <input id={`${idCampos}-1`}
                         type={mostrar ? 'text' : 'password'}
                         autoComplete="new-password"
                         {...register('password')}
@@ -215,12 +216,12 @@ export default function ResetPassword() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Confirmar contraseña</label>
+                    <label htmlFor={`${idCampos}-2`} className="block text-sm font-medium text-gray-700 mb-1.5">Confirmar contraseña</label>
                     <div className="relative">
                       <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                       </svg>
-                      <input
+                      <input id={`${idCampos}-2`}
                         type={mostrar ? 'text' : 'password'}
                         autoComplete="new-password"
                         {...register('confirmarPassword')}

@@ -161,7 +161,7 @@ public class ClientePospagoService {
         ClientePospago pospago = obtenerPospago(idCliente);
 
         BigDecimal consumidoSinFacturar = movimientoRepository
-                .findByCliente_IdClienteAndFacturaIsNullOrderByFechaGeneradoAsc(idCliente).stream()
+                .findByCliente_IdClienteAndFacturaIsNullAndAnuladoEnIsNullOrderByFechaGeneradoAsc(idCliente).stream()
                 .map(MovimientoCreditoPospago::getMontoTotal)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
@@ -181,7 +181,7 @@ public class ClientePospagoService {
 
     @Transactional(readOnly = true)
     public List<MovimientoCreditoPospagoResponse> listarMovimientosPendientesDeFacturar(Integer idCliente) {
-        return movimientoRepository.findByCliente_IdClienteAndFacturaIsNullOrderByFechaGeneradoAsc(idCliente).stream()
+        return movimientoRepository.findByCliente_IdClienteAndFacturaIsNullAndAnuladoEnIsNullOrderByFechaGeneradoAsc(idCliente).stream()
                 .map(this::mapearMovimiento)
                 .toList();
     }
@@ -192,7 +192,7 @@ public class ClientePospagoService {
     @Transactional(readOnly = true)
     public List<PendienteFacturarPospagoResponse> listarPendientesGlobal() {
         Map<Integer, List<MovimientoCreditoPospago>> porCliente = movimientoRepository
-                .findByFacturaIsNullOrderByFechaGeneradoAsc().stream()
+                .findByFacturaIsNullAndAnuladoEnIsNullOrderByFechaGeneradoAsc().stream()
                 .collect(Collectors.groupingBy(m -> m.getCliente().getIdCliente(), LinkedHashMap::new, Collectors.toList()));
 
         return porCliente.values().stream()
@@ -233,7 +233,7 @@ public class ClientePospagoService {
     public FacturaPospagoResponse generarFactura(Integer idCliente, LocalDate fechaVencimiento, List<Long> idsMovimientos, Usuario admin) {
         Cliente cliente = obtenerPospago(idCliente).getCliente();
         List<MovimientoCreditoPospago> todosPendientes = movimientoRepository
-                .findByCliente_IdClienteAndFacturaIsNullOrderByFechaGeneradoAsc(idCliente);
+                .findByCliente_IdClienteAndFacturaIsNullAndAnuladoEnIsNullOrderByFechaGeneradoAsc(idCliente);
 
         List<MovimientoCreditoPospago> pendientes;
         if (idsMovimientos == null || idsMovimientos.isEmpty()) {

@@ -13,6 +13,9 @@ import java.util.UUID;
 public interface PagoWompiRepository extends JpaRepository<PagoWompi, UUID> {
     Optional<PagoWompi> findByReferencia(String referencia);
 
+    /** Los intentos de un mismo pago comparten la base de la referencia (ver ReferenciaPago). */
+    Optional<PagoWompi> findFirstByReferenciaStartingWith(String base);
+
     Optional<PagoWompi> findByTransaccionWompiId(String transaccionWompiId);
 
     List<PagoWompi> findByEstadoAndFechaCreacionBefore(EstadoPago estado, LocalDateTime fechaLimite);

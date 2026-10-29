@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react'
+import { useId, useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import api from '../../../services/api'
 import Toast from '../../../components/Toast'
 import { alCambiarTexto } from '../../../utils/texto'
 import { Modal, ConfirmModal } from '../../../components/ui/Modal'
 import MenuAcciones from '../../../components/ui/MenuAcciones'
+import Paginacion, { usePaginacion } from '../../../components/ui/Paginacion'
 
 /* ─── Paleta dinámica de colores para clasificaciones ─── */
 const PALETA = [
@@ -80,7 +81,7 @@ function IconoHoja() {
 function BarraFiltros({ busqueda, onBusqueda, filtro, onFiltro, total, activos, inactivos, visibles }) {
   return (
     <div className="flex flex-wrap items-center gap-3 mb-3">
-      <input type="search" value={busqueda} onChange={e => onBusqueda(e.target.value)}
+      <input aria-label="Buscar por nombre o descripción…" type="search" value={busqueda} onChange={e => onBusqueda(e.target.value)}
         placeholder="Buscar por nombre o descripción…"
         className="flex-1 min-w-[200px] max-w-xs border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
       <div className="flex gap-1">
@@ -232,10 +233,10 @@ function SeccionTramos({ proceso, onCambio }) {
             {tramos.map(t => (
               editandoId === t.idTramo ? (
                 <Fragment key={t.idTramo}>
-                  <input type="number" min={2} value={edicion.cantidadMinima} autoFocus
+                  <input aria-label="Cantidad mínima del tramo" type="number" min={2} value={edicion.cantidadMinima} autoFocus
                     onChange={e => setEdicion(p => ({ ...p, cantidadMinima: e.target.value }))}
                     placeholder="Cant. mín" className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm" />
-                  <input type="number" min={0} step="0.01" value={edicion.valorUnitario}
+                  <input aria-label="Valor unitario" type="number" min={0} step="0.01" value={edicion.valorUnitario}
                     onChange={e => setEdicion(p => ({ ...p, valorUnitario: e.target.value }))}
                     placeholder="Valor unitario" className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm" />
                   <div className="flex items-center gap-2 whitespace-nowrap">
@@ -260,10 +261,10 @@ function SeccionTramos({ proceso, onCambio }) {
 
             {agregando && (
               <Fragment>
-                <input type="number" min={2} value={nuevoTramo.cantidadMinima} autoFocus
+                <input aria-label="Cantidad mínima del nuevo tramo" type="number" min={2} value={nuevoTramo.cantidadMinima} autoFocus
                   onChange={e => setNuevoTramo(p => ({ ...p, cantidadMinima: e.target.value }))}
                   placeholder="Ej: 20" className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm" />
-                <input type="number" min={0} step="0.01" value={nuevoTramo.valorUnitario}
+                <input aria-label="Valor unitario" type="number" min={0} step="0.01" value={nuevoTramo.valorUnitario}
                   onChange={e => setNuevoTramo(p => ({ ...p, valorUnitario: e.target.value }))}
                   placeholder="Valor unitario" className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm" />
                 <div className="flex items-center gap-2 whitespace-nowrap">
@@ -304,7 +305,7 @@ function CamposPreciosCiudad({ valores, onChange }) {
         {NIVELES_CIUDAD.map(n => (
           <div key={n.valor} className="flex items-center gap-3">
             <span className="w-52 flex-shrink-0 text-xs text-gray-600">{n.etiqueta}</span>
-            <input type="number" min={0} step="0.01" value={valores[n.valor]}
+            <input aria-label={`Recargo: ${n.etiqueta}`} type="number" min={0} step="0.01" value={valores[n.valor]}
               onChange={e => onChange(n.valor, e.target.value)}
               placeholder="Sin recargo"
               className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
@@ -319,6 +320,7 @@ function CamposPreciosCiudad({ valores, onChange }) {
    PROCESOS
 ══════════════════════════════════════════ */
 function FormProceso({ proceso, clasificaciones, clasificacionDefaultId, onClose, onGuardado }) {
+  const idCampos = useId()
   const [form, setForm] = useState({
     nombreProceso:       proceso?.nombreProceso ?? '',
     descripcion:         proceso?.descripcion  ?? '',
@@ -326,6 +328,9 @@ function FormProceso({ proceso, clasificaciones, clasificacionDefaultId, onClose
     valor:               proceso?.valor != null ? String(proceso.valor) : '',
     diasHabilesEntrega:  proceso?.diasHabilesEntrega != null ? String(proceso.diasHabilesEntrega) : '5',
     aplicaPrecioCiudad:  proceso?.aplicaPrecioCiudad ?? false,
+    requiereHojaVida:    proceso?.requiereHojaVida ?? true,
+    requiereDireccion:   proceso?.requiereDireccion ?? false,
+    ciudadEsDePrueba:    proceso?.ciudadEsDePrueba ?? false,
     puntosClave:         (proceso?.puntosClave ?? []).join('\n'),
     preciosCiudad:       Object.fromEntries(NIVELES_CIUDAD.map(n => {
       const existente = proceso?.preciosCiudad?.find(p => p.nivelCiudad === n.valor)
@@ -344,6 +349,9 @@ function FormProceso({ proceso, clasificaciones, clasificacionDefaultId, onClose
       valor:              form.valor !== '' ? Number(form.valor) : null,
       diasHabilesEntrega: form.diasHabilesEntrega !== '' ? Number(form.diasHabilesEntrega) : null,
       aplicaPrecioCiudad: form.aplicaPrecioCiudad,
+      requiereHojaVida:   form.requiereHojaVida,
+      requiereDireccion:  form.requiereDireccion,
+      ciudadEsDePrueba:   form.ciudadEsDePrueba,
       puntosClave:        form.puntosClave.split('\n').map(l => l.trim()).filter(Boolean),
     }
     try {
@@ -370,13 +378,13 @@ function FormProceso({ proceso, clasificaciones, clasificacionDefaultId, onClose
       {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{error}</div>}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Nombre <span className="text-red-500">*</span></label>
-          <input value={form.nombreProceso} onChange={e => setForm(p => ({ ...p, nombreProceso: alCambiarTexto(e.target.value) }))} required
+          <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">Nombre <span className="text-red-500">*</span></label>
+          <input id={`${idCampos}-1`} value={form.nombreProceso} onChange={e => setForm(p => ({ ...p, nombreProceso: alCambiarTexto(e.target.value) }))} required
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Clasificación <span className="text-red-500">*</span></label>
-          <select value={form.idClasificacion} onChange={e => setForm(p => ({ ...p, idClasificacion: e.target.value }))} required
+          <label htmlFor={`${idCampos}-2`} className="block text-xs font-medium text-gray-600 mb-1">Clasificación <span className="text-red-500">*</span></label>
+          <select id={`${idCampos}-2`} value={form.idClasificacion} onChange={e => setForm(p => ({ ...p, idClasificacion: e.target.value }))} required
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
             <option value="">Seleccionar clasificación…</option>
             {clasificaciones.filter(c => c.activo).map(c => (
@@ -386,16 +394,16 @@ function FormProceso({ proceso, clasificaciones, clasificacionDefaultId, onClose
         </div>
       </div>
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Descripción</label>
-        <textarea value={form.descripcion} rows={2} onChange={e => setForm(p => ({ ...p, descripcion: alCambiarTexto(e.target.value) }))}
+        <label htmlFor={`${idCampos}-3`} className="block text-xs font-medium text-gray-600 mb-1">Descripción</label>
+        <textarea id={`${idCampos}-3`} value={form.descripcion} rows={2} onChange={e => setForm(p => ({ ...p, descripcion: alCambiarTexto(e.target.value) }))}
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" />
       </div>
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">
+        <label htmlFor={`${idCampos}-4`} className="block text-xs font-medium text-gray-600 mb-1">
           Puntos clave
           <span className="ml-1.5 text-gray-400 font-normal">— uno por línea, cortos, para la tarjeta de la tienda</span>
         </label>
-        <textarea value={form.puntosClave} rows={4} onChange={e => setForm(p => ({ ...p, puntosClave: e.target.value }))}
+        <textarea id={`${idCampos}-4`} value={form.puntosClave} rows={4} onChange={e => setForm(p => ({ ...p, puntosClave: e.target.value }))}
           placeholder={'Ej:\nRegistros penales\nMedidas correctivas de policía\nBoletines de contraloría\nProcuraduría'}
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none font-mono" />
         <p className="text-xs text-gray-400 mt-1">Si lo dejas vacío, la tienda muestra la descripción en su lugar.</p>
@@ -409,11 +417,11 @@ function FormProceso({ proceso, clasificaciones, clasificacionDefaultId, onClose
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Tiempo de entrega */}
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
+              <label htmlFor={`${idCampos}-5`} className="block text-xs font-medium text-gray-600 mb-1">
                 Días hábiles de entrega <span className="text-red-500">*</span>
               </label>
               <div className="flex items-center gap-3">
-                <input type="number" min={1} max={365} value={form.diasHabilesEntrega} required
+                <input id={`${idCampos}-5`} type="number" min={1} max={365} value={form.diasHabilesEntrega} required
                   onChange={e => setForm(p => ({ ...p, diasHabilesEntrega: e.target.value }))}
                   className="w-24 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
                 <span className="text-xs text-gray-400">días hábiles</span>
@@ -421,15 +429,53 @@ function FormProceso({ proceso, clasificaciones, clasificacionDefaultId, onClose
             </div>
             {/* Valor base — editable */}
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
+              <label htmlFor={`${idCampos}-6`} className="block text-xs font-medium text-gray-600 mb-1">
                 Valor base (COP)
               </label>
-              <input type="number" min={0} step="0.01" value={form.valor}
+              <input id={`${idCampos}-6`} type="number" min={0} step="0.01" value={form.valor}
                 onChange={e => setForm(p => ({ ...p, valor: e.target.value }))}
                 placeholder="Ej: 150000"
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
             </div>
           </div>
+
+          {/* Necesita la hoja de vida del candidato (SE-05) */}
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <input type="checkbox" checked={form.requiereHojaVida}
+              onChange={e => setForm(p => ({ ...p, requiereHojaVida: e.target.checked }))}
+              className="mt-0.5 w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+            <span className="text-xs text-gray-600">
+              <span className="font-medium text-gray-800">Necesita la hoja de vida del candidato</span>
+              <span className="block text-gray-500 mt-0.5">
+                Si está marcado, el reloj de entrega espera en pausa hasta que el candidato envíe su hoja de vida. Sin marcar
+                (ej. Antecedentes), el plazo cuenta desde la recepción de la solicitud.
+              </span>
+            </span>
+          </label>
+
+          {/* Qué pide Nueva solicitud según el servicio (NS-08) */}
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <input type="checkbox" checked={form.requiereDireccion}
+              onChange={e => setForm(p => ({ ...p, requiereDireccion: e.target.checked }))}
+              className="mt-0.5 w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+            <span className="text-xs text-gray-600">
+              <span className="font-medium text-gray-800">Incluye una visita (pide la dirección)</span>
+              <span className="block text-gray-500 mt-0.5">
+                Nueva solicitud pide la «Dirección de la visita» (obligatoria) y rotula la ciudad como «Ciudad de la visita».
+              </span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <input type="checkbox" checked={form.ciudadEsDePrueba}
+              onChange={e => setForm(p => ({ ...p, ciudadEsDePrueba: e.target.checked }))}
+              className="mt-0.5 w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+            <span className="text-xs text-gray-600">
+              <span className="font-medium text-gray-800">Incluye poligrafía o VerifEye</span>
+              <span className="block text-gray-500 mt-0.5">
+                Nueva solicitud rotula la ciudad como «Ciudad donde presentará la prueba».
+              </span>
+            </span>
+          </label>
 
           {/* Aplica precio por ciudad */}
           <label className="flex items-start gap-2.5 cursor-pointer">
@@ -554,6 +600,7 @@ const TONO_BARRA = { verde: 'bg-green-500', ambar: 'bg-amber-400', rojo: 'bg-red
 const TONO_TEXTO = { verde: 'text-green-700', ambar: 'text-amber-700', rojo: 'text-red-600', gris: 'text-gray-500' }
 
 function PasosModal({ proceso, onClose, onToast }) {
+  const idCampos = useId()
   const [pasos, setPasos] = useState([])
   const [disponibles, setDisponibles] = useState([])
   const [cargando, setCargando] = useState(true)
@@ -752,17 +799,17 @@ function PasosModal({ proceso, onClose, onToast }) {
           <div className="px-4 py-4 space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Criticidad por defecto</label>
-                <select value={criticidad} onChange={e => { setCriticidad(e.target.value); setPesosSucios(true) }}
+                <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">Criticidad por defecto</label>
+                <select id={`${idCampos}-1`} value={criticidad} onChange={e => { setCriticidad(e.target.value); setPesosSucios(true) }}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500">
                   {CRITICIDADES.map(c => <option key={c.valor} value={c.valor}>{c.etiqueta}</option>)}
                 </select>
                 <p className="text-[11px] text-gray-400 mt-0.5">El gestor la puede ajustar en cada caso según el cargo.</p>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Cobertura mínima</label>
+                <label htmlFor={`${idCampos}-2`} className="block text-xs font-medium text-gray-600 mb-1">Cobertura mínima</label>
                 <div className="flex items-center gap-1.5">
-                  <input value={cobertura} onChange={e => { setCobertura(e.target.value.replace(/[^0-9.,]/g, '')); setPesosSucios(true) }}
+                  <input id={`${idCampos}-2`} value={cobertura} onChange={e => { setCobertura(e.target.value.replace(/[^0-9.,]/g, '')); setPesosSucios(true) }}
                     inputMode="decimal"
                     className="w-24 text-right border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
                   <span className="text-sm text-gray-400">%</span>
@@ -916,7 +963,7 @@ function DocumentosModal({ proceso, onClose, onToast }) {
           {documentos.map(doc => (
             editandoId === doc.id ? (
               <div key={doc.id} className="flex items-center gap-2 p-3 rounded-lg bg-primary-50/50 border border-primary-100">
-                <input value={edicion.nombre} onChange={e => setEdicion(p => ({ ...p, nombre: e.target.value }))} autoFocus
+                <input aria-label="Nombre del documento" value={edicion.nombre} onChange={e => setEdicion(p => ({ ...p, nombre: e.target.value }))} autoFocus
                   className="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
                 <button onClick={() => setEdicion(p => ({ ...p, obligatorio: !p.obligatorio }))}
                   className={`text-xs px-2 py-1 rounded-full border whitespace-nowrap ${edicion.obligatorio ? 'bg-orange-50 border-orange-200 text-orange-600' : 'bg-gray-100 border-gray-200 text-gray-400'}`}>
@@ -942,7 +989,7 @@ function DocumentosModal({ proceso, onClose, onToast }) {
 
       {agregando ? (
         <div className="flex items-center gap-2 p-3 rounded-lg bg-primary-50/50 border border-primary-100">
-          <input value={nuevoNombre} onChange={e => setNuevoNombre(e.target.value)} autoFocus
+          <input aria-label="Nombre del nuevo documento" value={nuevoNombre} onChange={e => setNuevoNombre(e.target.value)} autoFocus
             placeholder="Ej: Cédula por ambas caras"
             className="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
           <button onClick={() => setNuevoObligatorio(v => !v)}
@@ -1132,6 +1179,7 @@ function etiquetaRol(rol) {
 }
 
 function FormProgreso({ progreso, onClose, onGuardado }) {
+  const idCampos = useId()
   const [form, setForm] = useState({
     nombreProgreso: progreso?.nombreProgreso ?? '',
     descripcion:    progreso?.descripcion    ?? '',
@@ -1177,21 +1225,21 @@ function FormProgreso({ progreso, onClose, onGuardado }) {
     <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
       {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{error}</div>}
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Nombre <span className="text-red-500">*</span></label>
-        <input value={form.nombreProgreso} required onChange={e => setForm(p => ({ ...p, nombreProgreso: alCambiarTexto(e.target.value) }))}
+        <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">Nombre <span className="text-red-500">*</span></label>
+        <input id={`${idCampos}-1`} value={form.nombreProgreso} required onChange={e => setForm(p => ({ ...p, nombreProgreso: alCambiarTexto(e.target.value) }))}
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
       </div>
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Descripción</label>
-        <textarea value={form.descripcion} rows={3} onChange={e => setForm(p => ({ ...p, descripcion: alCambiarTexto(e.target.value) }))}
+        <label htmlFor={`${idCampos}-2`} className="block text-xs font-medium text-gray-600 mb-1">Descripción</label>
+        <textarea id={`${idCampos}-2`} value={form.descripcion} rows={3} onChange={e => setForm(p => ({ ...p, descripcion: alCambiarTexto(e.target.value) }))}
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" />
       </div>
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">
+        <label htmlFor={`${idCampos}-3`} className="block text-xs font-medium text-gray-600 mb-1">
           Rol responsable <span className="text-red-500">*</span>
           <span className="ml-1.5 text-gray-400 font-normal">— quién ejecuta este subproceso</span>
         </label>
-        <select value={form.rolResponsable} required
+        <select id={`${idCampos}-3`} value={form.rolResponsable} required
           onChange={e => setForm(p => ({ ...p, rolResponsable: e.target.value }))}
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
           {ROLES_RESPONSABLE.map(r => (
@@ -1201,28 +1249,28 @@ function FormProgreso({ progreso, onClose, onGuardado }) {
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Orden</label>
-          <input type="number" min={0} value={form.orden} onChange={e => setForm(p => ({ ...p, orden: Number(e.target.value) }))}
+          <label htmlFor={`${idCampos}-4`} className="block text-xs font-medium text-gray-600 mb-1">Orden</label>
+          <input id={`${idCampos}-4`} type="number" min={0} value={form.orden} onChange={e => setForm(p => ({ ...p, orden: Number(e.target.value) }))}
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Valor base (COP)</label>
-          <input type="number" min={0} step="0.01" value={form.valor} placeholder="Ej: 80000"
+          <label htmlFor={`${idCampos}-5`} className="block text-xs font-medium text-gray-600 mb-1">Valor base (COP)</label>
+          <input id={`${idCampos}-5`} type="number" min={0} step="0.01" value={form.valor} placeholder="Ej: 80000"
             onChange={e => setForm(p => ({ ...p, valor: e.target.value }))}
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
         </div>
       </div>
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">
+        <label htmlFor={`${idCampos}-6`} className="block text-xs font-medium text-gray-600 mb-1">
           Tiempo estimado
           <span className="ml-1.5 text-gray-400 font-normal">— cuánto puede tardar realizar este subproceso</span>
         </label>
         <div className="flex items-center gap-2">
-          <input type="number" min={0} value={form.horasEstimadas} placeholder="0"
+          <input id={`${idCampos}-6`} type="number" min={0} value={form.horasEstimadas} placeholder="0"
             onChange={e => setForm(p => ({ ...p, horasEstimadas: e.target.value }))}
             className="w-20 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
           <span className="text-xs text-gray-400">horas</span>
-          <input type="number" min={0} max={59} value={form.minutosEstimados} placeholder="0"
+          <input type="number" aria-label="Minutos estimados" min={0} max={59} value={form.minutosEstimados} placeholder="0"
             onChange={e => setForm(p => ({ ...p, minutosEstimados: e.target.value }))}
             className="w-20 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
           <span className="text-xs text-gray-400">minutos</span>
@@ -1269,7 +1317,7 @@ function TablaProgresos({ progresos, cargando, onEditar, onDesactivar, onActivar
 
   return (
     <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-100">
+      <table className="table-stack min-w-full divide-y divide-gray-100">
         <thead className="bg-gray-50/80">
           <tr>
             {cols.map(c => (
@@ -1318,6 +1366,7 @@ function TablaProgresos({ progresos, cargando, onEditar, onDesactivar, onActivar
    CLASIFICACIONES — CRUD
 ══════════════════════════════════════════ */
 function FormClasificacion({ clasificacion, onClose, onGuardado }) {
+  const idCampos = useId()
   const [form, setForm] = useState({
     codigo:      clasificacion?.codigo      ?? '',
     nombre:      clasificacion?.nombre      ?? '',
@@ -1346,21 +1395,21 @@ function FormClasificacion({ clasificacion, onClose, onGuardado }) {
     <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
       {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{error}</div>}
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Código <span className="text-red-500">*</span></label>
-        <input value={form.codigo} onChange={e => setForm(p => ({ ...p, codigo: e.target.value.toUpperCase() }))} required maxLength={5}
+        <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">Código <span className="text-red-500">*</span></label>
+        <input id={`${idCampos}-1`} value={form.codigo} onChange={e => setForm(p => ({ ...p, codigo: e.target.value.toUpperCase() }))} required maxLength={5}
           placeholder="Ej: A, B, EXT…"
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono uppercase focus:outline-none focus:ring-2 focus:ring-primary-500" />
         <p className="text-xs text-gray-400 mt-1">Máximo 5 caracteres. Se convierte automáticamente a mayúsculas.</p>
       </div>
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Nombre <span className="text-red-500">*</span></label>
-        <input value={form.nombre} onChange={e => setForm(p => ({ ...p, nombre: alCambiarTexto(e.target.value) }))} required maxLength={100}
+        <label htmlFor={`${idCampos}-2`} className="block text-xs font-medium text-gray-600 mb-1">Nombre <span className="text-red-500">*</span></label>
+        <input id={`${idCampos}-2`} value={form.nombre} onChange={e => setForm(p => ({ ...p, nombre: alCambiarTexto(e.target.value) }))} required maxLength={100}
           placeholder="Ej: Pruebas de Confiabilidad"
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
       </div>
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Descripción</label>
-        <textarea value={form.descripcion} rows={3} onChange={e => setForm(p => ({ ...p, descripcion: alCambiarTexto(e.target.value) }))}
+        <label htmlFor={`${idCampos}-3`} className="block text-xs font-medium text-gray-600 mb-1">Descripción</label>
+        <textarea id={`${idCampos}-3`} value={form.descripcion} rows={3} onChange={e => setForm(p => ({ ...p, descripcion: alCambiarTexto(e.target.value) }))}
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" />
       </div>
       <div className="flex justify-end gap-3 pt-1">
@@ -1385,7 +1434,7 @@ function TablaClasificaciones({ clasificaciones, cargando, onEditar, onEstado })
 
   return (
     <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-100">
+      <table className="table-stack min-w-full divide-y divide-gray-100">
         <thead className="bg-gray-50/80">
           <tr>
             {['Código', 'Nombre', 'Descripción', 'Estado', '···'].map(h => (
@@ -1600,6 +1649,10 @@ export default function Catalogo() {
     return clasificaciones.filter(c => c.codigo.toLowerCase().includes(q) || c.nombre.toLowerCase().includes(q))
   }, [clasificaciones, busquedaClasif])
 
+  const pagProcesos = usePaginacion(procesosClasificacion, `${clasificacionActiva}|${filtroP}|${busquedaP}`)
+  const pagProgresos = usePaginacion(progresosVisibles, `${filtroProg}|${busquedaProg}`)
+  const pagClasif = usePaginacion(clasificacionesVisibles, busquedaClasif)
+
   const volverAlGrid = () => { setBusquedaP(''); setFiltroP('todos'); navigate('/admin/catalogo') }
 
   const cfgActiva = useMemo(() => {
@@ -1705,7 +1758,7 @@ export default function Catalogo() {
               visibles={procesosClasificacion.length}
             />
             <TablaProcesos
-              procesos={procesosClasificacion}
+              procesos={pagProcesos.visibles}
               clasificaciones={clasificaciones}
               cargando={cargandoProcesos}
               onEditar={setEditandoProceso}
@@ -1713,6 +1766,7 @@ export default function Catalogo() {
               onDocumentos={setDocumentandoProceso}
               onEstado={cambiarEstadoProceso}
             />
+            <Paginacion pagina={pagProcesos.pagina} total={pagProcesos.total} porPagina={pagProcesos.porPagina} onChange={pagProcesos.setPagina} />
           </>
         )
       ) : pestana === 'progresos' ? (
@@ -1723,16 +1777,17 @@ export default function Catalogo() {
             inactivos={progresos.filter(t => !t.activo).length} visibles={progresosVisibles.length}
           />
           <div className="bg-white rounded-2xl ring-1 ring-gray-900/5 shadow-sm overflow-hidden">
-            <TablaProgresos progresos={progresosVisibles} cargando={cargandoProgresos}
+            <TablaProgresos progresos={pagProgresos.visibles} cargando={cargandoProgresos}
               onEditar={setEditandoProgreso} onDesactivar={iniciarDesactivarProgreso} onActivar={activarProgreso}
               ordenCol={ordenColProg} ordenDir={ordenDirProg} onOrdenar={manejarOrdenProg} />
+            <Paginacion pagina={pagProgresos.pagina} total={pagProgresos.total} porPagina={pagProgresos.porPagina} onChange={pagProgresos.setPagina} />
           </div>
         </>
       ) : (
         /* ── Tab clasificaciones ── */
         <>
           <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-            <input type="search" value={busquedaClasif} onChange={e => setBusquedaClasif(e.target.value)}
+            <input aria-label="Buscar por código o nombre…" type="search" value={busquedaClasif} onChange={e => setBusquedaClasif(e.target.value)}
               placeholder="Buscar por código o nombre…"
               className="flex-1 min-w-[200px] max-w-xs border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
             <button onClick={() => setModalCrearClasif(true)}
@@ -1742,11 +1797,12 @@ export default function Catalogo() {
           </div>
           <div className="bg-white rounded-2xl ring-1 ring-gray-900/5 shadow-sm overflow-hidden">
             <TablaClasificaciones
-              clasificaciones={clasificacionesVisibles}
+              clasificaciones={pagClasif.visibles}
               cargando={cargandoClasif}
               onEditar={setEditandoClasif}
               onEstado={cambiarEstadoClasif}
             />
+            <Paginacion pagina={pagClasif.pagina} total={pagClasif.total} porPagina={pagClasif.porPagina} onChange={pagClasif.setPagina} />
           </div>
         </>
       )}

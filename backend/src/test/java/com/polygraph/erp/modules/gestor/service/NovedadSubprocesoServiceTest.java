@@ -18,7 +18,7 @@ import com.polygraph.erp.shared.enums.TipoSeguimientoNovedad;
 import org.mockito.ArgumentCaptor;
 import java.time.LocalDateTime;
 import com.polygraph.erp.modules.servicios.repository.ServicioSubprocesoRepository;
-import com.polygraph.erp.shared.enums.EstadoAsignacion;
+import com.polygraph.erp.shared.enums.EstadoSubproceso;
 import com.polygraph.erp.shared.enums.EstadoNovedad;
 import com.polygraph.erp.shared.enums.Rol;
 import com.polygraph.erp.modules.catalogo.entity.CategoriaNovedad;
@@ -82,7 +82,7 @@ class NovedadSubprocesoServiceTest {
         subproceso = ServicioSubproceso.builder()
                 .id(500L).servicio(servicio).tipoProgreso(tipo)
                 .usuarioAsignado(poligrafista).programadorResponsable(programador)
-                .estado(EstadoAsignacion.ASIGNADO).build();
+                .estado(EstadoSubproceso.EN_EJECUCION).build();
 
         CategoriaNovedad asistencia = CategoriaNovedad.builder().idCategoriaNovedad(1).clave("ASISTENCIA").nombre("Asistencia").color("red").build();
         CategoriaNovedad logistica = CategoriaNovedad.builder().idCategoriaNovedad(2).clave("LOGISTICA").nombre("Logística").color("orange").build();
@@ -144,7 +144,7 @@ class NovedadSubprocesoServiceTest {
     @Test
     @DisplayName("Un subproceso publicado ya no admite novedades")
     void registrar_publicado_409() {
-        subproceso.setEstado(EstadoAsignacion.PUBLICADO);
+        subproceso.setEstado(EstadoSubproceso.PUBLICADO);
         assertThatThrownBy(() -> service.registrar(500L, new RegistrarNovedadRequest(tipo("OTRA").getIdTipoNovedad(), "x"), poligrafista))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.CONFLICT));

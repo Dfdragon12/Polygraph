@@ -13,8 +13,8 @@ const authService = {
 
   // Sirve tanto para registro como login — el backend crea la cuenta si el email de Google es
   // nuevo, o simplemente inicia sesión si ya existe.
-  continuarConGoogle: async (idToken) => {
-    const { data } = await api.post('/auth/google', { idToken })
+  continuarConGoogle: async (idToken, aceptaciones = {}) => {
+    const { data } = await api.post('/auth/google', { idToken, ...aceptaciones })
     return data
   },
 

@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { parseFecha } from '../../utils/fechas'
+import { useId, useState, useEffect, useCallback, useMemo } from 'react'
 import api from '../../services/api'
 import Toast from '../../components/Toast'
 import { Modal } from '../../components/ui/Modal'
@@ -41,7 +42,7 @@ function IconoOjo({ className = 'h-4 w-4' }) {
  */
 function estadoDescuento(d) {
   if (!d.activo) return { label: 'Inactivo', clase: 'bg-red-100 text-red-600', agotado: false }
-  if (d.fechaFin && new Date(d.fechaFin) < new Date()) return { label: 'Vencido', clase: 'bg-gray-200 text-gray-600', agotado: false }
+  if (d.fechaFin && parseFecha(d.fechaFin) < new Date()) return { label: 'Vencido', clase: 'bg-gray-200 text-gray-600', agotado: false }
 
   if (d.codigo) {
     const totalElegibles = d.publicoObjetivo === 'CLIENTES_ESPECIFICOS' ? (d.clientesElegibles?.length ?? 0) : null
@@ -73,6 +74,7 @@ const PUBLICOS = [
 
 /* ─── Formulario crear/editar ─── */
 function FormDescuento({ descuento, clasificaciones, procesos, clientes, onClose, onGuardado }) {
+  const idCampos = useId()
   const [form, setForm] = useState({
     nombre: descuento?.nombre ?? '',
     codigo: descuento?.codigo ?? '',
@@ -146,18 +148,18 @@ function FormDescuento({ descuento, clasificaciones, procesos, clientes, onClose
       {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{error}</div>}
 
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Nombre <span className="text-red-500">*</span></label>
-        <input value={form.nombre} onChange={e => setForm(p => ({ ...p, nombre: e.target.value }))} required
+        <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">Nombre <span className="text-red-500">*</span></label>
+        <input id={`${idCampos}-1`} value={form.nombre} onChange={e => setForm(p => ({ ...p, nombre: e.target.value }))} required
           placeholder="Ej: Black Friday 20%"
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
       </div>
 
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">
+        <label htmlFor={`${idCampos}-2`} className="block text-xs font-medium text-gray-600 mb-1">
           Código
           <span className="ml-1.5 text-gray-400 font-normal">— déjalo vacío para que se aplique automático, sin que el cliente escriba nada</span>
         </label>
-        <input value={form.codigo} onChange={e => setForm(p => ({ ...p, codigo: e.target.value.toUpperCase() }))}
+        <input id={`${idCampos}-2`} value={form.codigo} onChange={e => setForm(p => ({ ...p, codigo: e.target.value.toUpperCase() }))}
           placeholder="Ej: BLACKFRIDAY20"
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono uppercase focus:outline-none focus:ring-2 focus:ring-primary-500" />
         {form.codigo && (
@@ -166,8 +168,8 @@ function FormDescuento({ descuento, clasificaciones, procesos, clientes, onClose
       </div>
 
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Dirigido a <span className="text-red-500">*</span></label>
-        <select value={form.publicoObjetivo} onChange={e => setForm(p => ({ ...p, publicoObjetivo: e.target.value }))} required
+        <label htmlFor={`${idCampos}-3`} className="block text-xs font-medium text-gray-600 mb-1">Dirigido a <span className="text-red-500">*</span></label>
+        <select id={`${idCampos}-3`} value={form.publicoObjetivo} onChange={e => setForm(p => ({ ...p, publicoObjetivo: e.target.value }))} required
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
           {PUBLICOS.map(p => <option key={p.valor} value={p.valor}>{p.etiqueta}</option>)}
         </select>
@@ -175,11 +177,11 @@ function FormDescuento({ descuento, clasificaciones, procesos, clientes, onClose
 
       {form.publicoObjetivo === 'CLIENTES_ESPECIFICOS' && (
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">
+          <label htmlFor={`${idCampos}-4`} className="block text-xs font-medium text-gray-600 mb-1">
             Clientes elegibles <span className="text-red-500">*</span>
             <span className="ml-1.5 text-gray-400 font-normal">— {form.idsClientesElegibles.length} seleccionado{form.idsClientesElegibles.length === 1 ? '' : 's'}</span>
           </label>
-          <input value={busquedaCliente} onChange={e => setBusquedaCliente(e.target.value)}
+          <input id={`${idCampos}-4`} value={busquedaCliente} onChange={e => setBusquedaCliente(e.target.value)}
             placeholder="Buscar cliente por nombre, correo o NIT…"
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-primary-500" />
           <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100">
@@ -200,18 +202,18 @@ function FormDescuento({ descuento, clasificaciones, procesos, clientes, onClose
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Tipo <span className="text-red-500">*</span></label>
-          <select value={form.tipo} onChange={e => setForm(p => ({ ...p, tipo: e.target.value }))} required
+          <label htmlFor={`${idCampos}-5`} className="block text-xs font-medium text-gray-600 mb-1">Tipo <span className="text-red-500">*</span></label>
+          <select id={`${idCampos}-5`} value={form.tipo} onChange={e => setForm(p => ({ ...p, tipo: e.target.value }))} required
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
             <option value="PORCENTAJE">Porcentaje (%)</option>
             <option value="MONTO_FIJO">Monto fijo ($)</option>
           </select>
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">
+          <label htmlFor={`${idCampos}-6`} className="block text-xs font-medium text-gray-600 mb-1">
             Valor <span className="text-red-500">*</span>
           </label>
-          <input type="number" min={0} step="0.01" value={form.valor} required
+          <input id={`${idCampos}-6`} type="number" min={0} step="0.01" value={form.valor} required
             onChange={e => setForm(p => ({ ...p, valor: e.target.value }))}
             placeholder={form.tipo === 'PORCENTAJE' ? 'Ej: 20' : 'Ej: 5000'}
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
@@ -220,11 +222,11 @@ function FormDescuento({ descuento, clasificaciones, procesos, clientes, onClose
 
       {form.tipo === 'PORCENTAJE' && (
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">
+          <label htmlFor={`${idCampos}-7`} className="block text-xs font-medium text-gray-600 mb-1">
             Tope de descuento (COP)
             <span className="ml-1.5 text-gray-400 font-normal">— opcional, límite en pesos para que el % no reduzca de más en compras grandes</span>
           </label>
-          <input type="number" min={0} step="0.01" value={form.montoMaximoDescuento}
+          <input id={`${idCampos}-7`} type="number" min={0} step="0.01" value={form.montoMaximoDescuento}
             onChange={e => setForm(p => ({ ...p, montoMaximoDescuento: e.target.value }))}
             placeholder="Sin límite"
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
@@ -232,8 +234,8 @@ function FormDescuento({ descuento, clasificaciones, procesos, clientes, onClose
       )}
 
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Aplica a <span className="text-red-500">*</span></label>
-        <select value={form.alcance} onChange={e => setForm(p => ({ ...p, alcance: e.target.value }))} required
+        <label htmlFor={`${idCampos}-8`} className="block text-xs font-medium text-gray-600 mb-1">Aplica a <span className="text-red-500">*</span></label>
+        <select id={`${idCampos}-8`} value={form.alcance} onChange={e => setForm(p => ({ ...p, alcance: e.target.value }))} required
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
           {ALCANCES.map(a => <option key={a.valor} value={a.valor}>{a.etiqueta}</option>)}
         </select>
@@ -241,8 +243,8 @@ function FormDescuento({ descuento, clasificaciones, procesos, clientes, onClose
 
       {form.alcance === 'CATEGORIA' && (
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Categoría <span className="text-red-500">*</span></label>
-          <select value={form.idClasificacion} onChange={e => setForm(p => ({ ...p, idClasificacion: e.target.value }))} required
+          <label htmlFor={`${idCampos}-9`} className="block text-xs font-medium text-gray-600 mb-1">Categoría <span className="text-red-500">*</span></label>
+          <select id={`${idCampos}-9`} value={form.idClasificacion} onChange={e => setForm(p => ({ ...p, idClasificacion: e.target.value }))} required
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
             <option value="">Seleccionar categoría…</option>
             {clasificaciones.map(c => <option key={c.idClasificacion} value={c.idClasificacion}>{c.codigo} — {c.nombre}</option>)}
@@ -252,8 +254,8 @@ function FormDescuento({ descuento, clasificaciones, procesos, clientes, onClose
 
       {form.alcance === 'PROCESO' && (
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Proceso <span className="text-red-500">*</span></label>
-          <select value={form.idProceso} onChange={e => setForm(p => ({ ...p, idProceso: e.target.value }))} required
+          <label htmlFor={`${idCampos}-10`} className="block text-xs font-medium text-gray-600 mb-1">Proceso <span className="text-red-500">*</span></label>
+          <select id={`${idCampos}-10`} value={form.idProceso} onChange={e => setForm(p => ({ ...p, idProceso: e.target.value }))} required
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
             <option value="">Seleccionar proceso…</option>
             {procesos.map(p => <option key={p.idProceso} value={p.idProceso}>{p.nombreProceso}</option>)}
@@ -263,13 +265,13 @@ function FormDescuento({ descuento, clasificaciones, procesos, clientes, onClose
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Vigente desde</label>
-          <input type="datetime-local" value={form.fechaInicio} onChange={e => setForm(p => ({ ...p, fechaInicio: e.target.value }))}
+          <label htmlFor={`${idCampos}-11`} className="block text-xs font-medium text-gray-600 mb-1">Vigente desde</label>
+          <input id={`${idCampos}-11`} type="datetime-local" value={form.fechaInicio} onChange={e => setForm(p => ({ ...p, fechaInicio: e.target.value }))}
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Vigente hasta</label>
-          <input type="datetime-local" value={form.fechaFin} onChange={e => setForm(p => ({ ...p, fechaFin: e.target.value }))}
+          <label htmlFor={`${idCampos}-12`} className="block text-xs font-medium text-gray-600 mb-1">Vigente hasta</label>
+          <input id={`${idCampos}-12`} type="datetime-local" value={form.fechaFin} onChange={e => setForm(p => ({ ...p, fechaFin: e.target.value }))}
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
         </div>
       </div>
@@ -530,11 +532,11 @@ export default function Descuentos() {
           <div className="text-center py-16 text-gray-400 text-sm">No hay descuentos registrados.</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-100">
+            <table className="table-stack min-w-full divide-y divide-gray-100">
               <thead className="bg-gray-50">
                 <tr>
                   {['Nombre', 'Código', 'Valor', 'Aplica a', 'Dirigido a', 'Usos', 'Vigencia', 'Estado', '···'].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>
+                    <th key={h} className={`px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider ${h === 'Usos' ? 'hidden xl:table-cell' : ''}`}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -543,17 +545,17 @@ export default function Descuentos() {
                   const estado = estadoDescuento(d)
                   return (
                   <tr key={d.idDescuento} className="hover:bg-gray-50/70 transition-colors">
-                    <td className="px-4 py-3 text-sm font-medium text-gray-900">{d.nombre}</td>
-                    <td className="px-4 py-3 text-sm">
+                    <td className="px-3 py-3 text-sm font-medium text-gray-900">{d.nombre}</td>
+                    <td className="px-3 py-3 text-sm">
                       {d.codigo
                         ? <span className="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{d.codigo}</span>
                         : <span className="text-xs text-gray-400 italic">Automático</span>}
                     </td>
-                    <td className="px-4 py-3 text-sm font-semibold text-primary-700 whitespace-nowrap">
+                    <td className="px-3 py-3 text-sm font-semibold text-primary-700 whitespace-nowrap">
                       {d.tipo === 'PORCENTAJE' ? `${d.valor}%` : fmtValor(d.valor)}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{alcanceEtiqueta(d)}</td>
-                    <td className="px-4 py-3 text-xs text-gray-600">
+                    <td className="px-3 py-3 text-sm text-gray-600">{alcanceEtiqueta(d)}</td>
+                    <td className="px-3 py-3 text-xs text-gray-600">
                       {d.publicoObjetivo === 'CLIENTES_ESPECIFICOS' ? (
                         <span title={d.clientesElegibles?.map(c => c.nombreCliente).join(', ')}
                           className="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
@@ -563,18 +565,18 @@ export default function Descuentos() {
                         <span className="text-gray-400">Todos</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-xs text-gray-600">{d.vecesUsado}</td>
-                    <td className="px-4 py-3 text-xs text-gray-500">
+                    <td className="hidden xl:table-cell px-3 py-3 text-xs text-gray-600">{d.vecesUsado}</td>
+                    <td className="px-3 py-3 text-xs text-gray-500">
                       {d.fechaInicio || d.fechaFin
                         ? <>{fmtFecha(d.fechaInicio) ?? 'Ahora'} → {fmtFecha(d.fechaFin) ?? 'Sin fin'}</>
                         : <span className="text-gray-300">Sin vencimiento</span>}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${estado.clase}`}>
                         {estado.label}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-center">
+                    <td className="px-3 py-3 text-center">
                       <MenuAcciones opciones={[
                         { label: 'Ver desglose', icono: <IconoOjo className="h-3.5 w-3.5" />, onClick: () => setViendoDetalle(d.idDescuento) },
                       ]} />

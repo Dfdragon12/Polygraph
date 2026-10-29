@@ -1,3 +1,4 @@
+import { parseFecha } from '../../utils/fechas'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import catalogoService from '../../services/catalogoService'
@@ -53,7 +54,7 @@ function IconoCorazon({ relleno, className = 'h-4 w-4' }) {
 
 function formatFecha(iso) {
   if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
+  return parseFecha(iso).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 const ESTADO_ORDEN_CFG = {
@@ -470,7 +471,7 @@ function TabCatalogo({ onToast }) {
           <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
           </svg>
-          <input type="search" value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
+          <input aria-label="Buscar servicios por nombre o por lo que necesita" type="search" value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
             placeholder='Busca por nombre o cuéntanos qué necesitas — ej. "validar un robo"'
             className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
         </div>
@@ -686,7 +687,7 @@ function TabHistorial({ onToast }) {
     <>
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="table-stack w-full text-sm">
             <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
               <tr>
                 <th className="px-4 py-3 text-left">Referencia</th>
@@ -807,7 +808,7 @@ function TabSaldo() {
   return (
     <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="table-stack w-full text-sm">
           <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
             <tr>
               <th className="px-4 py-3 text-left">Servicio</th>
@@ -878,10 +879,10 @@ export default function ComprarServicios() {
         </p>
       </div>
 
-      <nav className="flex gap-1 overflow-x-auto border-b border-gray-200 pb-px">
+      <nav className="flex flex-wrap gap-x-1 border-b border-gray-200 pb-px">
         {TABS.map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)}
-            className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors ${
+            className={`px-3 sm:px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors ${
               tab === t.key
                 ? 'border-primary-600 text-primary-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700'

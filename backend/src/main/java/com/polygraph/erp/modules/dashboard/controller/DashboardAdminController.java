@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class DashboardAdminController {
 
     private final DashboardAdminService service;
+    private final com.polygraph.erp.modules.dashboard.service.PanoramaAdminService panorama;
 
     @GetMapping
     public ResponseEntity<DashboardAdminResponse> obtener() {
@@ -28,5 +29,19 @@ public class DashboardAdminController {
     public ResponseEntity<ServiciosPorEstadoResponse> serviciosPorEstado(
             @RequestParam(required = false) Integer idCliente) {
         return ResponseEntity.ok(service.serviciosPorEstado(idCliente));
+    }
+
+    /** Todo el sistema en un periodo (7, 30 o 90 días). */
+    @GetMapping("/panorama")
+    public ResponseEntity<com.polygraph.erp.modules.dashboard.dto.PanoramaAdminResponse> panorama(
+            @RequestParam(defaultValue = "30") int dias) {
+        return ResponseEntity.ok(panorama.obtener(dias));
+    }
+
+    /** Las filas más importantes de un tema del tablero. */
+    @GetMapping("/detalle/{tema}")
+    public ResponseEntity<com.polygraph.erp.modules.dashboard.dto.PanoramaAdminResponse.Detalle> detalle(
+            @org.springframework.web.bind.annotation.PathVariable String tema) {
+        return ResponseEntity.ok(panorama.detalle(tema));
     }
 }

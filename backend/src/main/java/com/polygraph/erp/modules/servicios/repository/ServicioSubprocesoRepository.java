@@ -1,7 +1,7 @@
 package com.polygraph.erp.modules.servicios.repository;
 
 import com.polygraph.erp.modules.servicios.entity.ServicioSubproceso;
-import com.polygraph.erp.shared.enums.EstadoAsignacion;
+import com.polygraph.erp.shared.enums.EstadoSubproceso;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
@@ -21,13 +21,23 @@ public interface ServicioSubprocesoRepository
 
     List<ServicioSubproceso> findByFechaProgramadaBetween(LocalDateTime desde, LocalDateTime hasta);
 
+    /** SE-07: citas en ejecución cuyo informe no se inició y cuya hora (más la tolerancia) ya pasó — la bandeja «Por confirmar». */
+    @Query("select sp from ServicioSubproceso sp where sp.estado = :estado and sp.iniciado = false and sp.fechaProgramada is not null "
+            + "and sp.fechaProgramada <= :limite and sp.tipoProgreso.rolResponsable in :roles order by sp.fechaProgramada")
+    List<ServicioSubproceso> citasSinConfirmar(@Param("estado") EstadoSubproceso estado, @Param("limite") LocalDateTime limite,
+                                               @Param("roles") List<com.polygraph.erp.shared.enums.Rol> roles);
+
+    /** Los subprocesos de un estado cuyo tipo es de uno de esos roles (p. ej. las citas REPROGRAMADAS). */
+    @Query("select sp from ServicioSubproceso sp where sp.estado = :estado and sp.tipoProgreso.rolResponsable in :roles order by sp.fechaProgramada")
+    List<ServicioSubproceso> porEstadoYRoles(@Param("estado") EstadoSubproceso estado, @Param("roles") List<com.polygraph.erp.shared.enums.Rol> roles);
+
     boolean existsByServicio_IdServicioAndTipoProgreso_IdTipoProgreso(Integer idServicio, Integer idTipoProgreso);
 
     /** Carga actual de un empleado — usada para repartir la autoasignación al que tenga menos pendientes. */
-    long countByUsuarioAsignado_IdUsuarioAndEstado(Long idUsuario, EstadoAsignacion estado);
+    long countByUsuarioAsignado_IdUsuarioAndEstado(Long idUsuario, EstadoSubproceso estado);
 
     /** Agenda vigente de un empleado — usada para detectar choques de horario al programar. */
-    List<ServicioSubproceso> findByUsuarioAsignado_IdUsuarioAndEstado(Long idUsuario, EstadoAsignacion estado);
+    List<ServicioSubproceso> findByUsuarioAsignado_IdUsuarioAndEstado(Long idUsuario, EstadoSubproceso estado);
 
     /** ¿Este empleado tiene algún subproceso (de cualquier tipo, en cualquier estado) asignado
      *  para algún servicio de este candidato? Usado para que ANALISTA_INTERNO/POLIGRAFISTA/

@@ -14,4 +14,7 @@ public record TipoNovedadResponse(
         String textoAyuda,
         Integer orden,
         Boolean activo,
-        long enUso) {}
+        long enUso,
+        Boolean visibleCliente,
+        Boolean pausaReloj,
+        String imputableA) {}

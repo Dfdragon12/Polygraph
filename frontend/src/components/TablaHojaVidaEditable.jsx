@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useId } from 'react'
+import { asociarEtiqueta } from '../utils/asociarEtiqueta'
 import formulariosService from '../services/formulariosService'
 
 let contador = 0
@@ -28,15 +29,16 @@ function InputPorTipoSimple({ tipoDato, value, onChange, disabled }) {
 }
 
 function Campo({ etiqueta, tipoDato, children }) {
+  const id = useId()
   return (
     <div>
-      <label className="flex items-center gap-1.5 text-xs font-medium text-gray-500 mb-1">
+      <label htmlFor={id} className="flex items-center gap-1.5 text-xs font-medium text-gray-500 mb-1">
         <span className="flex-shrink-0 w-4 h-4 rounded bg-gray-100 text-gray-400 text-[9px] flex items-center justify-center">
           {ICONO_TIPO_DATO[tipoDato] ?? ''}
         </span>
         <span className="truncate">{etiqueta}</span>
       </label>
-      {children}
+      {asociarEtiqueta(children, { id })}
     </div>
   )
 }

@@ -49,6 +49,9 @@ public class CandidatoHojaVidaService {
         if (!CandidatoInfoService.CLAVES_TABLAS_FIJAS.contains(clave)) {
             throw new ApiException("Tabla inválida: " + clave, HttpStatus.BAD_REQUEST);
         }
+        if (CandidatoInfoService.TABLAS_SOLO_LECTURA.contains(clave)) {
+            throw new ApiException("Las declaraciones solo las responde el candidato desde su link.", HttpStatus.FORBIDDEN);
+        }
         HojaVidaEvaluado hv = hojaVidaEvaluadoRepository.findByCandidato_IdCandidato(idCandidato)
                 .orElseGet(() -> hojaVidaEvaluadoRepository.save(HojaVidaEvaluado.builder()
                         .candidato(candidato).autorizacionDatos(false).completado(false).build()));
@@ -80,6 +83,8 @@ public class CandidatoHojaVidaService {
             r.setParentesco(texto(v.get("parentesco")));
             r.setTelefono(texto(v.get("telefono")));
             r.setTiempoConocimiento(texto(v.get("tiempo_conocimiento")));
+            if (v.containsKey("confirma_no_familiar")) r.setConfirmaNoFamiliar(booleano(v.get("confirma_no_familiar")));
+            if (v.containsKey("hablo_ultimos_30_dias")) r.setHabloUltimos30Dias(booleano(v.get("hablo_ultimos_30_dias")));
             resultado.add(r);
         }
         hv.getReferencias().clear();
@@ -103,6 +108,9 @@ public class CandidatoHojaVidaService {
             e.setFechaFin(fecha(v.get("fecha_fin")));
             e.setEnCurso(booleano(v.get("en_curso")));
             e.setCiudad(texto(v.get("ciudad")));
+            if (v.containsKey("estado")) e.setEstado(texto(v.get("estado")));
+            if (v.containsKey("en_exterior")) e.setEnExterior(booleano(v.get("en_exterior")));
+            if (v.containsKey("pais_exterior")) e.setPaisExterior(texto(v.get("pais_exterior")));
             resultado.add(e);
         }
         hv.getEducacion().clear();
@@ -133,6 +141,12 @@ public class CandidatoHojaVidaService {
             ex.setMotivoRetiro(texto(v.get("motivo_retiro")));
             ex.setNombreJefe(texto(v.get("nombre_jefe")));
             ex.setCargoJefe(texto(v.get("cargo_jefe")));
+            // Columnas nuevas (V211): una plantilla armada antes no las manda — no se borran.
+            if (v.containsKey("tipo_contrato")) ex.setTipoContrato(texto(v.get("tipo_contrato")));
+            if (v.containsKey("salario")) ex.setSalario(salario(v.get("salario")));
+            if (v.containsKey("llamados_atencion")) ex.setLlamadosAtencion(texto(v.get("llamados_atencion")));
+            if (v.containsKey("contratado_por_temporal")) ex.setContratadoPorTemporal(booleano(v.get("contratado_por_temporal")));
+            if (v.containsKey("nombre_temporal")) ex.setNombreTemporal(texto(v.get("nombre_temporal")));
             resultado.add(ex);
         }
         hv.getExperienciaLaboral().clear();
@@ -157,6 +171,8 @@ public class CandidatoHojaVidaService {
             String diasTexto = texto(v.get("dias_inactivo"));
             in.setDiasInactivo(diasTexto != null ? Integer.parseInt(diasTexto) : (int) (fechaFin.toEpochDay() - fechaInicio.toEpochDay()));
             in.setJustificacion(texto(v.get("justificacion")));
+            if (v.containsKey("actividad")) in.setActividad(texto(v.get("actividad")));
+            if (v.containsKey("quien_confirma")) in.setQuienConfirma(texto(v.get("quien_confirma")));
             in.setRequiereCuestionario(Boolean.TRUE.equals(booleano(v.get("requiere_cuestionario"))));
             resultado.add(in);
         }
@@ -194,6 +210,13 @@ public class CandidatoHojaVidaService {
         }
     }
 
+    private Long salario(String v) {
+        String digitos = v == null ? "" : v.replaceAll("[^0-9]", "");
+        if (digitos.isEmpty()) return null;
+        if (digitos.length() > 15) throw new ApiException("Salario inválido: " + v, HttpStatus.BAD_REQUEST);
+        return Long.parseLong(digitos);
+    }
+
     private Boolean booleano(String v) {
         if (v == null || v.isBlank()) return null;
         return Boolean.parseBoolean(v);
@@ -201,6 +224,7 @@ public class CandidatoHojaVidaService {
 
     private CandidatoHojaVidaResponse toResponse(Candidato candidato, HojaVidaEvaluado hv) {
         List<TablaFijaEditableResponse> tablas = CandidatoInfoService.CLAVES_TABLAS_FIJAS.stream()
+                .filter(clave -> !CandidatoInfoService.TABLAS_SOLO_LECTURA.contains(clave))
                 .map(clave -> tablaResponseDe(clave, hv))
                 .toList();
         String nombreCompleto = (candidato.getNombres() + " " + (candidato.getApellidos() != null ? candidato.getApellidos() : "")).trim();
@@ -218,13 +242,17 @@ public class CandidatoHojaVidaService {
             case "referencias" -> (hv == null ? List.<ReferenciaPersonalEvaluado>of() : hv.getReferencias()).stream()
                     .map(r -> new TablaFijaEditableResponse.FilaFija(r.getId(), mapaOrdenado(
                             "nombre", val(r.getNombre()), "parentesco", val(r.getParentesco()),
-                            "telefono", val(r.getTelefono()), "tiempo_conocimiento", val(r.getTiempoConocimiento()))))
+                            "telefono", val(r.getTelefono()), "tiempo_conocimiento", val(r.getTiempoConocimiento()),
+                            "confirma_no_familiar", valBooleano(r.getConfirmaNoFamiliar()),
+                            "hablo_ultimos_30_dias", valBooleano(r.getHabloUltimos30Dias()))))
                     .toList();
             case "educacion" -> (hv == null ? List.<EducacionEvaluado>of() : hv.getEducacion()).stream()
                     .map(e -> new TablaFijaEditableResponse.FilaFija(e.getId(), mapaOrdenado(
                             "nivel", val(e.getNivel()), "institucion", val(e.getInstitucion()), "titulo", val(e.getTitulo()),
                             "fecha_inicio", valFecha(e.getFechaInicio()), "fecha_fin", valFecha(e.getFechaFin()),
-                            "en_curso", valBooleano(e.getEnCurso()), "ciudad", val(e.getCiudad()))))
+                            "en_curso", valBooleano(e.getEnCurso()), "ciudad", val(e.getCiudad()),
+                            "estado", val(e.getEstado()), "en_exterior", valBooleano(e.getEnExterior()),
+                            "pais_exterior", val(e.getPaisExterior()))))
                     .toList();
             case "experiencia_laboral" -> (hv == null ? List.<ExperienciaLaboralEvaluado>of() : hv.getExperienciaLaboral()).stream()
                     .map(ex -> new TablaFijaEditableResponse.FilaFija(ex.getId(), mapaOrdenado(
@@ -232,13 +260,19 @@ public class CandidatoHojaVidaService {
                             "fecha_inicio", valFecha(ex.getFechaInicio()), "fecha_fin", valFecha(ex.getFechaFin()),
                             "labora_actualmente", valBooleano(ex.getLaboraActualmente()), "ciudad", val(ex.getCiudad()),
                             "telefono_empresa", val(ex.getTelefonoEmpresa()), "motivo_retiro", val(ex.getMotivoRetiro()),
-                            "nombre_jefe", val(ex.getNombreJefe()), "cargo_jefe", val(ex.getCargoJefe()))))
+                            "nombre_jefe", val(ex.getNombreJefe()), "cargo_jefe", val(ex.getCargoJefe()),
+                            "tipo_contrato", val(ex.getTipoContrato()),
+                            "salario", ex.getSalario() == null ? "" : String.valueOf(ex.getSalario()),
+                            "llamados_atencion", val(ex.getLlamadosAtencion()),
+                            "contratado_por_temporal", valBooleano(ex.getContratadoPorTemporal()),
+                            "nombre_temporal", val(ex.getNombreTemporal()))))
                     .toList();
             case "inactividades" -> (hv == null ? List.<InactividadLaboralEvaluado>of() : hv.getInactividades()).stream()
                     .map(in -> new TablaFijaEditableResponse.FilaFija(in.getId(), mapaOrdenado(
                             "fecha_inicio", valFecha(in.getFechaInicio()), "fecha_fin", valFecha(in.getFechaFin()),
                             "dias_inactivo", in.getDiasInactivo() == null ? "" : String.valueOf(in.getDiasInactivo()),
-                            "justificacion", val(in.getJustificacion()), "requiere_cuestionario", valBooleano(in.getRequiereCuestionario()))))
+                            "justificacion", val(in.getJustificacion()), "actividad", val(in.getActividad()),
+                            "quien_confirma", val(in.getQuienConfirma()), "requiere_cuestionario", valBooleano(in.getRequiereCuestionario()))))
                     .toList();
             default -> List.of();
         };

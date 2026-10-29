@@ -28,16 +28,19 @@ const formulariosService = {
   obtenerFormulario: (idServicioSubproceso) =>
     api.get(`/gestor/formularios/subproceso/${idServicioSubproceso}`).then(r => r.data),
 
-  guardarFormulario: (idServicioSubproceso, secciones) =>
-    api.put(`/gestor/formularios/subproceso/${idServicioSubproceso}`, { secciones }).then(r => r.data),
+  // seccionesOmitidas: ids de las secciones opcionales que quien diligencia quitó (V212)
+  guardarFormulario: (idServicioSubproceso, secciones, seccionesOmitidas = []) =>
+    api.put(`/gestor/formularios/subproceso/${idServicioSubproceso}`, { secciones, seccionesOmitidas }).then(r => r.data),
 
   descargarDocumento: (idServicioSubproceso) =>
     api.get(`/gestor/formularios/subproceso/${idServicioSubproceso}/documento`, { responseType: 'blob' }).then(r => r.data),
 
   // Mismo documento que descargarDocumento (mismo .docx con los marcadores ya resueltos),
-  // convertido a PDF en el backend — mismo diseño que armó el administrador en Word.
-  descargarDocumentoPdf: (idServicioSubproceso) =>
-    api.get(`/gestor/formularios/subproceso/${idServicioSubproceso}/documento-pdf`, { responseType: 'blob' }).then(r => r.data),
+  // convertido a PDF en el backend — mismo diseño que armó el administrador en Word. Responde 202
+  // con un trabajo de la cola: seguirlo con esperarTrabajo y bajar con
+  // trabajoService.descargarResultado (ver services/trabajoService.js).
+  solicitarDocumentoPdf: (idServicioSubproceso) =>
+    api.post(`/gestor/formularios/subproceso/${idServicioSubproceso}/documento-pdf`).then(r => r.data),
 
   // Qué tan lleno está el formulario — para que gestor vea el avance sin abrir cada uno.
   progreso: (idServicioSubproceso) =>
@@ -45,6 +48,12 @@ const formulariosService = {
 
   // Ficha del candidato del subproceso: datos agrupados + soportes que cargó (cruzados con los que
   // pide el proceso) — { grupos: [{ nombre, campos }], soportes: [...] }.
+  // Aprobar (APROBADO) o devolver (DEVUELTO + observación) un soporte del candidato — devuelve
+  // la ficha actualizada.
+  revisarSoporte: (idServicioSubproceso, idDocumento, estado, observacion) =>
+    api.patch(`/gestor/formularios/subproceso/${idServicioSubproceso}/soportes/${idDocumento}/revision`,
+      { estado, observacion }).then(r => r.data),
+
   fichaCandidato: (idServicioSubproceso) =>
     api.get(`/gestor/formularios/subproceso/${idServicioSubproceso}/candidato`).then(r => r.data),
 
@@ -92,6 +101,10 @@ const formulariosService = {
 
   obtenerCamposClienteDisponibles: () =>
     api.get('/catalogo/campos-cliente').then(r => r.data),
+
+  // Datos del estudio (N° de estudio, fecha de emisión, cliente, cargo, profesional).
+  obtenerCamposServicioDisponibles: () =>
+    api.get('/catalogo/campos-servicio').then(r => r.data),
 
   subirPlantillaWord: (idTipoProgreso, archivo) => {
     const formData = new FormData()

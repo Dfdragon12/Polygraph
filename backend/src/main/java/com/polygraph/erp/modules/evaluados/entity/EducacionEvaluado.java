@@ -43,4 +43,14 @@ public class EducacionEvaluado {
 
     @Column(name = "ciudad", length = 150)
     private String ciudad;
+
+    /** Graduado, Terminó materias (pendiente de grado), En curso, Retirado sin graduarse, Aplazado. */
+    @Column(name = "estado", length = 40)
+    private String estado;
+
+    @Column(name = "en_exterior")
+    private Boolean enExterior;
+
+    @Column(name = "pais_exterior", length = 100)
+    private String paisExterior;
 }

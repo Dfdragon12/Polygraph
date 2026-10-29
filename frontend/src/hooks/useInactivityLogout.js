@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from './useAuth'
 
 const EVENTOS_ACTIVIDAD = ['mousedown', 'mousemove', 'keydown', 'wheel', 'scroll', 'touchstart']
@@ -10,10 +10,13 @@ const TIEMPO_ALERTA_MS = 60 * 1000 // el aviso aparece 1 minuto antes de cerrar 
 /**
  * Cierra la sesión de cualquier usuario autenticado tras 15 minutos sin actividad (mouse, teclado,
  * scroll, touch), avisando con 1 minuto de anticipación para que pueda seguir conectado.
+ * No corre en el portal del candidato (/evaluado/...): el candidato entra por su link, no tiene sesión,
+ * y aunque en ese navegador haya un usuario interno conectado, el aviso no debe salirle a él.
  */
 export default function useInactivityLogout() {
   const { usuario, logout } = useAuth()
   const navigate = useNavigate()
+  const enPortalCandidato = useLocation().pathname.startsWith('/evaluado/')
   const idleTimeoutRef = useRef(null)
   const countdownIntervalRef = useRef(null)
   const reiniciarTimerRef = useRef(() => {})
@@ -26,7 +29,10 @@ export default function useInactivityLogout() {
   }, [logout, navigate])
 
   useEffect(() => {
-    if (!usuario) return
+    if (!usuario || enPortalCandidato) {
+      setMostrarAlerta(false)
+      return
+    }
 
     const limpiarTimers = () => {
       clearTimeout(idleTimeoutRef.current)
@@ -56,7 +62,7 @@ export default function useInactivityLogout() {
       limpiarTimers()
       EVENTOS_ACTIVIDAD.forEach((evento) => window.removeEventListener(evento, reiniciarTimer))
     }
-  }, [usuario, cerrarSesion])
+  }, [usuario, enPortalCandidato, cerrarSesion])
 
   // Botón "Seguir conectado" del aviso — reinicia el ciclo completo, igual que cualquier otra actividad.
   const seguirConectado = useCallback(() => reiniciarTimerRef.current(), [])

@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { parseFecha } from '../../utils/fechas'
+import { useId, useState, useEffect, useCallback, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import api from '../../services/api'
 import Toast from '../../components/Toast'
@@ -61,13 +62,14 @@ function Badge({ activo }) {
 }
 
 function Campo({ label, name, value, onChange, type = 'text', required = false, placeholder = '' }) {
+  const id = useId()
   return (
     <div>
-      <label className="block text-xs font-medium text-gray-600 mb-1">
+      <label htmlFor={id} className="block text-xs font-medium text-gray-600 mb-1">
         {label} {required && <span className="text-red-500">*</span>}
       </label>
       <input
-        name={name} type={type} value={value} onChange={onChange}
+        id={id} name={name} type={type} value={value} onChange={onChange}
         required={required} placeholder={placeholder}
         className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
       />
@@ -160,7 +162,7 @@ function SelectorMultiCiudad({ value, onChange, conSala = false, tieneError }) {
             <CiudadSelect value={idCiudadNueva} onChange={setIdCiudadNueva} placeholder="Busca la ciudad…" />
           </div>
           {conSala && (
-            <input type="number" min={1} value={salaNueva} onChange={e => setSalaNueva(e.target.value)}
+            <input aria-label="Número de sala" type="number" min={1} value={salaNueva} onChange={e => setSalaNueva(e.target.value)}
               placeholder="N.° sala"
               className="w-20 border border-gray-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
           )}
@@ -224,7 +226,7 @@ function IconoLlave({ className = 'h-3.5 w-3.5' }) {
 /* ─── Helpers de fecha ─── */
 function fmtFecha(iso) {
   if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
+  return parseFecha(iso).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 function fmtFechaHora(iso) {
   if (!iso) return '—'
@@ -373,7 +375,7 @@ function Th({ children, sortable, onClick, ordenCol, col, ordenDir, cls = '' }) 
   return (
     <th
       onClick={sortable ? onClick : undefined}
-      className={`px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider select-none whitespace-nowrap ${
+      className={`px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider select-none whitespace-nowrap ${
         sortable ? 'cursor-pointer hover:text-gray-700' : ''
       } ${cls}`}
     >
@@ -415,17 +417,17 @@ function TablaInternos({ usuarios, cargando, onCambiarEstado, onEditar, onDetall
         <tbody className="divide-y divide-gray-100">
           {usuarios.map(u => (
             <tr key={u.idUsuario} className="hover:bg-gray-50/70 transition-colors">
-              <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">
+              <td className="px-3 py-3 font-medium text-gray-900">
                 {u.nombre} {u.apellido ?? ''}
-                <p className="sm:hidden text-xs font-normal text-gray-500 mt-0.5">{u.email}</p>
+                <p className="sm:hidden text-xs font-normal text-gray-500 mt-0.5 break-all">{u.email}</p>
                 <p className="md:hidden text-xs font-normal text-primary-500 mt-0.5">{ETIQUETA_ROL[u.rol] ?? u.rol}</p>
               </td>
-              <td className="hidden sm:table-cell px-4 py-3 text-gray-600 whitespace-nowrap">{u.email}</td>
-              <td className="hidden md:table-cell px-4 py-3 text-gray-600 whitespace-nowrap">{ETIQUETA_ROL[u.rol] ?? u.rol}</td>
-              <td className="hidden lg:table-cell px-4 py-3 text-gray-500">{u.telefono ?? '—'}</td>
-              <td className="hidden lg:table-cell px-4 py-3 text-gray-500 whitespace-nowrap">{u.nombreCiudad ?? '—'}</td>
-              <td className="px-4 py-3"><Badge activo={u.activo} /></td>
-              <td className="px-4 py-3 text-center">
+              <td className="hidden sm:table-cell px-3 py-3 text-gray-600 break-all">{u.email}</td>
+              <td className="hidden md:table-cell px-3 py-3 text-gray-600 whitespace-nowrap">{ETIQUETA_ROL[u.rol] ?? u.rol}</td>
+              <td className="hidden lg:table-cell px-3 py-3 text-gray-500">{u.telefono ?? '—'}</td>
+              <td className="hidden lg:table-cell px-3 py-3 text-gray-500 whitespace-nowrap">{u.nombreCiudad ?? '—'}</td>
+              <td className="px-3 py-3"><Badge activo={u.activo} /></td>
+              <td className="px-3 py-3 text-center">
                 <MenuAcciones opciones={[
                   { label: 'Detalle', icono: <IconoOjo />, onClick: () => onDetalle(u) },
                   { label: 'Editar', icono: <IconoLapiz />, onClick: () => onEditar(u) },
@@ -557,6 +559,7 @@ function ModalEditar({ usuario, onClose, onGuardado }) {
 
 /* ─── Formulario compartido (crear y editar) ─── */
 function FormularioUsuario({ form, onChange, onSubmit, onCancel, guardando, error, esEdicion }) {
+  const idCampos = useId()
   const [mostrarPwd, setMostrarPwd] = useState(false)
   const [mostrarConfirm, setMostrarConfirm] = useState(false)
   const [confirmPwd, setConfirmPwd] = useState('')
@@ -634,11 +637,11 @@ function FormularioUsuario({ form, onChange, onSubmit, onCancel, guardando, erro
       {!esEdicion && (
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">
+            <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">
               Contraseña <span className="text-gray-400 font-normal text-[10px]">(vacío = usa N.° documento)</span>
             </label>
             <div className="relative">
-              <input
+              <input id={`${idCampos}-1`}
                 name="password" type={mostrarPwd ? 'text' : 'password'}
                 value={form.password} onChange={onChange}
                 minLength={form.password ? 8 : undefined}
@@ -653,9 +656,9 @@ function FormularioUsuario({ form, onChange, onSubmit, onCancel, guardando, erro
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Confirmar</label>
+            <label htmlFor={`${idCampos}-2`} className="block text-xs font-medium text-gray-600 mb-1">Confirmar</label>
             <div className="relative">
-              <input
+              <input id={`${idCampos}-2`}
                 type={mostrarConfirm ? 'text' : 'password'}
                 value={confirmPwd}
                 onChange={e => setConfirmPwd(e.target.value)}
@@ -678,10 +681,10 @@ function FormularioUsuario({ form, onChange, onSubmit, onCancel, guardando, erro
 
       {/* Rol */}
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">
+        <label htmlFor={`${idCampos}-3`} className="block text-xs font-medium text-gray-600 mb-1">
           Rol <span className="text-red-500">*</span>
         </label>
-        <select name="rol" value={form.rol} onChange={onChange} required
+        <select id={`${idCampos}-3`} name="rol" value={form.rol} onChange={onChange} required
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
           {ROLES_OPCIONES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
         </select>
@@ -692,8 +695,8 @@ function FormularioUsuario({ form, onChange, onSubmit, onCancel, guardando, erro
       {/* Tipo y número de documento */}
       <div className="grid grid-cols-3 gap-3">
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Tipo doc.</label>
-          <select name="tipoDocumento" value={form.tipoDocumento} onChange={onChange}
+          <label htmlFor={`${idCampos}-4`} className="block text-xs font-medium text-gray-600 mb-1">Tipo doc.</label>
+          <select id={`${idCampos}-4`} name="tipoDocumento" value={form.tipoDocumento} onChange={onChange}
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
             <option value="CC">C.C.</option>
             <option value="CE">C.E.</option>
@@ -742,11 +745,11 @@ function FormularioUsuario({ form, onChange, onSubmit, onCancel, guardando, erro
           </p>
           {rolActual === 'POLIGRAFISTA' && (
             <div className="mt-3">
-              <label className="block text-xs font-medium text-gray-600 mb-1">
+              <label htmlFor={`${idCampos}-5`} className="block text-xs font-medium text-gray-600 mb-1">
                 Novedades
                 <span className="ml-1 text-gray-400 font-normal">(observaciones, incidencias, notas de sus salas)</span>
               </label>
-              <textarea
+              <textarea id={`${idCampos}-5`}
                 value={form.novedadesSala ?? ''}
                 onChange={e => onChange({ target: { name: 'novedadesSala', value: e.target.value } })}
                 rows={3}
@@ -799,6 +802,7 @@ function FormularioUsuario({ form, onChange, onSubmit, onCancel, guardando, erro
 /* ─── Modal cambiar contraseña — aparte de Editar a propósito: no debería depender de que las
    ciudades/sala (poligrafista, visitador) o subprocesos también estén completos. ─── */
 function ModalCambiarPassword({ usuario, onClose, onGuardado }) {
+  const idCampos = useId()
   const [password, setPassword] = useState('')
   const [confirmPwd, setConfirmPwd] = useState('')
   const [claveAdmin, setClaveAdmin] = useState('')
@@ -853,11 +857,11 @@ function ModalCambiarPassword({ usuario, onClose, onGuardado }) {
           <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{error}</div>
         )}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">
+          <label htmlFor={`${idCampos}-1`} className="block text-sm font-medium text-gray-700 mb-1.5">
             Nueva contraseña <span className="text-red-500">*</span>
           </label>
           <div className="relative">
-            <input
+            <input id={`${idCampos}-1`}
               type={mostrarPwd ? 'text' : 'password'} value={password}
               onChange={e => setPassword(e.target.value)} required minLength={8}
               placeholder="Mínimo 8 caracteres" autoFocus
@@ -873,10 +877,10 @@ function ModalCambiarPassword({ usuario, onClose, onGuardado }) {
           {password && esFuerte && <p className="text-xs text-green-600 mt-1">Contraseña válida</p>}
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">
+          <label htmlFor={`${idCampos}-2`} className="block text-sm font-medium text-gray-700 mb-1.5">
             Confirmar contraseña <span className="text-red-500">*</span>
           </label>
-          <input
+          <input id={`${idCampos}-2`}
             type={mostrarPwd ? 'text' : 'password'} value={confirmPwd}
             onChange={e => setConfirmPwd(e.target.value)} required
             placeholder="Repite la nueva contraseña"
@@ -891,7 +895,7 @@ function ModalCambiarPassword({ usuario, onClose, onGuardado }) {
           </label>
           <p className="text-xs text-gray-400 mb-1.5">Confirma con tu propia clave para autorizar este cambio.</p>
           <div className="relative">
-            <input
+            <input aria-label="Tu contraseña actual"
               type={mostrarClaveAdmin ? 'text' : 'password'} value={claveAdmin}
               onChange={e => setClaveAdmin(e.target.value)} required
               placeholder="Tu contraseña actual"
@@ -936,7 +940,7 @@ export default function UsuariosInternos() {
   const [ordenCol, setOrdenCol] = useState(null)
   const [ordenDir, setOrdenDir] = useState('asc')
   const [pagina, setPagina] = useState(1)
-  const POR_PAGINA = 7
+  const POR_PAGINA = 10
 
   const mostrarToast = useCallback((msg, tipo = 'exito') => setToast({ mensaje: msg, tipo }), [])
 
@@ -1057,7 +1061,7 @@ export default function UsuariosInternos() {
 
       {/* Buscador */}
       <div className="flex flex-wrap items-center gap-3 mb-3">
-        <input
+        <input aria-label="Buscar por nombre, email, documento, teléfono, ciudad o rol…"
           type="search"
           value={busqueda}
           onChange={e => setBusqueda(e.target.value)}

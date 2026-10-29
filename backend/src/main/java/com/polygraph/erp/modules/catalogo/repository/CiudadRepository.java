@@ -24,8 +24,9 @@ public interface CiudadRepository extends JpaRepository<Ciudad, Integer> {
     @Query("update Ciudad c set c.departamento = :nuevo, c.codigoDaneDepto = :codigoDane where lower(c.departamento) = lower(:viejo)")
     void renombrarDepartamento(@Param("viejo") String viejo, @Param("nuevo") String nuevo, @Param("codigoDane") String codigoDane);
 
-    // Ids de ciudades referenciadas por FK desde clientes/candidatos/visitas/empleados/recargos —
-    // se usa para no ofrecer "Eliminar" en el catálogo cuando la ciudad ya está en uso.
+    // Ids de ciudades referenciadas por FK desde clientes/candidatos/empleados/recargos — se usa
+    // para no ofrecer "Eliminar" en el catálogo cuando la ciudad ya está en uso. (visitas_domiciliarias
+    // salió de aquí: era del modelo viejo de V1, siempre vacía, y V195 la elimina.)
     @Query(value = """
             SELECT DISTINCT id_ciudad FROM (
               SELECT id_ciudad FROM clientes WHERE id_ciudad IS NOT NULL
@@ -33,8 +34,6 @@ public interface CiudadRepository extends JpaRepository<Ciudad, Integer> {
               SELECT id_ciudad_nacimiento AS id_ciudad FROM candidatos WHERE id_ciudad_nacimiento IS NOT NULL
               UNION
               SELECT id_ciudad_residencia AS id_ciudad FROM candidatos WHERE id_ciudad_residencia IS NOT NULL
-              UNION
-              SELECT id_ciudad FROM visitas_domiciliarias WHERE id_ciudad IS NOT NULL
               UNION
               SELECT id_ciudad_residencia AS id_ciudad FROM empleados WHERE id_ciudad_residencia IS NOT NULL
               UNION
@@ -48,8 +47,6 @@ public interface CiudadRepository extends JpaRepository<Ciudad, Integer> {
               SELECT 1 FROM clientes WHERE id_ciudad = :id
               UNION ALL
               SELECT 1 FROM candidatos WHERE id_ciudad_nacimiento = :id OR id_ciudad_residencia = :id
-              UNION ALL
-              SELECT 1 FROM visitas_domiciliarias WHERE id_ciudad = :id
               UNION ALL
               SELECT 1 FROM empleados WHERE id_ciudad_residencia = :id
               UNION ALL

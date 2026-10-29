@@ -9,6 +9,7 @@ import com.polygraph.erp.modules.usuarios.dto.UsuarioClienteResponse;
 import com.polygraph.erp.modules.usuarios.dto.UsuarioInternoResponse;
 import com.polygraph.erp.modules.usuarios.entity.EmpleadoCiudad;
 import com.polygraph.erp.modules.usuarios.entity.UsuariosInternos;
+import com.polygraph.erp.modules.clientes.service.ReasignacionGestorService;
 import com.polygraph.erp.modules.notificaciones.service.NotificacionService;
 import com.polygraph.erp.modules.catalogo.entity.Ciudad;
 import com.polygraph.erp.modules.catalogo.repository.CiudadRepository;
@@ -50,6 +51,7 @@ public class UsuariosInternosService {
     private final CiudadRepository ciudadRepository;
     private final PasswordEncoder passwordEncoder;
     private final NotificacionService notificacionService;
+    private final ReasignacionGestorService reasignacionGestorService;
 
     @Transactional(readOnly = true)
     public List<UsuarioInternoResponse> listarTodos() {
@@ -150,10 +152,16 @@ public class UsuariosInternosService {
             throw new ApiException("Ciudad no encontrada", HttpStatus.BAD_REQUEST);
         }
 
+        boolean dejaDeSerGestor = usuario.getRol() == Rol.GESTOR && req.rol() != Rol.GESTOR;
+
         usuario.setNombre(req.nombre());
         usuario.setApellido(req.apellido());
         usuario.setEmail(req.email());
         usuario.setRol(req.rol());
+        // Con otro rol ya no puede atender clientes — igual que al desactivarlo (ver cambiarEstado).
+        if (dejaDeSerGestor) {
+            reasignacionGestorService.reasignarClientesDe(usuario);
+        }
         if (req.password() != null && !req.password().isBlank()) {
             usuario.setPassword(passwordEncoder.encode(req.password()));
         }
@@ -229,6 +237,11 @@ public class UsuariosInternosService {
         if (usuario.getIdEmpleado() != null) {
             empleadoRepository.findById(usuario.getIdEmpleado())
                     .ifPresent(emp -> emp.setActivo(activo));
+        }
+
+        // Un gestor desactivado ya no entra: sus clientes pasan solos a los gestores activos.
+        if (!activo && usuario.getRol() == Rol.GESTOR) {
+            reasignacionGestorService.reasignarClientesDe(usuario);
         }
 
         log.info("Estado de usuario {} cambiado a {}", usuario.getEmail(), activo);

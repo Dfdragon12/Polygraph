@@ -201,6 +201,11 @@ public class OrdenCompraService {
         // Una orden RECHAZADA se puede reintentar: se reabre como PENDIENTE con los mismos ítems/precios.
         orden.setEstado(EstadoOrdenCompra.PENDIENTE);
 
+        // Wompi no acepta dos veces la misma referencia: cada intento lleva una nueva (la base sigue siendo de esta orden).
+        // El id de la transacción anterior se olvida para que la conciliación consulte el intento actual, no el viejo.
+        orden.setReferencia(ReferenciaPago.nuevoIntento(orden.getReferencia()));
+        orden.setIdTransaccionPasarela(null);
+
         PasarelaPago.IniciarPagoResultado resultado = pasarelaPago.iniciarPago(orden);
         orden.setUrlCheckout(resultado.urlCheckout());
         orden.setModoSimulado(resultado.simulado());
@@ -348,7 +353,10 @@ public class OrdenCompraService {
             return true;
         }
 
-        OrdenCompra orden = ordenCompraRepository.findByReferencia(referencia).orElse(null);
+        // Un aviso tardío de un intento anterior trae una referencia vieja: se reconoce por la base.
+        OrdenCompra orden = ordenCompraRepository.findByReferencia(referencia)
+                .or(() -> ordenCompraRepository.findFirstByReferenciaStartingWith(ReferenciaPago.base(referencia)))
+                .orElse(null);
         if (orden == null) {
             return false;
         }
@@ -395,7 +403,7 @@ public class OrdenCompraService {
 
         List<OrdenCompraItem> items = ordenCompraItemRepository.findByOrdenCompra_IdOrdenCompra(orden.getIdOrdenCompra());
         for (OrdenCompraItem item : items) {
-            saldoServicioClienteService.acreditar(orden.getCliente(), item.getProceso(), item.getCantidad());
+            saldoServicioClienteService.acreditar(orden.getCliente(), item.getProceso(), item.getCantidad(), item);
         }
 
         if (orden.getDescuentoCupon() != null) {

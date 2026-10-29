@@ -23,5 +23,16 @@ RUN apt-get update \
 
 COPY --from=build /build/target/*.jar app.jar
 
+# Memoria de la JVM relativa al límite del contenedor, no a la RAM del host:
+#  · MaxRAMPercentage=60: el heap usa a lo sumo el 60% del límite. El 40% restante queda para
+#    metaspace/hilos y, sobre todo, para los procesos de LibreOffice (~150-300 MB cada uno, FUERA
+#    del heap; hasta LIBREOFFICE_MAX_CONCURRENTES a la vez). Con más del 60% el kernel mata el
+#    contenedor por OOM en vez de que Java lo maneje.
+#  · ExitOnOutOfMemoryError: si igual se agota el heap, el proceso termina de una y Docker lo
+#    reinicia (restart policy) — mejor que quedar vivo a medias, respondiendo errores al azar.
+#    Los trabajos que estaban corriendo se recuperan solos (LimpiezaTrabajosJob).
+# JAVA_OPTS permite ajustar sin reconstruir la imagen (ej. -XX:MaxRAMPercentage=50).
+ENV JAVA_OPTS="-XX:MaxRAMPercentage=60 -XX:+ExitOnOutOfMemoryError"
+
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /app/app.jar"]

@@ -13,5 +13,8 @@ public interface TipoNovedadRepository extends JpaRepository<TipoNovedad, Intege
 
     boolean existsByClave(String clave);
 
+    @EntityGraph(attributePaths = {"categoria", "roles"})
+    java.util.Optional<TipoNovedad> findByClave(String clave);
+
     long countByCategoria_IdCategoriaNovedad(Integer idCategoria);
 }

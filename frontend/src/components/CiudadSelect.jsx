@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useId, useEffect, useMemo, useState } from 'react'
 import catalogoService from '../services/catalogoService'
 import { Modal } from './ui/Modal'
 
@@ -18,7 +18,8 @@ const quitarTildes = (s) => (s || '').normalize('NFD').replace(/\p{Diacritic}/gu
  * tener duplicados por typos) y, opcionalmente, el código DANE de la ciudad — el del departamento
  * se deriva solo del que se elija. Queda seleccionada automáticamente.
  */
-function CiudadSelect({ value, onChange, className, required = false, valueType = 'id', id, name, placeholder = 'Selecciona o busca una ciudad...', disabled = false }) {
+function CiudadSelect({ value, onChange, className, required = false, valueType = 'id', id, name, placeholder = 'Selecciona o busca una ciudad...', disabled = false, soloConfirmadas = false }) {
+  const idCampos = useId()
   const [ciudades, setCiudades] = useState([])
   const [cargando, setCargando] = useState(true)
   const [query, setQuery] = useState('')
@@ -35,7 +36,7 @@ function CiudadSelect({ value, onChange, className, required = false, valueType 
   useEffect(() => {
     let activo = true
     catalogoService.listarCiudades()
-      .then((data) => { if (activo) setCiudades(data) })
+      .then((data) => { if (activo) setCiudades(soloConfirmadas ? data.filter((c) => !c.pendienteConfirmacion) : data) })
       .catch(() => { if (activo) setCiudades([]) })
       .finally(() => { if (activo) setCargando(false) })
     catalogoService.listarDepartamentos()
@@ -138,6 +139,9 @@ function CiudadSelect({ value, onChange, className, required = false, valueType 
               {c.nombreCiudad} <span className="text-gray-400">— {c.departamento}</span>
             </button>
           ))}
+          {soloConfirmadas ? (
+            <p className="border-t border-gray-100 mt-1 px-3 pt-2 pb-1 text-xs text-gray-600">¿No ves la ciudad? Escríbele a tu gestor para que la confirme.</p>
+          ) : (
           <button
             type="button"
             onMouseDown={(e) => e.preventDefault()}
@@ -146,6 +150,7 @@ function CiudadSelect({ value, onChange, className, required = false, valueType 
           >
             + No encuentro mi ciudad...
           </button>
+          )}
         </div>
       )}
 
@@ -156,21 +161,21 @@ function CiudadSelect({ value, onChange, className, required = false, valueType 
               <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{errorModal}</div>
             )}
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Ciudad <span className="text-red-500">*</span></label>
-              <input value={mNombre} onChange={(e) => setMNombre(e.target.value)} autoFocus
+              <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">Ciudad <span className="text-red-500">*</span></label>
+              <input id={`${idCampos}-1`} value={mNombre} onChange={(e) => setMNombre(e.target.value)} autoFocus
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Departamento <span className="text-red-500">*</span></label>
-              <select value={mDepartamento} onChange={(e) => setMDepartamento(e.target.value)}
+              <label htmlFor={`${idCampos}-2`} className="block text-xs font-medium text-gray-600 mb-1">Departamento <span className="text-red-500">*</span></label>
+              <select id={`${idCampos}-2`} value={mDepartamento} onChange={(e) => setMDepartamento(e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none bg-white">
                 <option value="">Selecciona un departamento...</option>
                 {departamentos.map((d) => <option key={d.nombre} value={d.nombre}>{d.nombre}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Código DANE ciudad</label>
-              <input value={mCodigoCiudad} inputMode="numeric"
+              <label htmlFor={`${idCampos}-3`} className="block text-xs font-medium text-gray-600 mb-1">Código DANE ciudad</label>
+              <input id={`${idCampos}-3`} value={mCodigoCiudad} inputMode="numeric"
                 onChange={(e) => setMCodigoCiudad(e.target.value.replace(/\D/g, ''))} maxLength={10} placeholder="Opcional"
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none" />
             </div>

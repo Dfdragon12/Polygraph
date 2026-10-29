@@ -1,5 +1,9 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useId, useState, useEffect, useCallback, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import api from '../../services/api'
+import tiempoService from '../../services/tiempoService'
+import SeccionTiempoSemaforo, { ESTADOS_TIEMPO, NOMBRE_ETAPA, describirSeleccion } from '../../components/admin/SeccionTiempoSemaforo'
+import { NOMBRE_ESTADO_TIEMPO } from '../../components/EstadoTiempo'
 import {
   PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -22,9 +26,10 @@ const CONFIG_ESTADO = {
 const TODOS_ESTADOS = Object.keys(CONFIG_ESTADO)
 
 const GRUPOS = {
-  'En curso':    ['PENDIENTE', 'PROGRAMANDO', 'EN_EJECUCION'],
+  // Reprogramado sigue vivo (cambió de fecha pero se está trabajando): es "en curso", igual que en el Resumen del administrador.
+  'En curso':    ['PENDIENTE', 'PROGRAMANDO', 'EN_EJECUCION', 'REPROGRAMADO'],
   'Completados': ['FINALIZADO', 'PUBLICADO'],
-  'Cerrados':    ['CANCELADO', 'REPROGRAMADO'],
+  'Cerrados':    ['CANCELADO'],
 }
 
 function formatFechaHora(iso) {
@@ -46,7 +51,7 @@ function CustomTooltip({ active, payload, total }) {
 }
 
 /* ════════ PDF SEMÁFORO ════════ */
-function exportarPDF({ servicios, clienteNombre, estadosFiltro }) {
+function exportarPDF({ servicios, clienteNombre, estadosFiltro, tiempo }) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
   const MAR = 14; const ANCHO = doc.internal.pageSize.getWidth(); let y = MAR
 
@@ -78,9 +83,10 @@ function exportarPDF({ servicios, clienteNombre, estadosFiltro }) {
     head: [['Indicador', 'Cantidad', 'Porcentaje']],
     body: [
       ['Total servicios', String(total), '100%'],
-      ['En curso (Pendiente + Programando + En ejecución)', String(enCurso), total > 0 ? `${Math.round(enCurso/total*100)}%` : '0%'],
+      ['En curso (Pendiente + Programando + En ejecución + Reprogramado)', String(enCurso), total > 0 ? `${Math.round(enCurso/total*100)}%` : '0%'],
       ['Completados (Finalizado + Publicado)', String(completados), total > 0 ? `${Math.round(completados/total*100)}%` : '0%'],
-      ['Cerrados (Cancelado + Reprogramado)', String(cerrados), total > 0 ? `${Math.round(cerrados/total*100)}%` : '0%'],
+      ['Cancelados', String(cerrados), total > 0 ? `${Math.round(cerrados/total*100)}%` : '0%'],
+      ['Vencidas (abiertas, con días hábiles de retraso)', String(servicios?.vencidas ?? 0), total > 0 ? `${Math.round((servicios?.vencidas ?? 0)/total*100)}%` : '0%'],
     ],
     styles: { fontSize: 9, cellPadding: 3 },
     headStyles: { fillColor: [79, 70, 229], textColor: 255, fontStyle: 'bold' },
@@ -103,6 +109,50 @@ function exportarPDF({ servicios, clienteNombre, estadosFiltro }) {
     alternateRowStyles: { fillColor: [248, 250, 252] },
   })
 
+  // ── Semáforo de tiempo (días hábiles): los mismos datos que se ven en pantalla, del resumen único de tiempos
+  if (tiempo) {
+    y = doc.lastAutoTable.finalY + 8
+    if (y > 235) { doc.addPage(); y = MAR }
+    doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(15, 23, 42)
+    doc.text('Estado de tiempo (días hábiles de Colombia)', MAR, y); y += 2
+    autoTable(doc, {
+      startY: y, margin: { left: MAR, right: MAR },
+      head: [['Estado de tiempo', 'Solicitudes']],
+      body: [...ESTADOS_TIEMPO.map(e => [NOMBRE_ESTADO_TIEMPO[e], String(tiempo.porEstadoTiempo?.[e] ?? 0)]),
+        ['Sin estado (canceladas)', String(tiempo.sinEstadoTiempo ?? 0)], ['Total', String(tiempo.total)]],
+      styles: { fontSize: 9, cellPadding: 3 },
+      headStyles: { fillColor: [79, 70, 229], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+    })
+    y = doc.lastAutoTable.finalY + 8
+    if (y > 215) { doc.addPage(); y = MAR }
+    doc.setFontSize(10); doc.setFont('helvetica', 'bold')
+    doc.text('Etapa × estado de tiempo', MAR, y); y += 2
+    autoTable(doc, {
+      startY: y, margin: { left: MAR, right: MAR },
+      head: [['Etapa', ...ESTADOS_TIEMPO.map(e => NOMBRE_ESTADO_TIEMPO[e]), 'Total']],
+      body: (tiempo.matriz ?? []).map(f => [NOMBRE_ETAPA[f.etapa] ?? f.etapa, ...ESTADOS_TIEMPO.map(e => String(f.porEstadoTiempo?.[e] ?? 0)), String(f.total)]),
+      styles: { fontSize: 8, cellPadding: 2.5 },
+      headStyles: { fillColor: [79, 70, 229], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+    })
+    y = doc.lastAutoTable.finalY + 8
+    if (y > 200) { doc.addPage(); y = MAR }
+    doc.setFontSize(10); doc.setFont('helvetica', 'bold')
+    doc.text('Las más atrasadas', MAR, y); y += 2
+    autoTable(doc, {
+      startY: y, margin: { left: MAR, right: MAR },
+      head: [['Evaluado', 'Cliente', 'Gestor', 'Etapa', 'Retraso']],
+      body: (tiempo.masAtrasadas ?? []).length
+        ? tiempo.masAtrasadas.map(a => [`${a.evaluado ?? '—'} (#${a.idServicio})`, a.cliente ?? '—', a.gestor ?? 'Sin gestor', NOMBRE_ETAPA[a.etapa] ?? a.etapa,
+          `${a.diasRetrasoHabiles} ${a.diasRetrasoHabiles === 1 ? 'día hábil' : 'días hábiles'}`])
+        : [['No hay solicitudes vencidas', '', '', '', '']],
+      styles: { fontSize: 8, cellPadding: 2.5 },
+      headStyles: { fillColor: [79, 70, 229], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+    })
+  }
+
   const pags = doc.internal.getNumberOfPages()
   for (let i = 1; i <= pags; i++) {
     doc.setPage(i); doc.setFontSize(8); doc.setTextColor(148, 163, 184)
@@ -113,7 +163,12 @@ function exportarPDF({ servicios, clienteNombre, estadosFiltro }) {
 
 /* ════════ PÁGINA PRINCIPAL ════════ */
 export default function SemaforoServicios() {
+  const idCampos = useId()
   const [servicios,       setServicios]       = useState(null)
+  const [searchParams] = useSearchParams()
+  const [resumenTiempo,   setResumenTiempo]   = useState(null)
+  // Selección de la lista (una tarjeta o una celda de la matriz). Puede venir en la URL: /admin/semaforo?estadoTiempo=VENCIDA,POR_VENCER
+  const [seleccion,       setSeleccion]       = useState({ etapa: searchParams.get('etapa'), estados: (searchParams.get('estadoTiempo') ?? '').split(',').filter(Boolean) })
   const [cargando,        setCargando]        = useState(true)
   const [error,           setError]           = useState(null)
   const [clienteSel,      setClienteSel]      = useState('')
@@ -123,6 +178,8 @@ export default function SemaforoServicios() {
 
   const cargar = useCallback((id) => {
     setCargando(true)
+    // El resumen único de tiempos, con el mismo filtro de cliente (el Semáforo y el Resumen del administrador salen de él).
+    tiempoService.resumen({ idCliente: id ? Number(id) : undefined, top: 10 }).then(setResumenTiempo).catch(() => setResumenTiempo(null))
     api.get(`/admin/dashboard/servicios${id ? `?idCliente=${id}` : ''}`)
       .then(r => setServicios(r.data))
       .catch(() => setError('No se pudieron cargar los servicios.'))
@@ -191,7 +248,7 @@ export default function SemaforoServicios() {
 
   const handleExportPDF = () => {
     setExportando(true)
-    try { exportarPDF({ servicios, clienteNombre, estadosFiltro: [...estadosFiltro] }) }
+    try { exportarPDF({ servicios, clienteNombre, estadosFiltro: [...estadosFiltro], tiempo: resumenTiempo }) }
     finally { setExportando(false) }
   }
 
@@ -228,9 +285,9 @@ export default function SemaforoServicios() {
         <div className="flex flex-wrap items-start gap-6">
           {/* Filtro cliente */}
           <div className="flex-1 min-w-[200px] max-w-xs">
-            <label className="block text-xs font-medium text-gray-600 mb-1.5">Cliente</label>
+            <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1.5">Cliente</label>
             <div className="flex gap-2">
-              <select
+              <select id={`${idCampos}-1`}
                 value={clienteSel}
                 onChange={e => setClienteSel(e.target.value)}
                 className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
@@ -320,12 +377,13 @@ export default function SemaforoServicios() {
       ) : (
         <>
           {/* ── KPIs ── */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
             {[
               { label: 'Total servicios',  valor: kpis.total,       color: 'primary', icono: '📋' },
               { label: 'En curso',         valor: kpis.enCurso,     color: 'blue',   icono: '⚡' },
               { label: 'Completados',      valor: kpis.completados, color: 'green',  icono: '✅' },
-              { label: 'Cerrados',         valor: kpis.cerrados,    color: 'red',    icono: '🔒' },
+              { label: 'Cancelados',       valor: kpis.cerrados,    color: 'red',    icono: '🔒' },
+              { label: 'Vencidas',         valor: servicios?.vencidas ?? 0, color: 'red', icono: '⏰' },
             ].map(k => (
               <div key={k.label} className={`bg-white rounded-xl border p-4 shadow-sm ${
                 k.color === 'primary' ? 'border-primary-100' :
@@ -349,6 +407,9 @@ export default function SemaforoServicios() {
               </div>
             ))}
           </div>
+
+          {/* ── Semáforo de tiempo (días hábiles): tarjetas, matriz etapa × tiempo, las más atrasadas y la lista ── */}
+          <SeccionTiempoSemaforo resumen={resumenTiempo} filtro={{ idCliente: clienteSel || null }} seleccion={seleccion} onSeleccionar={setSeleccion} />
 
           {/* ── Gráficas ── */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

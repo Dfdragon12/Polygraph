@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { parseFecha } from '../../utils/fechas'
+import { useId, useState, useEffect, useMemo, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import api from '../../services/api'
 import Toast from '../../components/Toast'
@@ -172,6 +173,7 @@ function Avatar({ nombre, apellido, rol, size = 'h-11 w-11 text-sm' }) {
 
 /* ─── Modal editar cliente ─── */
 function ModalEditar({ cliente, onClose, onGuardado }) {
+  const idCampos = useId()
   const esNaturalOriginal = cliente.tipoPersona === 'NATURAL'
   const [form, setForm] = useState({
     tipoPersona:        cliente.tipoPersona,
@@ -228,16 +230,16 @@ function ModalEditar({ cliente, onClose, onGuardado }) {
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Tipo de persona</label>
-            <select name="tipoPersona" value={form.tipoPersona} onChange={handleChange}
+            <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">Tipo de persona</label>
+            <select id={`${idCampos}-1`} name="tipoPersona" value={form.tipoPersona} onChange={handleChange}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
               <option value="NATURAL">Persona Natural</option>
               <option value="JURIDICA">Persona Jurídica</option>
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Modalidad de pago</label>
-            <select name="tipoCliente" value={form.tipoCliente} onChange={handleChange}
+            <label htmlFor={`${idCampos}-2`} className="block text-xs font-medium text-gray-600 mb-1">Modalidad de pago</label>
+            <select id={`${idCampos}-2`} name="tipoCliente" value={form.tipoCliente} onChange={handleChange}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
               <option value="PREPAGO">Prepago</option>
               <option value="POSPAGO">Pospago</option>
@@ -277,8 +279,8 @@ function ModalEditar({ cliente, onClose, onGuardado }) {
         <Campo label="Teléfono" name="telefono" value={form.telefono} onChange={handleChange} placeholder="Ej: 3001234567" />
 
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Gestor asignado</label>
-          <select name="idGestor" value={form.idGestor} onChange={handleChange}
+          <label htmlFor={`${idCampos}-3`} className="block text-xs font-medium text-gray-600 mb-1">Gestor asignado</label>
+          <select id={`${idCampos}-3`} name="idGestor" value={form.idGestor} onChange={handleChange}
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
             <option value="">Sin gestor asignado</option>
             {gestores.map(g => (
@@ -298,13 +300,13 @@ function ModalEditar({ cliente, onClose, onGuardado }) {
           <BarrioSelect idCiudad={form.idCiudad} value={form.idBarrio} onChange={(idBarrio) => setForm(p => ({ ...p, idBarrio }))} />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Dirección</label>
-          <input name="direccion" value={form.direccion} onChange={handleChange}
+          <label htmlFor={`${idCampos}-4`} className="block text-xs font-medium text-gray-600 mb-1">Dirección</label>
+          <input id={`${idCampos}-4`} name="direccion" value={form.direccion} onChange={handleChange}
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Observaciones</label>
-          <textarea name="observaciones" value={form.observaciones} onChange={handleChange} rows={3}
+          <label htmlFor={`${idCampos}-5`} className="block text-xs font-medium text-gray-600 mb-1">Observaciones</label>
+          <textarea id={`${idCampos}-5`} name="observaciones" value={form.observaciones} onChange={handleChange} rows={3}
             placeholder="Notas internas sobre el cliente…"
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" />
         </div>
@@ -323,12 +325,13 @@ function ModalEditar({ cliente, onClose, onGuardado }) {
 }
 
 function Campo({ label, name, value, onChange, type = 'text', required = false, placeholder = '' }) {
+  const id = useId()
   return (
     <div>
-      <label className="block text-xs font-medium text-gray-600 mb-1">
+      <label htmlFor={id} className="block text-xs font-medium text-gray-600 mb-1">
         {label} {required && <span className="text-red-500">*</span>}
       </label>
-      <input name={name} type={type} value={value} onChange={onChange} required={required} placeholder={placeholder}
+      <input id={id} name={name} type={type} value={value} onChange={onChange} required={required} placeholder={placeholder}
         className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
     </div>
   )
@@ -350,6 +353,7 @@ function OjoIcon({ visible }) {
 
 /* ─── Formulario compartido: usuario de cliente ─── */
 function FormularioUsuarioCliente({ form, onChange, onSubmit, onCancel, guardando, error, esEdicion }) {
+  const idCampos = useId()
   const [mostrarPwd, setMostrarPwd] = useState(false)
 
   return (
@@ -385,12 +389,12 @@ function FormularioUsuarioCliente({ form, onChange, onSubmit, onCancel, guardand
       <Campo label="Email" name="email" type="email" value={form.email} onChange={onChange} required />
 
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">
+        <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">
           Contraseña {!esEdicion && <span className="text-red-500">*</span>}
           {esEdicion && <span className="text-gray-400 font-normal text-[10px]"> (vacío = sin cambios)</span>}
         </label>
         <div className="relative">
-          <input
+          <input id={`${idCampos}-1`}
             name="password" type={mostrarPwd ? 'text' : 'password'}
             value={form.password} onChange={onChange}
             required={!esEdicion} minLength={form.password ? 8 : undefined}
@@ -557,7 +561,7 @@ function ModalUsuarios({ cliente, onClose, onCambio }) {
           </button>
           {usuarios.length > 0 && (
             <div>
-              <input type="search" value={busqueda} onChange={e => setBusqueda(e.target.value)}
+              <input aria-label="Buscar por nombre, email o rol…" type="search" value={busqueda} onChange={e => setBusqueda(e.target.value)}
                 placeholder="Buscar por nombre, email o rol…"
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white" />
               {busqueda.trim() && (
@@ -670,7 +674,7 @@ function formatRelativo(iso) {
   if (d === 0) return 'Hoy'
   if (d === 1) return 'Ayer'
   if (d < 30) return `Hace ${d} días`
-  return new Date(iso).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
+  return parseFecha(iso).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 /* ─── Página principal ─── */
@@ -692,7 +696,7 @@ export default function Clientes() {
   const [ordenCol, setOrdenCol] = useState(null)
   const [ordenDir, setOrdenDir] = useState('asc')
   const [pagina, setPagina] = useState(1)
-  const POR_PAGINA = 7
+  const POR_PAGINA = 10
 
   const mostrarToast = useCallback((msg, tipo = 'exito') => setToast({ mensaje: msg, tipo }), [])
 
@@ -776,7 +780,7 @@ export default function Clientes() {
   const columnas = [
     { key: 'nombreDisplay',  label: 'Nombre / Razón social', sortable: true  },
     { key: 'tipoCliente',    label: 'Modalidad',              sortable: true  },
-    { key: 'telefono',       label: 'Teléfono',               sortable: false },
+    { key: 'telefono',       label: 'Teléfono',               sortable: false, cls: 'hidden xl:table-cell' },
     { key: '_usuarios',      label: 'Usuarios',                sortable: false },
     { key: 'estado',         label: 'Estado',                 sortable: true  },
     { key: '_docs',          label: 'Documentos',              sortable: false },
@@ -840,7 +844,7 @@ export default function Clientes() {
 
       {/* Buscador */}
       <div className="flex flex-wrap items-center gap-3 mb-3">
-        <input
+        <input aria-label="Buscar por nombre, email, NIT…"
           type="search" value={busqueda} onChange={e => setBusqueda(e.target.value)}
           placeholder="Buscar por nombre, email, NIT…"
           className="flex-1 min-w-[200px] max-w-xs border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
@@ -874,13 +878,13 @@ export default function Clientes() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-100">
+            <table className="table-stack min-w-full divide-y divide-gray-100">
               <thead className="bg-gray-50/80">
                 <tr>
                   {columnas.map(col => (
                     <th key={col.key}
                       onClick={col.sortable ? () => manejarOrden(col.key) : undefined}
-                      className={`px-4 py-3 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider select-none whitespace-nowrap ${col.sortable ? 'cursor-pointer hover:text-gray-600' : ''}`}>
+                      className={`px-3 py-3 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider select-none whitespace-nowrap ${col.sortable ? 'cursor-pointer hover:text-gray-600' : ''} ${col.cls ?? ''}`}>
                       {col.label}
                       {col.sortable && <IconoOrden activo={ordenCol === col.key} dir={ordenDir} />}
                     </th>
@@ -890,11 +894,11 @@ export default function Clientes() {
               <tbody className="divide-y divide-gray-100">
                 {clientesVisibles.map(c => (
                   <tr key={c.idCliente} className="hover:bg-gray-50/70 transition-colors">
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       <p className="text-sm font-medium text-gray-900">{c.nombreDisplay}</p>
                       {c.nit && <p className="text-xs text-gray-400">NIT: {c.nit}{c.dv ? `-${c.dv}` : ''}</p>}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       <div className="flex flex-col gap-1">
                         <span className={`text-xs px-2 py-0.5 rounded font-medium w-fit ${
                           c.tipoCliente === 'PREPAGO' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
@@ -906,8 +910,8 @@ export default function Clientes() {
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-500">{c.telefono ?? '—'}</td>
-                    <td className="px-4 py-3">
+                    <td className="hidden xl:table-cell px-3 py-3 text-sm text-gray-500">{c.telefono ?? '—'}</td>
+                    <td className="px-3 py-3">
                       <button onClick={() => setUsuariosDe(c)}
                         className="group inline-flex items-center gap-2 pl-1 pr-3 py-1 rounded-full bg-slate-50 border border-slate-200 hover:border-primary-300 hover:bg-primary-50 transition-all whitespace-nowrap">
                         <span className="flex -space-x-1.5">
@@ -928,11 +932,11 @@ export default function Clientes() {
                         </span>
                       </button>
                     </td>
-                    <td className="px-4 py-3"><Badge activo={c.estado === 'ACTIVO'} /></td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3"><Badge activo={c.estado === 'ACTIVO'} /></td>
+                    <td className="px-3 py-3">
                       <BolitasDocumentos resumen={c.documentosResumen} />
                     </td>
-                    <td className="px-4 py-3 text-center">
+                    <td className="px-3 py-3 text-center">
                       <MenuAcciones opciones={[
                         { label: 'Documentos', icono: <IconDocumento />, onClick: () => setDocumentosDe(c) },
                         { label: 'Editar', icono: <IconLapiz />, onClick: () => setEditando(c) },

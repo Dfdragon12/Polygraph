@@ -14,4 +14,8 @@ public interface CalificacionRiesgoRepository extends JpaRepository<Calificacion
 
     @EntityGraph(attributePaths = {"calculadoPor", "decididoPor"})
     List<CalificacionRiesgo> findByServicio_IdServicioOrderByFechaCalculoDescIdDesc(Integer idServicio);
+
+    /** Los cálculos vigentes de un estado que todavía no están bloqueados (SE-06: revisar los que quedaron «CALCULADO» con puntaje 0). */
+    @EntityGraph(attributePaths = {"servicio"})
+    List<CalificacionRiesgo> findByVigenteTrueAndEstadoAndBloqueadoFalse(com.polygraph.erp.modules.riesgo.motor.ModeloRiesgo.EstadoResultado estado);
 }

@@ -13,6 +13,7 @@ public enum CampoCandidato {
     FECHA_NACIMIENTO("Fecha de nacimiento"),
     LUGAR_NACIMIENTO("Lugar de nacimiento"),
     FECHA_EXPEDICION("Fecha de expedición"),
+    CIUDAD_EXPEDICION("Lugar de expedición"),
     CIUDAD_NACIMIENTO("Ciudad de nacimiento"),
     CIUDAD_RESIDENCIA("Ciudad de residencia"),
     DIRECCION_RESIDENCIA("Dirección de residencia"),

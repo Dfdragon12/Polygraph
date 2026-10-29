@@ -1,6 +1,10 @@
 import api from './api'
 
 const perfilService = {
+  // "Mi perfil" del ANALISTA_CLIENTE (sus datos personales, no los de la empresa)
+  miPerfil: () => api.get('/client/mi-perfil').then(r => r.data),
+  actualizarMiPerfil: (payload) => api.put('/client/mi-perfil', payload).then(r => r.data),
+
   obtener: () => api.get('/client/perfil').then(r => r.data),
   actualizar: (payload) => api.put('/client/perfil', payload).then(r => r.data),
 

@@ -1,6 +1,28 @@
 // Pie de página compartido para toda tabla paginada de la plataforma — antes estaba duplicado
 // tal cual (carácter por carácter) en Clientes.jsx y UsuariosInternos.jsx; se centraliza acá para
 // que todas las tablas nuevas usen el mismo diseño sin copiar/pegar de nuevo.
+import { useEffect, useState } from 'react'
+
+/** Filas por página de todas las tablas de la plataforma. */
+export const POR_PAGINA = 10
+
+/** Paginación en el navegador para una lista que ya está completa en memoria (ya filtrada por el
+ *  buscador, así que la búsqueda siempre recorre TODOS los registros). Vuelve a la página 1 cuando
+ *  cambia `reiniciarCon` (texto del buscador, filtro...) y nunca queda en una página que ya no existe. */
+export function usePaginacion(items, reiniciarCon = '', porPagina = POR_PAGINA) {
+  const [pagina, setPagina] = useState(1)
+  useEffect(() => { setPagina(1) }, [reiniciarCon])
+  const lista = items ?? []
+  const ultima = Math.max(1, Math.ceil(lista.length / porPagina))
+  const actual = Math.min(pagina, ultima)
+  return {
+    pagina: actual, setPagina, porPagina, total: lista.length,
+    visibles: lista.slice((actual - 1) * porPagina, actual * porPagina),
+    // Número de fila global (1, 2, … 11, 12 en la página 2)
+    desde: (actual - 1) * porPagina,
+  }
+}
+
 export default function Paginacion({ pagina, total, porPagina, onChange }) {
   const totalPags = Math.ceil(total / porPagina)
   if (totalPags <= 1) return null

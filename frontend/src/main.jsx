@@ -3,7 +3,11 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import App from './App'
+import { activarEtiquetasTablas } from './utils/etiquetasTablas'
 import './index.css'
+
+// En celular las tablas "table-stack" son tarjetas: cada celda toma el título de su columna
+activarEtiquetasTablas()
 
 const queryClient = new QueryClient({
   defaultOptions: {

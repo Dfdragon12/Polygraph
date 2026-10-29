@@ -16,6 +16,7 @@ import java.util.UUID;
  * ni ningún otro dato sensible del medio de pago.
  */
 @Entity
+@jakarta.persistence.EntityListeners(com.polygraph.erp.modules.tiemporeal.CambiosEntityListener.class)
 @Table(name = "pagos_wompi")
 @Data
 @Builder

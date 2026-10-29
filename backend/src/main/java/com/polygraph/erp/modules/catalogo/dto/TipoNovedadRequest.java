@@ -14,4 +14,15 @@ public record TipoNovedadRequest(
         @Size(max = 150, message = "El nombre no puede superar 150 caracteres.") String nombre,
         @NotEmpty(message = "Elige al menos un rol al que le aparezca.") Set<String> roles,
         @Size(max = 300, message = "El texto de ayuda no puede superar 300 caracteres.") String textoAyuda,
-        Integer orden) {}
+        Integer orden,
+        // null = no cambiar (al crear: no visible)
+        Boolean visibleCliente,
+        // null = no cambiar (al crear: no pausa el reloj)
+        Boolean pausaReloj,
+        // POLYGRAPH | CANDIDATO | CLIENTE; null = no cambiar (al crear: POLYGRAPH)
+        String imputableA) {
+
+    public TipoNovedadRequest(Integer idCategoriaNovedad, String nombre, Set<String> roles, String textoAyuda, Integer orden) {
+        this(idCategoriaNovedad, nombre, roles, textoAyuda, orden, null, null, null);
+    }
+}

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import mensajeService from '../services/mensajeService'
+import { iniciarIntervaloVisible } from '../hooks/useIntervaloVisible'
 
 const ETIQUETA_ROL = { ADMIN_CLIENTE: 'Admin', ANALISTA_CLIENTE: 'Analista' }
 
@@ -73,8 +74,7 @@ export default function HeaderMensajesGestor() {
 
   useEffect(() => {
     cargarConversaciones()
-    const t = setInterval(cargarConversaciones, 20000)
-    return () => clearInterval(t)
+    return iniciarIntervaloVisible(cargarConversaciones, 20000)
   }, [cargarConversaciones])
 
   useEffect(() => {
@@ -131,10 +131,9 @@ export default function HeaderMensajesGestor() {
   // Refresca el hilo activo mientras está abierto, igual que el widget del cliente.
   useEffect(() => {
     if (vista !== 'hilo' || !usuarioActivo) return
-    const t = setInterval(() => {
+    return iniciarIntervaloVisible(() => {
       mensajeService.listarGestor(usuarioActivo.idUsuarioCliente).then(setMensajes).catch(() => {})
     }, 6000)
-    return () => clearInterval(t)
   }, [vista, usuarioActivo])
 
   useEffect(() => {
@@ -263,9 +262,9 @@ export default function HeaderMensajesGestor() {
                 <div ref={finRef} />
               </div>
               <form onSubmit={enviar} className="border-t border-gray-100 px-3 py-2.5 flex items-center gap-2 flex-shrink-0">
-                <input value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Escribe un mensaje..." maxLength={2000}
+                <input aria-label="Escribe un mensaje..." value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Escribe un mensaje..." maxLength={2000}
                   className="flex-1 border border-gray-200 rounded-full px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500" />
-                <button type="submit" disabled={enviando || !texto.trim()}
+                <button type="submit" aria-label="Enviar mensaje" disabled={enviando || !texto.trim()}
                   className="bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white p-1.5 rounded-full transition-colors flex-shrink-0">
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />

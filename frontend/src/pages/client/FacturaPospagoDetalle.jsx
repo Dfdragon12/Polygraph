@@ -1,3 +1,4 @@
+import { parseFecha } from '../../utils/fechas'
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import pospagoService from '../../services/pospagoService'
@@ -17,7 +18,7 @@ const ESTADO_LABEL = {
 
 function formatFecha(iso) {
   if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
+  return parseFecha(iso).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 function formatFechaHora(iso) {
@@ -112,7 +113,7 @@ export default function FacturaPospagoDetalle() {
         <div>
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Servicios incluidos</p>
           <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="table-stack w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 text-left text-xs text-gray-400">
                 <th className="py-2 font-medium">Servicio</th>

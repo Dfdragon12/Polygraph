@@ -72,6 +72,7 @@ public class FormularioPlantillaService {
     private final FormularioPlantillaWordHistorialRepository historialRepository;
     private final UsuarioRepository usuarioRepository;
     private final CandidatoInfoService candidatoInfoService;
+    private final com.polygraph.erp.modules.riesgo.repository.CodigoCalificacionRepository codigoRepository;
 
     private static final String CATEGORIA_ARCHIVOS = "plantillas";
 
@@ -178,6 +179,13 @@ public class FormularioPlantillaService {
         // ambas terminarían apuntando a la misma clave de tabla fija.
         Set<String> origenesFijosUsados = new HashSet<>();
 
+        // Calificación por hallazgos: códigos que existen en el catálogo y claves usadas como referencia.
+        Set<String> codigosCatalogo = codigoRepository.findAll().stream()
+                .map(com.polygraph.erp.modules.riesgo.entity.CodigoCalificacion::getCodigo).collect(Collectors.toSet());
+        Map<String, Integer> usosUnicos = new HashMap<>();
+        List<String[]> referenciasNota = new ArrayList<>();
+        Set<String> clavesPlantilla = new HashSet<>();
+
         // Un mismo dato automático (candidato o cliente) no debe repetirse en dos columnas de
         // TODA la plantilla — casi siempre es un descuido del admin (arrastró el mismo campo dos
         // veces sin darse cuenta), nunca aporta nada real tenerlo dos veces.
@@ -193,7 +201,8 @@ public class FormularioPlantillaService {
                 if (tipo != TipoSeccionFormulario.TABLA) {
                     throw new ApiException("El origen automático solo aplica a secciones tipo Tabla.", HttpStatus.BAD_REQUEST);
                 }
-                if (!CandidatoInfoService.CLAVES_TABLAS_FIJAS.contains(origenFijo)) {
+                if (!CandidatoInfoService.CLAVES_TABLAS_FIJAS.contains(origenFijo)
+                        || CandidatoInfoService.TABLAS_SOLO_LECTURA.contains(origenFijo)) {
                     throw new ApiException("Origen automático inválido: " + origenFijo, HttpStatus.BAD_REQUEST);
                 }
                 if (!origenesFijosUsados.add(origenFijo)) {
@@ -210,6 +219,12 @@ public class FormularioPlantillaService {
                 }
             }
 
+            boolean calculada = Boolean.TRUE.equals(s.calculada());
+            if (calculada && (tipo != TipoSeccionFormulario.TABLA || origenFijo != null)) {
+                throw new ApiException("Solo una tabla manual puede ser calculada (la arma el código, no el analista).",
+                        HttpStatus.BAD_REQUEST);
+            }
+
             if (seccion == null) {
                 seccion = FormularioSeccion.builder()
                         .tipoProgreso(tipoProgreso)
@@ -223,6 +238,9 @@ public class FormularioPlantillaService {
             seccion.setActivo(true);
             seccion.setOrden(ordenSeccion++);
             seccion.setOrigenFijo(origenFijo);
+            seccion.setCalculada(calculada);
+            seccion.setOpcional(Boolean.TRUE.equals(s.opcional()));
+            seccion.setGrupo(s.grupo() == null || s.grupo().isBlank() ? null : s.grupo().trim());
             // El origen automático fija la clave (así el marcador ${tablas['referencias']}
             // siempre coincide, sin depender de lo que el admin escriba) — el manual sigue
             // resolviéndose del nombre/clave a mano, como siempre.
@@ -265,17 +283,29 @@ public class FormularioPlantillaService {
                     columna.setNombre(c.nombre() != null && !c.nombre().isBlank() ? c.nombre().trim() : null);
                     columna.setCampoCandidato(parseCampoCandidato(c.campoCandidato()));
                     columna.setCampoCliente(parseCampoCliente(c.campoCliente()));
+                    columna.setCampoServicio(parseCampoServicio(c.campoServicio()));
+                    columna.setCalculado(calculada || Boolean.TRUE.equals(c.calculado()));
+                    long origenes = java.util.stream.Stream.of(columna.getCampoCandidato(), columna.getCampoCliente(),
+                            columna.getCampoServicio()).filter(Objects::nonNull).count()
+                            + (Boolean.TRUE.equals(columna.getCalculado()) ? 1 : 0);
+                    if (origenes > 1) {
+                        throw new ApiException("La columna \"" + (c.nombre() != null ? c.nombre() : c.clave()) + "\" tiene más de un origen: "
+                                + "elige uno solo (dato del candidato, del cliente, del estudio o calculado).", HttpStatus.BAD_REQUEST);
+                    }
 
                     if (columna.getNombre() != null && !nombresUsadosEnSeccion.add(columna.getNombre().toLowerCase())) {
                         throw new ApiException("La sección \"" + s.nombre() + "\" tiene dos columnas tituladas \""
                                 + columna.getNombre() + "\" — dale un título distinto a cada una.", HttpStatus.BAD_REQUEST);
                     }
                     String campoAutomatico = columna.getCampoCandidato() != null ? "CANDIDATO:" + columna.getCampoCandidato()
-                            : columna.getCampoCliente() != null ? "CLIENTE:" + columna.getCampoCliente() : null;
+                            : columna.getCampoCliente() != null ? "CLIENTE:" + columna.getCampoCliente()
+                            : columna.getCampoServicio() != null ? "SERVICIO:" + columna.getCampoServicio() : null;
                     if (campoAutomatico != null && !camposAutomaticosUsados.add(campoAutomatico)) {
                         String etiqueta = columna.getCampoCandidato() != null
                                 ? candidatoInfoService.etiquetaDe(columna.getCampoCandidato())
-                                : candidatoInfoService.etiquetaDeCliente(columna.getCampoCliente());
+                                : columna.getCampoCliente() != null
+                                ? candidatoInfoService.etiquetaDeCliente(columna.getCampoCliente())
+                                : candidatoInfoService.etiquetaDeServicio(columna.getCampoServicio());
                         throw new ApiException("El dato \"" + etiqueta + "\" ya está usado en otra columna de esta plantilla — "
                                 + "no tiene sentido repetirlo.", HttpStatus.BAD_REQUEST);
                     }
@@ -284,13 +314,32 @@ public class FormularioPlantillaService {
                     // tipoDato no importa para la edición (nunca se edita a mano), solo para no
                     // dejar la columna NOT NULL sin valor.
                     columna.setTipoDato(columna.getCampoCandidato() != null || columna.getCampoCliente() != null
+                            || columna.getCampoServicio() != null
                             ? TipoDatoFormulario.TEXTO : parseTipoDato(c.tipoDato()));
                     columna.setOrden(ordenColumna++);
                     columna.setActivo(true);
                     columna.setClave(resolverClave(c.clave(), columna.getClave(), c.nombre(),
                             "campo_" + (columna.getOrden() + 1), clavesColumnas));
                     columna.setOpciones(resolverOpciones(columna.getTipoDato(), c.opciones(), c.nombre()));
+                    // Valor por defecto y obligatorio solo tienen sentido en lo que llena una persona.
+                    boolean manual = !columna.esAutomatica();
+                    String defecto = c.valorDefecto() != null && !c.valorDefecto().isBlank() ? c.valorDefecto().trim() : null;
+                    if (manual && defecto != null && columna.getTipoDato() == TipoDatoFormulario.LISTA
+                            && !OpcionesLista.leer(columna.getOpciones()).contains(defecto)) {
+                        throw new ApiException("El valor por defecto de \"" + (c.nombre() != null ? c.nombre() : c.clave())
+                                + "\" debe ser una de sus opciones.", HttpStatus.BAD_REQUEST);
+                    }
+                    columna.setValorDefecto(manual ? defecto : null);
+                    columna.setObligatorio(manual && Boolean.TRUE.equals(c.obligatorio()));
+                    if (c.longitudMaxima() != null && (c.longitudMaxima() < 1 || c.longitudMaxima() > 10000)) {
+                        throw new ApiException("El máximo de caracteres de \"" + (c.nombre() != null ? c.nombre() : c.clave())
+                                + "\" debe estar entre 1 y 10.000.", HttpStatus.BAD_REQUEST);
+                    }
+                    columna.setLongitudMaxima(manual && columna.getTipoDato() == TipoDatoFormulario.TEXTO ? c.longitudMaxima() : null);
                     sincronizarPuntajes(columna, c, s.nombre());
+                    sincronizarHallazgos(columna, c.calificacion(), s.nombre(), tipo == TipoSeccionFormulario.TABLA, calculada,
+                            codigosCatalogo, usosUnicos, referenciasNota);
+                    clavesPlantilla.add(columna.getClave());
                     columnasFinales.add(columna);
                 }
             }
@@ -318,8 +367,21 @@ public class FormularioPlantillaService {
             filasManejadas.clear();
             filasManejadas.addAll(filasSugeridasFinales);
 
+            clavesPlantilla.add(seccion.getClave());
             resultado.add(seccion);
         }
+
+        for (String[] ref : referenciasNota) {
+            if (!clavesPlantilla.contains(ref[1])) {
+                throw new ApiException("La nota \"" + ref[0] + "\" mira \"" + ref[1] + "\", que no es un campo ni una tabla de esta plantilla.",
+                        HttpStatus.BAD_REQUEST);
+            }
+        }
+        // El servicio califica por hallazgos si algún campo los aplica (lo usan el estudio y el formulario).
+        boolean califica = resultado.stream().flatMap(x -> x.getColumnas().stream())
+                .anyMatch(c -> Boolean.TRUE.equals(c.getActivo())
+                        && ("HALLAZGO".equals(c.getUsoCalificacion()) || !c.getHallazgos().isEmpty()));
+        tipoProgreso.setGrupoCalificacion(califica ? com.polygraph.erp.modules.riesgo.codigos.CalculoSubservicioService.GRUPO_HALLAZGOS : null);
 
         // Sube el contador de versión de la plantilla — cada ServicioSubproceso guarda en su
         // propio versionPlantilla el valor vigente al crearse (ver SolicitudService.
@@ -458,6 +520,15 @@ public class FormularioPlantillaService {
         }
     }
 
+    private String parseCampoServicio(String valor) {
+        if (valor == null || valor.isBlank()) return null;
+        try {
+            return com.polygraph.erp.shared.enums.CampoServicio.valueOf(valor).name();
+        } catch (IllegalArgumentException e) {
+            throw new ApiException("Dato del estudio inválido: " + valor, HttpStatus.BAD_REQUEST);
+        }
+    }
+
     private String parseCampoCliente(String valor) {
         if (valor == null || valor.isBlank()) return null;
         try {
@@ -467,13 +538,13 @@ public class FormularioPlantillaService {
         }
     }
 
-    // formulario_columnas.opciones es VARCHAR(1000) — sin este límite, una lista desplegable con
+    // formulario_columnas.opciones era VARCHAR(1000) (TEXT desde V203) — sin este límite, una lista desplegable con
     // muchas opciones (o algunas opciones largas) generaba un texto unido más largo que la
     // columna, y Postgres rechazaba el guardado con el mismo DataIntegrityViolationException
     // genérico de antes (mismo problema que la clave truncada más arriba, pero acá no se puede
     // recortar en silencio sin perder opciones que el admin sí escribió — se rechaza con un
     // mensaje claro para que acorte algo él mismo).
-    private static final int LONGITUD_MAXIMA_OPCIONES = 1000;
+    private static final int LONGITUD_MAXIMA_OPCIONES = 4000;
 
     /** LISTA exige al menos una opción no vacía (si no, el analista vería una lista desplegable
      *  sin nada para elegir) — cualquier otro tipo de dato ignora lo que venga en opciones. */
@@ -486,7 +557,7 @@ public class FormularioPlantillaService {
             throw new ApiException("La columna \"" + etiquetaColumna
                     + "\" es de tipo lista desplegable pero no tiene opciones.", HttpStatus.BAD_REQUEST);
         }
-        String unidas = String.join(",", limpias);
+        String unidas = OpcionesLista.unir(limpias);
         if (unidas.length() > LONGITUD_MAXIMA_OPCIONES) {
             throw new ApiException("Las opciones de la columna \"" + etiquetaColumna + "\" suman demasiado texto entre todas "
                     + "(máximo " + LONGITUD_MAXIMA_OPCIONES + " caracteres) — acorta el texto de alguna opción o quita alguna.",
@@ -501,7 +572,7 @@ public class FormularioPlantillaService {
      *  constructor ya le avisa antes de guardar). Muta la MISMA colección (orphanRemoval). */
     private void sincronizarPuntajes(FormularioColumna columna, GuardarPlantillaRequest.ColumnaRequest c, String nombreSeccion) {
         boolean pide = Boolean.TRUE.equals(c.calificaRiesgo());
-        boolean automatica = columna.getCampoCandidato() != null || columna.getCampoCliente() != null;
+        boolean automatica = columna.esAutomatica();
         boolean tipoCalificable = columna.getTipoDato() == TipoDatoFormulario.LISTA || columna.getTipoDato() == TipoDatoFormulario.BOOLEANO;
         String etiqueta = columna.getNombre() != null ? columna.getNombre() : columna.getClave();
         if (pide && (automatica || !tipoCalificable)) {
@@ -515,7 +586,7 @@ public class FormularioPlantillaService {
             return;
         }
         List<String> validas = columna.getTipoDato() == TipoDatoFormulario.BOOLEANO
-                ? List.of("true", "false") : parseOpciones(columna.getOpciones());
+                ? List.of("true", "false") : OpcionesLista.leer(columna.getOpciones());
         Map<String, GuardarPlantillaRequest.PuntajeOpcionRequest> pedidos = new LinkedHashMap<>();
         if (c.puntajes() != null) {
             for (var pr : c.puntajes()) {
@@ -538,16 +609,140 @@ public class FormularioPlantillaService {
         }
     }
 
-    private List<String> parseOpciones(String opcionesCsv) {
-        if (opcionesCsv == null || opcionesCsv.isBlank()) return List.of();
-        return Arrays.stream(opcionesCsv.split(",")).map(String::trim).filter(o -> !o.isBlank()).toList();
+    private static final Set<String> USOS = Set.of("HALLAZGO", "CRITICIDAD", "CONDICION");
+    private static final Set<String> CALCULOS_CAMPO = Set.of("PUNTAJE", "FORMULA", "NIVEL", "SEMAFORO_BAJO", "SEMAFORO_MEDIO",
+            "SEMAFORO_ALTO", "NOTA", "MINIMO_FILAS", "PROMEDIO_TABLA");
+    private static final Set<String> CALCULOS_FILA = Set.of("NUMERO_FILA", "PROMEDIO_FILA", "CODIGOS_FILA", "TEXTO_SI");
+    /** Cálculos que guardan referencia y texto: la nota, el texto condicional y los tres de promedio / mínimo de filas. */
+    private static final Set<String> CALCULOS_CON_REFERENCIA = Set.of("NOTA", "TEXTO_SI", "PROMEDIO_FILA", "MINIMO_FILAS", "PROMEDIO_TABLA");
+    private static final java.util.regex.Pattern REGLA_MENOR = java.util.regex.Pattern.compile("^\\s*[A-Za-z0-9-]+\\s*<\\s*\\d+([.,]\\d+)?\\s*$");
+    private static final Set<String> CALCULOS_HALLAZGOS = Set.of("REF", "DESCRIPCION", "FUENTE", "DETALLE", "PUNTOS");
+
+    /** Calificación por hallazgos de una columna (V205): valida y guarda uso, cálculo, nota,
+     *  fuente/detalle y el hallazgo de cada opción. Muta la MISMA colección (orphanRemoval). */
+    private void sincronizarHallazgos(FormularioColumna columna, com.polygraph.erp.modules.formularios.dto.CalificacionColumnaDto cfg,
+                                      String nombreSeccion, boolean enTabla, boolean seccionCalculada, Set<String> codigosCatalogo,
+                                      Map<String, Integer> usosUnicos, List<String[]> referenciasNota) {
+        String etiqueta = "\"" + (columna.getNombre() != null ? columna.getNombre() : columna.getClave()) + "\" (sección \"" + nombreSeccion + "\")";
+        String uso = cfg == null || cfg.uso() == null || cfg.uso().isBlank() ? null : cfg.uso().trim().toUpperCase();
+        String calculo = cfg == null || cfg.calculo() == null || cfg.calculo().isBlank() ? null : cfg.calculo().trim().toUpperCase();
+        boolean manual = !columna.esAutomatica();
+        boolean lista = columna.getTipoDato() == TipoDatoFormulario.LISTA;
+
+        if (uso != null) {
+            if (!USOS.contains(uso)) throw new ApiException("Uso de calificación no válido en " + etiqueta + ".", HttpStatus.BAD_REQUEST);
+            if (!manual || !lista) {
+                throw new ApiException(etiqueta + ": solo una lista que llena quien diligencia puede ser hallazgo, criticidad o condición.",
+                        HttpStatus.BAD_REQUEST);
+            }
+            List<String> opciones = OpcionesLista.leer(columna.getOpciones());
+            switch (uso) {
+                case "HALLAZGO" -> {
+                    List<String> desconocidos = opciones.stream().filter(o -> !"—".equals(o) && !codigosCatalogo.contains(o)).toList();
+                    if (!desconocidos.isEmpty()) {
+                        throw new ApiException(etiqueta + ": " + String.join(", ", desconocidos) + " no está en el catálogo de hallazgos.",
+                                HttpStatus.BAD_REQUEST);
+                    }
+                }
+                case "CRITICIDAD" -> {
+                    if (enTabla) throw new ApiException(etiqueta + ": la criticidad del cargo va en una sección de campos, no en una tabla.", HttpStatus.BAD_REQUEST);
+                    if (opciones.stream().anyMatch(o -> !"—".equals(o) && com.polygraph.erp.modules.riesgo.hallazgos.MotorHallazgos.criticidad(o) == null)) {
+                        throw new ApiException(etiqueta + ": las opciones de la criticidad deben ser Estándar, Sensible y Crítico.", HttpStatus.BAD_REQUEST);
+                    }
+                }
+                case "CONDICION" -> {
+                    if (enTabla) throw new ApiException(etiqueta + ": la condición va en una sección de campos, no en una tabla.", HttpStatus.BAD_REQUEST);
+                    if (!opciones.contains("Sí")) throw new ApiException(etiqueta + ": la condición necesita la opción \"Sí\".", HttpStatus.BAD_REQUEST);
+                }
+                default -> { }
+            }
+            if (!"HALLAZGO".equals(uso) && usosUnicos.merge(uso, 1, Integer::sum) > 1) {
+                throw new ApiException("Solo puede haber un campo de " + ("CRITICIDAD".equals(uso) ? "criticidad del cargo" : "condición")
+                        + " en la plantilla.", HttpStatus.BAD_REQUEST);
+            }
+        }
+
+        if (calculo != null) {
+            boolean valido = seccionCalculada ? CALCULOS_HALLAZGOS.contains(calculo)
+                    : enTabla ? CALCULOS_FILA.contains(calculo) : CALCULOS_CAMPO.contains(calculo);
+            if (!Boolean.TRUE.equals(columna.getCalculado()) || !valido) {
+                throw new ApiException(etiqueta + ": ese resultado no aplica aquí. "
+                        + (seccionCalculada ? "En la tabla de hallazgos: Ref., Descripción, Fuente, Detalle o Puntos."
+                        : enTabla ? "En una tabla: número de fila, códigos de la fila o texto según otro campo de la fila." : "En campos: puntaje, fórmula, nivel, semáforo o nota."),
+                        HttpStatus.BAD_REQUEST);
+            }
+            if ("TEXTO_SI".equals(calculo)) {
+                if (cfg.referencia() == null || !cfg.referencia().contains("=") || cfg.textoNota() == null || cfg.textoNota().isBlank()) {
+                    throw new ApiException(etiqueta + ": el texto condicional necesita \"campo=Valor\" y el texto que sale.", HttpStatus.BAD_REQUEST);
+                }
+            }
+            if ("PROMEDIO_FILA".equals(calculo)) {
+                if (cfg.referencia() == null || cfg.referencia().isBlank()) {
+                    throw new ApiException(etiqueta + ": el promedio de la fila necesita los campos que promedia (separados por coma).", HttpStatus.BAD_REQUEST);
+                }
+                if (cfg.textoNota() != null && !cfg.textoNota().isBlank() && !REGLA_MENOR.matcher(cfg.textoNota()).matches()) {
+                    throw new ApiException(etiqueta + ": la regla del promedio se escribe \"CÓDIGO<número\" (ej. PER-03<3).", HttpStatus.BAD_REQUEST);
+                }
+            }
+            if ("MINIMO_FILAS".equals(calculo)) {
+                if (cfg.referencia() == null || cfg.referencia().isBlank() || cfg.textoNota() == null || !REGLA_MENOR.matcher(cfg.textoNota()).matches()) {
+                    throw new ApiException(etiqueta + ": el mínimo de filas necesita la tabla que cuenta y la regla \"CÓDIGO<número\" (ej. PER-05<2).", HttpStatus.BAD_REQUEST);
+                }
+                referenciasNota.add(new String[]{columna.getNombre() != null ? columna.getNombre() : columna.getClave(), cfg.referencia().trim()});
+            }
+            if ("PROMEDIO_TABLA".equals(calculo)) {
+                if (cfg.referencia() == null || cfg.referencia().isBlank()) {
+                    throw new ApiException(etiqueta + ": el promedio de la tabla necesita la tabla que promedia.", HttpStatus.BAD_REQUEST);
+                }
+                referenciasNota.add(new String[]{columna.getNombre() != null ? columna.getNombre() : columna.getClave(), cfg.referencia().trim()});
+            }
+            if ("NOTA".equals(calculo)) {
+                if (cfg.referencia() == null || cfg.referencia().isBlank() || cfg.textoNota() == null || cfg.textoNota().isBlank()) {
+                    throw new ApiException(etiqueta + ": la nota necesita el campo o tabla que mira y su texto.", HttpStatus.BAD_REQUEST);
+                }
+                referenciasNota.add(new String[]{columna.getNombre() != null ? columna.getNombre() : columna.getClave(), cfg.referencia().trim()});
+            }
+        }
+
+        // Hallazgo que genera cada opción (solo listas normales que llena una persona).
+        Map<String, String> porOpcion = new LinkedHashMap<>();
+        if (cfg != null && cfg.porOpcion() != null && manual && lista && uso == null) {
+            List<String> validas = OpcionesLista.leer(columna.getOpciones());
+            for (var h : cfg.porOpcion()) {
+                if (h.opcion() == null || h.codigo() == null || h.codigo().isBlank() || !validas.contains(h.opcion().trim())) continue;
+                if (!codigosCatalogo.contains(h.codigo().trim())) {
+                    throw new ApiException(etiqueta + ": " + h.codigo() + " no está en el catálogo de hallazgos.", HttpStatus.BAD_REQUEST);
+                }
+                porOpcion.put(h.opcion().trim(), h.codigo().trim());
+            }
+        }
+        boolean generaPorRegla = ("PROMEDIO_FILA".equals(calculo) || "MINIMO_FILAS".equals(calculo))
+                && cfg != null && cfg.textoNota() != null && !cfg.textoNota().isBlank();
+        boolean daHallazgo = "HALLAZGO".equals(uso) || !porOpcion.isEmpty() || generaPorRegla;
+
+        columna.setUsoCalificacion(uso);
+        columna.setCalculo(calculo);
+        boolean conTexto = calculo != null && CALCULOS_CON_REFERENCIA.contains(calculo);
+        columna.setReferencia(conTexto ? cfg.referencia().trim()
+                : "FORMULA".equals(calculo) && cfg != null && "CON_CODIGO".equals(cfg.referencia()) ? "CON_CODIGO" : null);
+        columna.setTextoNota(conTexto && cfg.textoNota() != null && !cfg.textoNota().isBlank() ? cfg.textoNota().trim() : null);
+        columna.setFuenteHallazgo(daHallazgo && cfg.fuente() != null && !cfg.fuente().isBlank() ? cfg.fuente().trim() : null);
+        columna.setDetalleHallazgo(daHallazgo && cfg.detalle() != null && !cfg.detalle().isBlank() ? cfg.detalle().trim() : null);
+        List<com.polygraph.erp.modules.formularios.entity.FormularioColumnaHallazgo> manejados = columna.getHallazgos();
+        manejados.removeIf(h -> !porOpcion.containsKey(h.getOpcion()));
+        for (var e : porOpcion.entrySet()) {
+            var existente = manejados.stream().filter(h -> h.getOpcion().equals(e.getKey())).findFirst().orElse(null);
+            if (existente != null) existente.setCodigo(e.getValue());
+            else manejados.add(com.polygraph.erp.modules.formularios.entity.FormularioColumnaHallazgo.builder()
+                    .columna(columna).opcion(e.getKey()).codigo(e.getValue()).build());
+        }
     }
 
     private SeccionPlantillaResponse toResponse(FormularioSeccion s, boolean incluirPuntajes) {
         List<ColumnaResponse> columnas = s.getColumnas().stream()
                 .filter(c -> Boolean.TRUE.equals(c.getActivo()))
                 .sorted((a, b) -> a.getOrden().compareTo(b.getOrden()))
-                .map(c -> ColumnaResponse.de(c, parseOpciones(c.getOpciones()), incluirPuntajes))
+                .map(c -> ColumnaResponse.de(c, OpcionesLista.leer(c.getOpciones()), incluirPuntajes))
                 .toList();
         List<FilaSugeridaResponse> filasSugeridas = s.getFilasSugeridas().stream()
                 .sorted((a, b) -> a.getOrden().compareTo(b.getOrden()))
@@ -556,7 +751,8 @@ public class FormularioPlantillaService {
         List<String> columnasOcultas = s.getColumnasOcultas() == null || s.getColumnasOcultas().isBlank()
                 ? List.of() : Arrays.asList(s.getColumnasOcultas().split(","));
         return new SeccionPlantillaResponse(s.getIdSeccion(), s.getNombre(), s.getTipo().name(), s.getOrden(),
-                s.getClave(), s.getOrigenFijo(), columnasOcultas, columnas, filasSugeridas);
+                s.getClave(), s.getOrigenFijo(), columnasOcultas, columnas, filasSugeridas,
+                Boolean.TRUE.equals(s.getCalculada()), Boolean.TRUE.equals(s.getOpcional()), s.getGrupo());
     }
 
     /** Ruta del .docx con marcadores subido para este subproceso, si hay uno. */
@@ -578,6 +774,14 @@ public class FormularioPlantillaService {
     @Transactional(readOnly = true)
     public List<CampoCandidatoOpcion> listarCamposClienteDisponibles() {
         return Arrays.stream(CampoCliente.values())
+                .map(c -> new CampoCandidatoOpcion(c.name(), c.getEtiqueta()))
+                .toList();
+    }
+
+    /** Datos del estudio (N° de estudio, fecha de emisión, cliente, cargo, profesional) que una
+     *  columna puede mostrar sola — ver CampoServicio. */
+    public List<CampoCandidatoOpcion> listarCamposServicioDisponibles() {
+        return Arrays.stream(com.polygraph.erp.shared.enums.CampoServicio.values())
                 .map(c -> new CampoCandidatoOpcion(c.name(), c.getEtiqueta()))
                 .toList();
     }

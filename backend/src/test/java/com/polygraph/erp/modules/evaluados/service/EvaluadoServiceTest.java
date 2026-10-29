@@ -46,6 +46,12 @@ class EvaluadoServiceTest {
     @Mock private HistorialLaboralService historialLaboralService;
     @Mock private UsuarioRepository usuarioRepository;
     @Mock private NotificacionRepository notificacionRepository;
+    @Mock private com.polygraph.erp.modules.catalogo.repository.DocumentoRequeridoProcesoRepository documentoRequeridoProcesoRepository;
+    @Mock private ValidadorArchivoCandidato validadorArchivo;
+    @Mock private com.polygraph.erp.modules.catalogo.repository.ItemHojaVidaRepository itemHojaVidaRepository;
+    @Mock private com.polygraph.erp.modules.auth.service.AceptacionLegalService aceptacionLegalService;
+
+    @Mock private com.polygraph.erp.modules.servicios.service.SemaforoTiempoService semaforoTiempoService;
 
     @InjectMocks
     private EvaluadoService evaluadoService;
@@ -107,33 +113,43 @@ class EvaluadoServiceTest {
     }
 
     @Test
-    @DisplayName("validarLink con link ya utilizado lanza ApiException GONE")
-    void validar_link_ya_usado_lanza_excepcion() {
-        linkActivo.setUsado(true);
-        when(linkCandidatoRepository.findByToken("token-usado")).thenReturn(Optional.of(linkActivo));
+    @DisplayName("V197: un link revocado por el gestor ya no abre (GONE)")
+    void validar_link_revocado_lanza_excepcion() {
+        linkActivo.setRevocado(true);
+        when(linkCandidatoRepository.findByToken("token-revocado")).thenReturn(Optional.of(linkActivo));
 
-        assertThatThrownBy(() -> evaluadoService.validarLink("token-usado"))
+        assertThatThrownBy(() -> evaluadoService.servicioConAcceso("token-revocado"))
                 .isInstanceOf(ApiException.class)
                 .satisfies(ex -> {
                     ApiException apiEx = (ApiException) ex;
                     assertThat(apiEx.getStatus()).isEqualTo(HttpStatus.GONE);
-                    assertThat(apiEx.getMessage()).containsIgnoringCase("utilizado");
+                    assertThat(apiEx.getMessage()).containsIgnoringCase("desactivado");
                 });
     }
 
     @Test
-    @DisplayName("validarLink con link expirado lanza ApiException GONE")
-    void validar_link_expirado_lanza_excepcion() {
-        linkActivo.setFechaExpiracion(LocalDateTime.now().minusHours(1));
-        when(linkCandidatoRepository.findByToken("token-expirado")).thenReturn(Optional.of(linkActivo));
+    @DisplayName("V197: con el servicio cerrado (publicado/finalizado/cancelado) el link ya no abre")
+    void validar_link_servicio_cerrado_lanza_excepcion() {
+        servicioBase.setEstado(EstadoServicio.PUBLICADO);
+        when(linkCandidatoRepository.findByToken("token-cerrado")).thenReturn(Optional.of(linkActivo));
 
-        assertThatThrownBy(() -> evaluadoService.validarLink("token-expirado"))
+        assertThatThrownBy(() -> evaluadoService.servicioConAcceso("token-cerrado"))
                 .isInstanceOf(ApiException.class)
                 .satisfies(ex -> {
                     ApiException apiEx = (ApiException) ex;
                     assertThat(apiEx.getStatus()).isEqualTo(HttpStatus.GONE);
-                    assertThat(apiEx.getMessage()).containsIgnoringCase("expirado");
+                    assertThat(apiEx.getMessage()).containsIgnoringCase("finalizó");
                 });
+    }
+
+    @Test
+    @DisplayName("V197: enviado (usado) y pasadas las 36 h, el link SIGUE abriendo mientras el servicio esté activo")
+    void validar_link_usado_y_vencido_sigue_abriendo() {
+        linkActivo.setUsado(true);
+        linkActivo.setFechaExpiracion(LocalDateTime.now().minusDays(5));
+        when(linkCandidatoRepository.findByToken("token-enviado")).thenReturn(Optional.of(linkActivo));
+
+        assertThat(evaluadoService.servicioConAcceso("token-enviado")).isSameAs(servicioBase);
     }
 
     @Test
@@ -162,6 +178,45 @@ class EvaluadoServiceTest {
         LinkValidacionResponse respuesta = evaluadoService.validarLink("token-valido-abc123");
 
         assertThat(respuesta.hojaVidaCompletada()).isTrue();
+        assertThat(respuesta.autorizacionDatos()).isTrue();
+    }
+
+    // ── Autorización de tratamiento de datos (primera pantalla del portal) ──
+
+    @Test
+    @DisplayName("Primer ingreso: validarLink avisa que falta la autorización de datos")
+    void validar_link_sin_autorizacion() {
+        when(linkCandidatoRepository.findByToken("token-valido-abc123")).thenReturn(Optional.of(linkActivo));
+        when(hojaVidaRepository.findByCandidato_IdCandidato(20L)).thenReturn(Optional.empty());
+
+        assertThat(evaluadoService.validarLink("token-valido-abc123").autorizacionDatos()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Aceptar la autorización la registra con fecha, aunque aún no exista hoja de vida")
+    void autorizar_registra_fecha() {
+        when(linkCandidatoRepository.findByToken("token-valido-abc123")).thenReturn(Optional.of(linkActivo));
+        when(hojaVidaRepository.findByCandidato_IdCandidato(20L)).thenReturn(Optional.empty());
+        when(hojaVidaRepository.save(any(HojaVidaEvaluado.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        evaluadoService.autorizarTratamientoDatos("token-valido-abc123", "127.0.0.1");
+
+        ArgumentCaptor<HojaVidaEvaluado> captor = ArgumentCaptor.forClass(HojaVidaEvaluado.class);
+        verify(hojaVidaRepository, atLeastOnce()).save(captor.capture());
+        HojaVidaEvaluado guardada = captor.getValue();
+        assertThat(guardada.getAutorizacionDatos()).isTrue();
+        assertThat(guardada.getFechaAutorizacion()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("Sin autorización no se pueden cargar documentos (403)")
+    void sin_autorizacion_no_carga_documentos() {
+        when(hojaVidaRepository.findByCandidato_IdCandidato(20L)).thenReturn(Optional.of(
+                HojaVidaEvaluado.builder().candidato(candidatoBase).autorizacionDatos(false).build()));
+
+        assertThatThrownBy(() -> evaluadoService.exigirAutorizacion(servicioBase))
+                .isInstanceOf(ApiException.class)
+                .satisfies(ex -> assertThat(((ApiException) ex).getStatus()).isEqualTo(HttpStatus.FORBIDDEN));
     }
 
     // ── enviarFormulario ──────────────────────────────────────────
@@ -173,7 +228,8 @@ class EvaluadoServiceTest {
                 true, null, null, null, null, null, null, null, null, null,
                 "pedro@test.com", "3001234567",
                 null, null, null, null, null, null, null,
-                List.of(), List.of(), List.of(), Map.of(), null, null, null, null);
+                List.of(), List.of(), List.of(), Map.of(), null, null, null, null,
+                null, null, null, null, null, null, null, null);
 
         when(linkCandidatoRepository.findByToken("token-valido-abc123")).thenReturn(Optional.of(linkActivo));
         when(hojaVidaRepository.findByCandidato_IdCandidato(anyLong())).thenReturn(Optional.empty());
@@ -193,7 +249,8 @@ class EvaluadoServiceTest {
         HojaVidaRequest request = new HojaVidaRequest(
                 false, null, null, null, null, null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null,
-                List.of(), List.of(), List.of(), Map.of(), null, null, null, null);
+                List.of(), List.of(), List.of(), Map.of(), null, null, null, null,
+                null, null, null, null, null, null, null, null);
 
         when(linkCandidatoRepository.findByToken("token-valido-abc123")).thenReturn(Optional.of(linkActivo));
 
@@ -211,7 +268,8 @@ class EvaluadoServiceTest {
                 false, null, "Bogotá", null, null, "Soltero", "Universitario",
                 "Calle 123", "Chapinero", "3", "pedro@test.com", "3001234567",
                 null, null, null, null, null, null, null,
-                List.of(), List.of(), List.of(), Map.of(), null, null, null, null);
+                List.of(), List.of(), List.of(), Map.of(), null, null, null, null,
+                null, null, null, null, null, null, null, null);
 
         when(linkCandidatoRepository.findByToken("token-valido-abc123")).thenReturn(Optional.of(linkActivo));
         when(hojaVidaRepository.findByCandidato_IdCandidato(20L)).thenReturn(Optional.empty());
@@ -241,7 +299,8 @@ class EvaluadoServiceTest {
                 true, null, null, null, null, "Casado", null, null, null, null,
                 "pedro@test.com", "3001234567",
                 null, null, null, null, null, null, null,
-                List.of(), List.of(), List.of(), Map.of(), null, null, null, null);
+                List.of(), List.of(), List.of(), Map.of(), null, null, null, null,
+                null, null, null, null, null, null, null, null);
 
         when(linkCandidatoRepository.findByToken("token-valido-abc123")).thenReturn(Optional.of(linkActivo));
         when(hojaVidaRepository.findByCandidato_IdCandidato(20L)).thenReturn(Optional.of(hojaExistente));

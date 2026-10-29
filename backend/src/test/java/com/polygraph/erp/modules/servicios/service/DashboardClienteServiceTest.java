@@ -42,6 +42,9 @@ class DashboardClienteServiceTest {
     @Mock private UsuarioRepository usuarioRepository;
     @Mock private SaldoServicioClienteService saldoServicioClienteService;
 
+    @Mock private com.polygraph.erp.shared.service.DiasHabilesService diasHabilesService;
+    @Mock private com.polygraph.erp.shared.service.TiempoServicioService tiempoServicioService;
+
     @InjectMocks
     private DashboardClienteService dashboardService;
 

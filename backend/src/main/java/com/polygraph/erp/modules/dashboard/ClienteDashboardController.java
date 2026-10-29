@@ -36,9 +36,12 @@ public class ClienteDashboardController {
     @GetMapping("/requests")
     public ResponseEntity<Page<SolicitudResumenResponse>> listarSolicitudes(
             @RequestParam(required = false) EstadoServicio status,
+            // uno o varios, separados por coma (ej. ENTREGADA_A_TIEMPO,ENTREGADA_TARDE)
+            @RequestParam(required = false) java.util.List<com.polygraph.erp.shared.enums.EstadoTiempo> estadoTiempo,
+            @RequestParam(required = false) String orden,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return ResponseEntity.ok(servicio.listarSolicitudes(status, PageRequest.of(page, size)));
+        return ResponseEntity.ok(servicio.listarSolicitudes(status, estadoTiempo, orden, PageRequest.of(page, size)));
     }
 
     @GetMapping("/gestor")

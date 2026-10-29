@@ -108,6 +108,9 @@ public class TipoNovedadService {
                 .textoAyuda(textoONull(req.textoAyuda()))
                 .orden(req.orden() != null ? req.orden() : siguienteOrdenTipo(c.getIdCategoriaNovedad()))
                 .roles(parsearRoles(req.roles()))
+                .visibleCliente(Boolean.TRUE.equals(req.visibleCliente()))
+                .pausaReloj(Boolean.TRUE.equals(req.pausaReloj()))
+                .imputableA(imputable(req.imputableA()))
                 .build());
         notificacionService.crearParaAdmins("CATALOGO", "Tipo de novedad creado",
                 "Se agregó \"" + t.getNombre() + "\" en " + c.getNombre() + ".");
@@ -122,6 +125,9 @@ public class TipoNovedadService {
         t.setNombre(req.nombre().trim());
         t.setTextoAyuda(textoONull(req.textoAyuda()));
         if (req.orden() != null) t.setOrden(req.orden());
+        if (req.visibleCliente() != null) t.setVisibleCliente(req.visibleCliente());
+        if (req.pausaReloj() != null) t.setPausaReloj(req.pausaReloj());
+        if (req.imputableA() != null) t.setImputableA(imputable(req.imputableA()));
         t.getRoles().clear();
         t.getRoles().addAll(parsearRoles(req.roles()));
         log.info("Tipo de novedad actualizado: {} roles={}", id, t.getRoles());
@@ -213,12 +219,24 @@ public class TipoNovedadService {
                 c.getOrden(), c.getActivo(), tipoRepository.countByCategoria_IdCategoriaNovedad(c.getIdCategoriaNovedad()));
     }
 
+    private static com.polygraph.erp.shared.enums.ImputableA imputable(String valor) {
+        if (valor == null || valor.isBlank()) return com.polygraph.erp.shared.enums.ImputableA.POLYGRAPH;
+        try {
+            return com.polygraph.erp.shared.enums.ImputableA.valueOf(valor.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new ApiException("Elige de quién es la causa: Polygraph, el candidato o el cliente.", HttpStatus.BAD_REQUEST);
+        }
+    }
+
     private TipoNovedadResponse toResponse(TipoNovedad t) {
         CategoriaNovedad c = t.getCategoria();
         return new TipoNovedadResponse(t.getIdTipoNovedad(), t.getClave(), t.getNombre(),
                 c.getIdCategoriaNovedad(), c.getNombre(), c.getColor(),
                 t.getRoles().stream().map(Enum::name).sorted().toList(),
                 t.getTextoAyuda(), t.getOrden(), t.getActivo(),
-                t.getIdTipoNovedad() != null ? novedadRepository.countByTipo_IdTipoNovedad(t.getIdTipoNovedad()) : 0);
+                t.getIdTipoNovedad() != null ? novedadRepository.countByTipo_IdTipoNovedad(t.getIdTipoNovedad()) : 0,
+                Boolean.TRUE.equals(t.getVisibleCliente()),
+                Boolean.TRUE.equals(t.getPausaReloj()),
+                t.getImputableA() != null ? t.getImputableA().name() : com.polygraph.erp.shared.enums.ImputableA.POLYGRAPH.name());
     }
 }

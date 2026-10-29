@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useId, useState, useEffect } from 'react'
 import asignacionService from '../services/asignacionService'
 import { Modal } from './ui/Modal'
 
 /** @param subprocesos array de {id, subproceso} a encargar — 1 desde la tarjeta puntual, varios
  *  desde el botón de la tabla principal (todos los pendientes de poligrafía/visita del servicio). */
 export default function ModalAsignarProgramador({ subprocesos, onClose, onGuardado, onToast }) {
+  const idCampos = useId()
   const [programadores, setProgramadores] = useState(null)
   const [idProgramador, setIdProgramador] = useState('')
   const [guardando, setGuardando] = useState(false)
@@ -54,8 +55,8 @@ export default function ModalAsignarProgramador({ subprocesos, onClose, onGuarda
           <p className="text-sm text-amber-600">No hay programadores activos en el sistema.</p>
         ) : (
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Programador</label>
-            <select value={idProgramador} onChange={e => setIdProgramador(e.target.value)}
+            <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">Programador</label>
+            <select id={`${idCampos}-1`} value={idProgramador} onChange={e => setIdProgramador(e.target.value)}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500">
               <option value="">Selecciona…</option>
               {programadores.map(p => (

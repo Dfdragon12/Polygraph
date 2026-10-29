@@ -21,6 +21,10 @@ spring:
     password: test
 
 app:
+  # H2 no tiene FOR UPDATE SKIP LOCKED: en pruebas no corre el despachador de la cola.
+  trabajos:
+    habilitado: false
+    directorio: ./target/trabajos-test
   jwt:
     secret: test-secret-key-for-unit-tests-minimum-256-bits-long-pad-to-32-chars
     expiration-ms: 86400000

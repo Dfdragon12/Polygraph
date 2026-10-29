@@ -1,5 +1,5 @@
 import InternalLayout from './InternalLayout'
-import { IconoDashboard, IconoProbeta, IconoEstadisticas } from './IconosNav'
+import { IconoDashboard, IconoProbeta, IconoCuenta, IconoCatalogo } from './IconosNav'
 
 const SECCIONES = [
   {
@@ -12,7 +12,18 @@ const SECCIONES = [
     titulo: 'Mis Servicios',
     items: [
       { ruta: '/poligrafista/servicios', etiqueta: 'Mis Servicios', icono: <IconoProbeta /> },
-      { ruta: '/poligrafista/resultados',etiqueta: 'Resultados',    icono: <IconoEstadisticas /> },
+    ],
+  },
+  {
+    titulo: 'Reportes',
+    items: [
+      { ruta: '/poligrafista/productividad', etiqueta: 'Productividad', icono: <IconoCatalogo /> },
+    ],
+  },
+  {
+    titulo: 'Mi Perfil',
+    items: [
+      { ruta: '/poligrafista/perfil', etiqueta: 'Mis datos', icono: <IconoCuenta /> },
     ],
   },
 ]

@@ -1,12 +1,10 @@
 package com.polygraph.erp.modules.pagos.job;
 
-import com.polygraph.erp.modules.clientes.entity.ClientePospago;
 import com.polygraph.erp.modules.clientes.repository.ClientePospagoRepository;
 import com.polygraph.erp.modules.notificaciones.service.NotificacionService;
 import com.polygraph.erp.modules.pagos.entity.FacturaPospago;
 import com.polygraph.erp.modules.pagos.repository.FacturaPospagoRepository;
 import com.polygraph.erp.shared.enums.EstadoFacturaPospago;
-import com.polygraph.erp.shared.enums.EstadoMora;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -30,6 +28,7 @@ public class FacturaPospagoVencimientoJob {
     private final FacturaPospagoRepository facturaPospagoRepository;
     private final ClientePospagoRepository clientePospagoRepository;
     private final NotificacionService notificacionService;
+    private final com.polygraph.erp.modules.pagos.service.MoraService moraService;
 
     @Scheduled(cron = "0 0 6 * * *")
     public void marcarVencidas() {
@@ -64,12 +63,7 @@ public class FacturaPospagoVencimientoJob {
         factura.setEstado(EstadoFacturaPospago.VENCIDA);
         facturaPospagoRepository.save(factura);
 
-        ClientePospago pospago = clientePospagoRepository.findByIdCliente(factura.getCliente().getIdCliente()).orElse(null);
-        if (pospago != null && pospago.getEstadoMora() != EstadoMora.SUSPENDIDO) {
-            pospago.setEstadoMora(EstadoMora.EN_MORA);
-            pospago.setDiasMora((pospago.getDiasMora() != null ? pospago.getDiasMora() : 0));
-            clientePospagoRepository.save(pospago);
-        }
+        moraService.sincronizar(factura.getCliente().getIdCliente());   // NS-05: la mora sale de las facturas
 
         log.warn("Factura pospago vencida: id={}, cliente={}, referencia={}, monto={}",
                 factura.getIdFactura(), factura.getCliente().getIdCliente(), factura.getReferencia(), factura.getMontoTotal());

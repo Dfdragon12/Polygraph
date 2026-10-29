@@ -8,6 +8,11 @@ UPDATE plantilla_antecedentes_bloques
 SET id_tipo_progreso = (SELECT id_tipo_progreso FROM tipos_progreso WHERE nombre_progreso = 'Antecedentes')
 WHERE id_tipo_progreso IS NULL;
 
+-- Corrección 2026-09-28 (instalación limpia): si no existe el tipo de progreso "Antecedentes"
+-- (base nueva, sin datos), los bloques quedaban en NULL y el SET NOT NULL fallaba. Sin ese tipo
+-- los bloques no pertenecen a nada; además V156 elimina esta tabla.
+DELETE FROM plantilla_antecedentes_bloques WHERE id_tipo_progreso IS NULL;
+
 ALTER TABLE plantilla_antecedentes_bloques
     ALTER COLUMN id_tipo_progreso SET NOT NULL;
 

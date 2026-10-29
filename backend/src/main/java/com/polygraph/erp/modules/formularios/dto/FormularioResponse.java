@@ -49,7 +49,14 @@ public record FormularioResponse(
         java.time.LocalDateTime fechaAsignacion,
         java.time.LocalDateTime fechaCompletado,
         Integer duracionEstimadaMinutos,
-        java.time.LocalDate fechaEntregaEstimada
+        java.time.LocalDate fechaEntregaEstimada,
+        // Por qué no se pudo calcular el subservicio (ej. "Falta la criticidad del cargo."); null si
+        // se calculó o si el subservicio no tiene cálculo propio.
+        String avisoCalculo,
+        // Avisos para quien diligencia que NO bloquean (docs/antecedentes, Prompt 6): texto y dónde.
+        java.util.List<com.polygraph.erp.modules.riesgo.codigos.ModeloCodigos.AvisoFormulario> avisosFormulario,
+        // NS-07: la solicitud trae la criticidad del cargo (la eligió el cliente): el campo de criticidad llega precargado y solo lo cambia el gestor.
+        boolean criticidadDeSolicitud
 ) {
     /** valores solo aplica a secciones CAMPOS (idColumna -> valor); filas solo a secciones
      *  TABLA. El campo que no aplica llega vacío/null. orden: para intercalar en el mismo orden
@@ -63,7 +70,14 @@ public record FormularioResponse(
             Map<Integer, String> valores,
             List<FilaDatosResponse> filas,
             // idColumna -> justificación de una respuesta crítica (ver ColumnaResponse.opcionesCriticas)
-            Map<Integer, String> justificaciones) {}
+            Map<Integer, String> justificaciones,
+            // Tabla que arma el código (FormularioSeccion.calculada): solo lectura, sin agregar filas.
+            boolean calculada,
+            // V212: quien diligencia puede quitarla (opcional) y si ya la quitó (omitida).
+            boolean opcional,
+            boolean omitida,
+            // V217: grupo con el que se clasifica la sección en el índice (null = sin grupo).
+            String grupo) {}
 
     public record FilaDatosResponse(Integer idFila, String etiqueta, Map<Integer, String> valores,
                                     Map<Integer, String> justificaciones) {}
@@ -86,7 +100,10 @@ public record FormularioResponse(
             List<ColumnaFija> columnas,
             List<Map<String, String>> filas,
             List<ColumnaResponse> columnasValidacion,
-            Map<String, FilaValidacionResponse> validacionPorId) {
+            Map<String, FilaValidacionResponse> validacionPorId,
+            boolean opcional,
+            boolean omitida,
+            String grupo) {
         public record ColumnaFija(String clave, String etiqueta) {}
         public record FilaValidacionResponse(Integer idFila, Map<Integer, String> valores, Map<Integer, String> justificaciones) {}
     }

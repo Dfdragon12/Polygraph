@@ -78,8 +78,11 @@ CREATE UNIQUE INDEX ux_formulario_datos_campo ON formulario_datos (id_formulario
 CREATE UNIQUE INDEX ux_formulario_datos_fila   ON formulario_datos (id_fila, id_columna)      WHERE id_fila IS NOT NULL;
 
 -- ── Se retira el modelo anterior, específico de Antecedentes ──
-DROP TABLE IF EXISTS antecedentes_consultados;
-DROP TABLE IF EXISTS verificaciones_antecedentes_legales;
+-- Corrección 2026-09-28 (instalación limpia): simit/simur/runt (de V1/V152) dependen de
+-- verificaciones_antecedentes_legales; sin CASCADE el DROP fallaba en una base nueva.
+DROP TABLE IF EXISTS runt, simur, simit CASCADE;
+DROP TABLE IF EXISTS antecedentes_consultados CASCADE;
+DROP TABLE IF EXISTS verificaciones_antecedentes_legales CASCADE;
 DROP TABLE IF EXISTS plantilla_antecedentes_bloques;
 DROP TABLE IF EXISTS catalogo_fuentes_antecedentes;
 

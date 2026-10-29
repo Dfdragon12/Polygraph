@@ -14,6 +14,7 @@ import java.time.LocalDateTime;
  * programador que lo coordina la marca RESUELTA con una respuesta (ver NovedadSubprocesoService).
  */
 @Entity
+@jakarta.persistence.EntityListeners(com.polygraph.erp.modules.tiemporeal.CambiosEntityListener.class)
 @Table(name = "novedades_subproceso")
 @Data
 @Builder

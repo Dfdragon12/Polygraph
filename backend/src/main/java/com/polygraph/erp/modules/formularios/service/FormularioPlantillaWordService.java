@@ -1,6 +1,7 @@
 package com.polygraph.erp.modules.formularios.service;
 
 import com.polygraph.erp.modules.clientes.entity.Cliente;
+import com.polygraph.erp.modules.servicios.entity.ServicioSubproceso;
 import com.polygraph.erp.modules.evaluados.entity.Candidato;
 import com.polygraph.erp.modules.evaluados.service.AlmacenamientoDocumentosService;
 import com.polygraph.erp.modules.formularios.dto.AnalisisPlantillaWordResponse;
@@ -54,7 +55,78 @@ import java.util.zip.ZipOutputStream;
 public class FormularioPlantillaWordService {
 
     private final CandidatoInfoService candidatoInfoService;
+    /** Lo que el cliente pidió al solicitar (tablas preguntas_cliente y solicitud_cliente). Opcional: sin él esas tablas salen vacías. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.polygraph.erp.modules.solicitudes.service.SolicitudExtraService solicitudExtraService;
     private final AlmacenamientoDocumentosService almacenamientoService;
+    private final com.polygraph.erp.modules.riesgo.repository.CodigoCalificacionRepository codigoRepository;
+
+    /** Anexo 1 del informe sale del CATÁLOGO DE HALLAZGOS de la plataforma (pedido del usuario
+     *  2026-10-06), no de un texto fijo en el Word: repeatTableRow(tablas['anexo_catalogo']) con
+     *  ${['a1_ref']}, ${['a1_hallazgo']}, ${['a1_calificacion']}; las alertas aparte en
+     *  tablas['anexo_alertas']. Solo los hallazgos activos que USA la plantilla (los que ofrece
+     *  algún campo de hallazgo o genera alguna opción), en el orden del catálogo (pedido del usuario
+     *  2026-10-06). usados null = todos los del área del servicio. */
+    public static final java.util.Set<String> TABLAS_CATALOGO = java.util.Set.of("anexo_catalogo", "anexo_alertas");
+    /** Tablas que arma el sistema con lo que el cliente pidió al solicitar (siempre disponibles, vacías si no pidió nada). */
+    public static final java.util.Set<String> TABLAS_SOLICITUD = java.util.Set.of("preguntas_cliente", "solicitud_cliente");
+
+    Map<String, List<Map<String, Object>>> tablasCatalogo(com.polygraph.erp.modules.catalogo.entity.TipoProgreso tipo) {
+        return tablasCatalogo(tipo, null);
+    }
+
+    /** Códigos de hallazgo que usa la plantilla guardada (columnas activas). */
+    static java.util.Set<String> hallazgosUsados(List<FormularioSeccion> secciones) {
+        java.util.Set<String> r = new java.util.HashSet<>();
+        for (FormularioSeccion s : secciones) {
+            if (!Boolean.TRUE.equals(s.getActivo())) continue;
+            for (FormularioColumna c : s.getColumnas()) {
+                if (!Boolean.TRUE.equals(c.getActivo())) continue;
+                if ("HALLAZGO".equals(c.getUsoCalificacion())) r.addAll(OpcionesLista.leer(c.getOpciones()));
+                c.getHallazgos().forEach(h -> r.add(h.getCodigo()));
+            }
+        }
+        return r;
+    }
+
+    /** Lo mismo, desde lo que está armando el admin (vista previa y análisis del Word). */
+    static java.util.Set<String> hallazgosUsados(GuardarPlantillaRequest req) {
+        java.util.Set<String> r = new java.util.HashSet<>();
+        for (var s : req.secciones()) {
+            if (s.columnas() == null) continue;
+            for (var c : s.columnas()) {
+                var cal = c.calificacion();
+                if (cal == null) continue;
+                if ("HALLAZGO".equals(cal.uso()) && c.opciones() != null) r.addAll(c.opciones());
+                if (cal.porOpcion() != null) cal.porOpcion().forEach(h -> r.add(h.codigo()));
+            }
+        }
+        return r;
+    }
+
+    Map<String, List<Map<String, Object>>> tablasCatalogo(com.polygraph.erp.modules.catalogo.entity.TipoProgreso tipo,
+                                                          java.util.Set<String> usados) {
+        List<Map<String, Object>> catalogo = new ArrayList<>();
+        List<Map<String, Object>> alertas = new ArrayList<>();
+        (codigoRepository == null ? List.<com.polygraph.erp.modules.riesgo.entity.CodigoCalificacion>of() : codigoRepository.findAll()).stream()
+                .filter(c -> Boolean.TRUE.equals(c.getActivo()))
+                .filter(c -> usados == null || usados.contains(c.getCodigo()))
+                .sorted(Comparator.comparing(com.polygraph.erp.modules.riesgo.entity.CodigoCalificacion::getOrden)
+                        .thenComparing(com.polygraph.erp.modules.riesgo.entity.CodigoCalificacion::getCodigo))
+                .forEach(c -> {
+                    Map<String, Object> fila = new HashMap<>();
+                    fila.put("etiqueta", "");
+                    fila.put("a1_ref", c.getCodigo());
+                    fila.put("a1_hallazgo", c.getDescripcion());
+                    boolean alerta = Boolean.TRUE.equals(c.getEsAlerta());
+                    fila.put("a1_calificacion", Boolean.TRUE.equals(c.getCritico()) ? "Crítico" : alerta ? "Alerta" : String.valueOf(c.getPuntos()));
+                    (alerta ? alertas : catalogo).add(fila);
+                });
+        Map<String, List<Map<String, Object>>> r = new HashMap<>();
+        r.put("anexo_catalogo", catalogo);
+        r.put("anexo_alertas", alertas);
+        return r;
+    }
 
     /** valoresCampos/filasPorSeccion/valoresPorFila ya vienen calculados por
      *  FormularioDocumentoService — se reciben en vez de recalcularlos para no repetir las mismas
@@ -75,15 +147,40 @@ public class FormularioPlantillaWordService {
                            Map<Integer, String> valoresCampos, Map<Integer, List<FormularioFila>> filasPorSeccion,
                            Map<Integer, Map<Integer, String>> valoresPorFila, boolean actorPuedeEditarPlantilla,
                            Map<String, String> riesgo, Map<String, String> calificacion) {
+        return generar(config, null, candidato, cliente, secciones, valoresCampos, filasPorSeccion, valoresPorFila,
+                actorPuedeEditarPlantilla, riesgo, calificacion, null);
+    }
+
+    /** subproceso: para los datos del estudio (columnas campoServicio — N° de estudio, cliente,
+     *  cargo, profesional). null = esos campos salen vacíos. */
+    public byte[] generar(FormularioPlantillaConfig config, ServicioSubproceso subproceso, Candidato candidato, Cliente cliente,
+                           List<FormularioSeccion> secciones,
+                           Map<Integer, String> valoresCampos, Map<Integer, List<FormularioFila>> filasPorSeccion,
+                           Map<Integer, Map<Integer, String>> valoresPorFila, boolean actorPuedeEditarPlantilla,
+                           Map<String, String> riesgo, Map<String, String> calificacion, com.polygraph.erp.modules.riesgo.codigos.ModeloCodigos.CalculoFormulario calculo) {
+        return generar(config, subproceso, candidato, cliente, secciones, valoresCampos, filasPorSeccion, valoresPorFila,
+                actorPuedeEditarPlantilla, riesgo, calificacion, calculo, Set.of());
+    }
+
+    /** seccionesOmitidas: ids de las secciones opcionales que quien diligencia quitó (V212) —
+     *  salen vacías y su bloque repeatDocPart(secciones['clave']) desaparece del documento. */
+    public byte[] generar(FormularioPlantillaConfig config, ServicioSubproceso subproceso, Candidato candidato, Cliente cliente,
+                           List<FormularioSeccion> secciones,
+                           Map<Integer, String> valoresCampos, Map<Integer, List<FormularioFila>> filasPorSeccion,
+                           Map<Integer, Map<Integer, String>> valoresPorFila, boolean actorPuedeEditarPlantilla,
+                           Map<String, String> riesgo, Map<String, String> calificacion,
+                           com.polygraph.erp.modules.riesgo.codigos.ModeloCodigos.CalculoFormulario calculo, Set<Integer> seccionesOmitidas) {
         String ruta = config != null ? config.getPlantillaWordRuta() : null;
         if (ruta == null || ruta.isBlank()) {
             throw new ApiException("Esta plantilla todavía no tiene un documento Word con marcadores subido.",
                     HttpStatus.BAD_REQUEST);
         }
 
-        ContextoPlantillaWord base = construirContexto(candidato, cliente, secciones, valoresCampos, filasPorSeccion, valoresPorFila);
+        ContextoPlantillaWord base = construirContexto(subproceso, candidato, cliente, secciones, valoresCampos, filasPorSeccion,
+                valoresPorFila, calculo, seccionesOmitidas);
         ContextoPlantillaWord contexto = new ContextoPlantillaWord(base.getCandidato(), base.getCampos(), base.getTablas(),
-                riesgo, calificacion);
+                riesgo, calificacion).conSeccionesOmitidas(clavesDe(secciones, seccionesOmitidas));
+        contexto.soportesAnexo().addAll(base.soportesAnexo());
 
         // Se carga el archivo ANTES del try de generación, y su propia excepción (ej. "Archivo no
         // encontrado" si se borró del disco o el entorno perdió el volumen de uploads) se deja
@@ -94,7 +191,19 @@ public class FormularioPlantillaWordService {
         try {
             plantilla = almacenamientoService.cargarComoResource(ruta).getInputStream();
         } catch (ApiException e) {
-            throw e;
+            // El .docx referenciado ya no está en disco (ej. se borró de uploads, o el subproceso se
+            // completó con una plantilla que después se perdió — ver ruta_word_congelada). Es un
+            // problema de configuración, no pasajero: 409 para que la cola de trabajos NO lo
+            // reintente (reintentar no hace aparecer el archivo). La ruta va en la causa, que el
+            // admin ve completa en Trabajos en segundo plano, y en el log.
+            log.error("Falta el archivo de la plantilla Word: {}", ruta);
+            String mensaje = actorPuedeEditarPlantilla
+                    ? "No se pudo generar el documento: falta el archivo Word de la plantilla (" + ruta
+                            + "). Vuelve a subirlo en admin/catálogo → Plantilla."
+                    : "Este informe no se puede generar porque falta el documento Word de su plantilla. Tu gestor debe revisarlo.";
+            ApiException faltante = new ApiException(mensaje, HttpStatus.CONFLICT);
+            faltante.initCause(new IllegalStateException("Archivo de plantilla inexistente: " + ruta));
+            throw faltante;
         } catch (Exception e) {
             log.error("No se pudo leer el archivo de la plantilla Word ({}): {}", ruta, e.getMessage(), e);
             throw new ApiException("No se pudo generar el documento — no se pudo leer el archivo de la plantilla.",
@@ -102,7 +211,7 @@ public class FormularioPlantillaWordService {
         }
         try (plantilla; ByteArrayOutputStream salida = new ByteArrayOutputStream()) {
             OfficeStampers.docxStamper().stamp(plantilla, contexto, salida);
-            return limpiarComentarios(salida.toByteArray());
+            return SoportesAnexoWord.aplicar(limpiarComentarios(salida.toByteArray()), contexto.soportesAnexo());
         } catch (Exception e) {
             log.error("No se pudo generar el documento desde la plantilla Word ({}): {}", ruta, e.getMessage(), e);
             // El admin sí puede actuar sobre el detalle técnico (es quien entra a corregir el
@@ -113,7 +222,11 @@ public class FormularioPlantillaWordService {
                     ? "No se pudo generar el documento a partir de la plantilla Word: " + causaLegible(e)
                             + " — revisa que los marcadores estén bien escritos."
                     : "No se pudo generar el documento — hay un problema con los marcadores de la plantilla. Avísale al administrador para que la revise.";
-            throw new ApiException(mensaje, HttpStatus.INTERNAL_SERVER_ERROR);
+            // 422 y no 500: un marcador mal escrito falla igual cada vez; la cola de trabajos no
+            // reintenta los 4xx (antes el cliente esperaba ~5 min de reintentos inútiles).
+            ApiException error = new ApiException(mensaje, HttpStatus.UNPROCESSABLE_ENTITY);
+            error.initCause(e);
+            throw error;
         }
     }
 
@@ -277,6 +390,37 @@ public class FormularioPlantillaWordService {
                                                       Map<Integer, String> valoresCampos,
                                                       Map<Integer, List<FormularioFila>> filasPorSeccion,
                                                       Map<Integer, Map<Integer, String>> valoresPorFila) {
+        return construirContexto(null, candidato, cliente, secciones, valoresCampos, filasPorSeccion, valoresPorFila, null);
+    }
+
+    ContextoPlantillaWord construirContexto(ServicioSubproceso subproceso, Candidato candidato, Cliente cliente,
+                                            List<FormularioSeccion> secciones,
+                                            Map<Integer, String> valoresCampos,
+                                            Map<Integer, List<FormularioFila>> filasPorSeccion,
+                                            Map<Integer, Map<Integer, String>> valoresPorFila,
+                                            com.polygraph.erp.modules.riesgo.codigos.ModeloCodigos.CalculoFormulario calculo) {
+        return construirContexto(subproceso, candidato, cliente, secciones, valoresCampos, filasPorSeccion, valoresPorFila, calculo, Set.of());
+    }
+
+    /** Claves (las de secciones['clave'] en el Word) de las secciones quitadas. */
+    private static Set<String> clavesDe(List<FormularioSeccion> secciones, Set<Integer> ids) {
+        if (ids == null || ids.isEmpty()) return Set.of();
+        Set<String> claves = new HashSet<>();
+        for (FormularioSeccion s : secciones) {
+            if (ids.contains(s.getIdSeccion()) && s.getClave() != null) claves.add(s.getClave());
+        }
+        return claves;
+    }
+
+    ContextoPlantillaWord construirContexto(ServicioSubproceso subproceso, Candidato candidato, Cliente cliente,
+                                            List<FormularioSeccion> secciones,
+                                            Map<Integer, String> valoresCampos,
+                                            Map<Integer, List<FormularioFila>> filasPorSeccion,
+                                            Map<Integer, Map<Integer, String>> valoresPorFila,
+                                            /** Lo calculado por el subservicio (ver CalculoSubservicioService); null = nada calculado. */
+                                            com.polygraph.erp.modules.riesgo.codigos.ModeloCodigos.CalculoFormulario calculo,
+                                            /** Secciones que quitó quien diligencia (V212): sus campos y filas salen vacíos. */
+                                            Set<Integer> seccionesOmitidas) {
         // Todas las claves de CampoCandidato, no solo las que se usan en el constructor — quien
         // diseña el .docx puede usar cualquiera de estas libremente.
         Map<String, String> mapaCandidato = new HashMap<>();
@@ -292,15 +436,44 @@ public class FormularioPlantillaWordService {
         Map<String, List<Map<String, Object>>> mapaTablas = new HashMap<>();
         candidatoInfoService.resolverTablasFijas(candidato).forEach((clave, filas) ->
                 mapaTablas.put(clave, filas.stream().<Map<String, Object>>map(HashMap::new).toList()));
+        mapaTablas.put("preguntas_cliente", List.of());
+        mapaTablas.put("solicitud_cliente", List.of());
+        if (solicitudExtraService != null && subproceso != null && subproceso.getServicio() != null) {
+            mapaTablas.putAll(solicitudExtraService.tablasParaWord(subproceso.getServicio().getIdServicio()));
+        }
+        mapaTablas.putAll(tablasCatalogo(subproceso != null ? subproceso.getTipoProgreso()
+                : secciones.isEmpty() ? null : secciones.get(0).getTipoProgreso(), hallazgosUsados(secciones)));
 
+        List<SoportesAnexoWord.Soporte> soportes = new ArrayList<>();
         for (FormularioSeccion seccion : secciones) {
             List<FormularioColumna> columnas = seccion.getColumnas().stream()
                     .sorted(Comparator.comparing(FormularioColumna::getOrden)).toList();
 
+            // Quitada por quien diligencia: nada de lo suyo sale, aunque el Word no la encierre en
+            // repeatDocPart(secciones['clave']). Una tabla fija (referencias...) es de la hoja de
+            // vida y sigue disponible: solo desaparece si el Word usa el bloque condicional.
+            if (seccionesOmitidas != null && seccionesOmitidas.contains(seccion.getIdSeccion())) {
+                if (seccion.getTipo() == TipoSeccionFormulario.CAMPOS) {
+                    for (FormularioColumna columna : columnas) {
+                        if (columna.getClave() != null) mapaCampos.put(columna.getClave(), "");
+                    }
+                } else if (seccion.getClave() != null && seccion.getOrigenFijo() == null) {
+                    mapaTablas.put(seccion.getClave(), List.of());
+                }
+                continue;
+            }
+
             if (seccion.getTipo() == TipoSeccionFormulario.CAMPOS) {
                 for (FormularioColumna columna : columnas) {
                     if (columna.getClave() == null) continue;
-                    mapaCampos.put(columna.getClave(), valorColumna(columna, candidato, cliente, valoresCampos.get(columna.getIdColumna())));
+                    // Un campo que diligencia una persona también puede salir con el formato del cálculo (ej. "$2.800 mil",
+                    // "38 %", "No reportado" en Análisis financiero): si el cálculo trae su clave, esa es la que se imprime.
+                    boolean formateadoPorElCalculo = !Boolean.TRUE.equals(columna.getCalculado()) && calculo != null
+                            && columna.getTipoDato() != TipoDatoFormulario.ARCHIVO && calculo.campos().containsKey(columna.getClave());
+                    mapaCampos.put(columna.getClave(), Boolean.TRUE.equals(columna.getCalculado()) || formateadoPorElCalculo
+                            ? ValoresPorClave.campo(calculo, columna)
+                            : valorColumnaTabla(columna, subproceso, candidato, cliente, valoresCampos.get(columna.getIdColumna()),
+                                    null, soportes));
                 }
             } else {
                 if (seccion.getClave() == null) continue;
@@ -326,21 +499,39 @@ public class FormularioPlantillaWordService {
                         Map<Integer, String> valoresFila = valoresPorFila.getOrDefault(filaValidacion.getIdFila(), Map.of());
                         for (FormularioColumna columna : columnas) {
                             if (columna.getClave() == null) continue;
-                            filaFija.put(columna.getClave(), valorColumna(columna, candidato, cliente, valoresFila.get(columna.getIdColumna())));
+                            filaFija.put(columna.getClave(), valorColumnaTabla(columna, subproceso, candidato, cliente,
+                                    valoresFila.get(columna.getIdColumna()), null, soportes));
                         }
                     }
                     continue;
                 }
-                List<FormularioFila> filas = filasPorSeccion.getOrDefault(seccion.getIdSeccion(), List.of()).stream()
-                        .sorted(Comparator.comparing(FormularioFila::getOrden)).toList();
+                // Tabla que arma el subservicio (ej. hallazgos): sus filas salen completas del cálculo.
+                if (Boolean.TRUE.equals(seccion.getCalculada())) {
+                    List<Map<String, Object>> filasCalculadas = new ArrayList<>();
+                    for (Map<String, String> filaCalculada : ValoresPorClave.filasCalculadas(calculo, seccion)) {
+                        Map<String, Object> fila = new HashMap<>(filaCalculada);
+                        fila.put("etiqueta", "");
+                        for (FormularioColumna columna : columnas) {
+                            if (columna.getClave() != null) fila.putIfAbsent(columna.getClave(), "");
+                        }
+                        filasCalculadas.add(fila);
+                    }
+                    mapaTablas.put(seccion.getClave(), filasCalculadas);
+                    continue;
+                }
+                List<FormularioFila> filas = ValoresPorClave.filasOrdenadas(seccion, filasPorSeccion);
                 List<Map<String, Object>> filasContexto = new ArrayList<>();
-                for (FormularioFila fila : filas) {
+                for (int indice = 0; indice < filas.size(); indice++) {
+                    FormularioFila fila = filas.get(indice);
                     Map<Integer, String> valoresFila = valoresPorFila.getOrDefault(fila.getIdFila(), Map.of());
                     Map<String, Object> filaContexto = new HashMap<>();
                     filaContexto.put("etiqueta", fila.getEtiqueta());
                     for (FormularioColumna columna : columnas) {
                         if (columna.getClave() == null) continue;
-                        filaContexto.put(columna.getClave(), valorColumna(columna, candidato, cliente, valoresFila.get(columna.getIdColumna())));
+                        filaContexto.put(columna.getClave(), Boolean.TRUE.equals(columna.getCalculado())
+                                ? ValoresPorClave.celda(calculo, seccion, indice, columna)
+                                : valorColumnaTabla(columna, subproceso, candidato, cliente, valoresFila.get(columna.getIdColumna()),
+                                        tituloFila(fila, columnas, valoresFila), soportes));
                     }
                     filasContexto.add(filaContexto);
                 }
@@ -348,7 +539,74 @@ public class FormularioPlantillaWordService {
             }
         }
 
-        return new ContextoPlantillaWord(mapaCandidato, mapaCampos, mapaTablas);
+        ContextoPlantillaWord contexto = new ContextoPlantillaWord(mapaCandidato, mapaCampos, mapaTablas);
+        contexto.soportesAnexo().addAll(soportes);
+        return contexto;
+    }
+
+    /** Tabla o campo suelto: la imagen no va dentro de la celda: la celda dice "Ver soporte N" (se vuelve un
+     *  enlace a la imagen) y la imagen sale completa en el anexo del final. Solo imágenes
+     *  jpg/png; cualquier otra cosa (PDF...) sigue como referencia de texto, y si un archivo no se
+     *  puede leer se deja su nombre en vez de romper el documento. */
+    private Object valorColumnaTabla(FormularioColumna columna, ServicioSubproceso subproceso, Candidato candidato,
+                                     Cliente cliente, String valorGuardado, String etiquetaFila,
+                                     List<SoportesAnexoWord.Soporte> soportes) {
+        Object valor = valorColumna(columna, subproceso, candidato, cliente, valorGuardado);
+        if (columna.getTipoDato() != TipoDatoFormulario.ARCHIVO || columna.getCampoCandidato() != null
+                || columna.getCampoCliente() != null || columna.getCampoServicio() != null
+                || Boolean.TRUE.equals(columna.getCalculado())) {
+            return valor;
+        }
+        List<String> enlaces = new ArrayList<>();
+        List<String> otros = new ArrayList<>();
+        String titulo = etiquetaFila != null && !etiquetaFila.isBlank() ? etiquetaFila : columna.getNombre();
+        for (String ruta : FormularioValorFormateador.parseRutasArchivo(valorGuardado)) {
+            int punto = ruta.lastIndexOf('.');
+            String ext = punto < 0 ? "" : ruta.substring(punto + 1).toLowerCase();
+            String nombre = ruta.substring(ruta.lastIndexOf('/') + 1);
+            boolean imagen = EXTENSIONES_IMAGEN.contains(ext);
+            if (!imagen && !"pdf".equals(ext)) {
+                otros.add(nombre);
+                continue;
+            }
+            try (InputStream in = almacenamientoService.cargarComoResource(ruta).getInputStream()) {
+                byte[] bytes = in.readAllBytes();
+                if (imagen) {
+                    boolean png = "png".equals(ext);
+                    int numero = soportes.size() + 1;
+                    soportes.add(new SoportesAnexoWord.Soporte(numero, titulo, SoportesAnexoWord.reducirSiHaceFalta(bytes, png), png));
+                    enlaces.add(SoportesAnexoWord.textoEnlace(numero));
+                } else {
+                    // Un PDF va al anexo página por página, como imágenes.
+                    List<byte[]> paginas = SoportesAnexoWord.paginasPdf(bytes);
+                    for (int i = 0; i < paginas.size(); i++) {
+                        int numero = soportes.size() + 1;
+                        String tituloPagina = titulo + (paginas.size() > 1 ? " · página " + (i + 1) + " de " + paginas.size() : "");
+                        soportes.add(new SoportesAnexoWord.Soporte(numero, tituloPagina, paginas.get(i), true));
+                        enlaces.add(SoportesAnexoWord.textoEnlace(numero));
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("No se pudo leer el soporte ({}), se deja su nombre: {}", ruta, e.getMessage());
+                otros.add(nombre);
+            }
+        }
+        if (enlaces.isEmpty() && otros.isEmpty()) return valor;
+        List<String> partes = new ArrayList<>(enlaces);
+        if (!otros.isEmpty()) partes.add("Anexo: " + String.join(", ", otros));
+        return String.join(", ", partes);
+    }
+
+    /** Cómo se nombra el soporte de una fila: su etiqueta o, si no tiene, el primer valor de texto
+     *  que diligenciaron (normalmente la fuente: "Procuraduría"). */
+    private static String tituloFila(FormularioFila fila, List<FormularioColumna> columnas, Map<Integer, String> valoresFila) {
+        if (fila.getEtiqueta() != null && !fila.getEtiqueta().isBlank()) return fila.getEtiqueta();
+        for (FormularioColumna c : columnas) {
+            if (c.getTipoDato() == TipoDatoFormulario.ARCHIVO || c.getTipoDato() == TipoDatoFormulario.BOOLEANO) continue;
+            String v = valoresFila.get(c.getIdColumna());
+            if (v != null && !v.isBlank() && !"—".equals(v.trim())) return v.trim();
+        }
+        return null;
     }
 
     private static final Set<String> EXTENSIONES_IMAGEN = Set.of("jpg", "jpeg", "png");
@@ -360,12 +618,24 @@ public class FormularioPlantillaWordService {
      *  documento) — salvo que sea columna de candidato/cliente (siempre se resuelve en vivo,
      *  nunca desde un dato guardado) o columna ARCHIVO con una sola imagen (se incrusta de verdad
      *  en el documento en vez de solo nombrarla — ver ContextoPlantillaWord). */
-    private Object valorColumna(FormularioColumna columna, Candidato candidato, Cliente cliente, String valorGuardado) {
+    private Object valorColumna(FormularioColumna columna, ServicioSubproceso subproceso, Candidato candidato, Cliente cliente,
+                                String valorGuardado) {
         if (columna.getCampoCandidato() != null) {
             return candidatoInfoService.resolverUno(candidato, columna.getCampoCandidato());
         }
         if (columna.getCampoCliente() != null) {
             return candidatoInfoService.resolverUnoCliente(cliente, columna.getCampoCliente());
+        }
+        if (columna.getCampoServicio() != null) {
+            return candidatoInfoService.resolverUnoServicio(subproceso, columna.getCampoServicio());
+        }
+        // Calculada: la llena el cálculo del subservicio (docs/antecedentes, Prompt 4); mientras
+        // tanto sale vacía, nunca de un dato guardado.
+        if (Boolean.TRUE.equals(columna.getCalculado())) return "";
+        // Lo que nadie cambió vale su valor por defecto (ej. "—" en las columnas Ref.), igual que
+        // en pantalla.
+        if ((valorGuardado == null || valorGuardado.isBlank()) && columna.getValorDefecto() != null) {
+            valorGuardado = columna.getValorDefecto();
         }
         if (columna.getTipoDato() == TipoDatoFormulario.ARCHIVO) {
             Image imagen = intentarCargarImagen(valorGuardado);
@@ -434,6 +704,7 @@ public class FormularioPlantillaWordService {
             columnas.forEach(c -> filaEjemplo.put(c, "(ejemplo)"));
             mapaTablas.put(claveFija, List.of(filaEjemplo));
         });
+        mapaTablas.putAll(tablasCatalogo(config.getTipoProgreso(), hallazgosUsados(req)));
         for (var seccion : req.secciones()) {
             List<GuardarPlantillaRequest.ColumnaRequest> columnas = seccion.columnas() == null ? List.of() : seccion.columnas();
             if ("TABLA".equals(seccion.tipo()) && seccion.origenFijo() != null) {
@@ -485,6 +756,8 @@ public class FormularioPlantillaWordService {
     private String valorPreview(GuardarPlantillaRequest.ColumnaRequest c) {
         if (c.campoCandidato() != null && !c.campoCandidato().isBlank()) return "(ejemplo)";
         if (c.campoCliente() != null && !c.campoCliente().isBlank()) return "(ejemplo)";
+        if (c.campoServicio() != null && !c.campoServicio().isBlank()) return "(ejemplo)";
+        if (Boolean.TRUE.equals(c.calculado())) return "(calculado)";
         return switch (c.tipoDato()) {
             case "NUMERO" -> "123";
             case "FECHA" -> "01/01/2026";
@@ -539,6 +812,7 @@ public class FormularioPlantillaWordService {
         // repeatTableRow real (ambos vivían en el mismo comentario) y "Analizar" lo daba por
         // bueno; se separa aquí para que sí se marque como tabla mal usada.
         Set<String> tablasComoMarcadorEnComentario = new HashSet<>();
+        Set<String> seccionesUsadas = new HashSet<>();
 
         try (InputStream in = almacenamientoService.cargarComoResource(ruta).getInputStream();
              XWPFDocument doc = new XWPFDocument(in)) {
@@ -568,6 +842,7 @@ public class FormularioPlantillaWordService {
                     String texto = comentario.getText();
                     extraerMarcadores(texto, camposUsados, candidatoUsados, tablasComoMarcadorEnComentario, riesgoUsados);
                     extraerRepeatTabla(texto, tablasEnComentarios);
+                    extraerBloquesSeccion(texto, seccionesUsadas);
                 }
             }
         } catch (Exception e) {
@@ -596,12 +871,20 @@ public class FormularioPlantillaWordService {
         // que no deben marcarse como "desconocidas" aunque no estén en la lista de arriba.
         Set<String> tablasSiempreDisponibles = new HashSet<>(tablasDefinidas);
         tablasSiempreDisponibles.addAll(CandidatoInfoService.CLAVES_TABLAS_FIJAS);
+        tablasSiempreDisponibles.addAll(TABLAS_CATALOGO);
+        tablasSiempreDisponibles.addAll(TABLAS_SOLICITUD);
 
         List<String> desconocidos = new ArrayList<>();
         for (String c : camposUsados) if (!camposDefinidos.contains(c)) desconocidos.add("campos['" + c + "']");
         for (String c : tablasUsados) if (!tablasSiempreDisponibles.contains(c)) desconocidos.add("tablas['" + c + "']");
         for (String c : candidatoUsados) if (!candidatoDefinidos.contains(c)) desconocidos.add("candidato['" + c + "']");
         for (String r : riesgoUsados) if (!MARCADORES_RIESGO.contains(r)) desconocidos.add(r);
+        Set<String> seccionesDefinidas = new HashSet<>();
+        for (var seccion : req.secciones()) {
+            seccionesDefinidas.add(seccion.origenFijo() != null ? seccion.origenFijo()
+                    : claveDePreview(seccion.clave(), seccion.nombre(), "TABLA".equals(seccion.tipo()) ? "tabla" : "seccion"));
+        }
+        for (String c : seccionesUsadas) if (!seccionesDefinidas.contains(c)) desconocidos.add("secciones['" + c + "']");
 
         List<String> sinUsar = new ArrayList<>();
         for (String c : camposDefinidos) if (!camposUsados.contains(c)) sinUsar.add("campos['" + c + "']");
@@ -674,6 +957,16 @@ public class FormularioPlantillaWordService {
                 default -> { }
             }
         }
+    }
+
+    /** Bloque condicional de una sección opcional (V212): repeatDocPart(secciones['clave']). */
+    private static final Pattern BLOQUE_SECCION = Pattern.compile(
+            "repeatDocPart\\(\\s*secciones\\s*\\[\\s*['\"]([^'\"]+)['\"]\\s*]\\s*\\)");
+
+    private void extraerBloquesSeccion(String texto, Set<String> claves) {
+        if (texto == null || texto.isBlank()) return;
+        Matcher m = BLOQUE_SECCION.matcher(texto);
+        while (m.find()) claves.add(m.group(1));
     }
 
     private void extraerRepeatTabla(String texto, Set<String> tablas) {

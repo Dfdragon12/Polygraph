@@ -16,5 +16,10 @@ public record ProcesoRequest(
         BigDecimal valor,
         @Min(1) @Max(365) Integer diasHabilesEntrega,
         Boolean aplicaPrecioCiudad,
+        // null = no cambia (nuevo proceso: sí la necesita)
+        Boolean requiereHojaVida,
+        // null = no cambia (NS-08)
+        Boolean requiereDireccion,
+        Boolean ciudadEsDePrueba,
         List<@Size(max = 80) String> puntosClave
 ) {}

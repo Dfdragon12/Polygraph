@@ -30,5 +30,20 @@ public record RegistroJuridicaRequest(
         String password,
 
         @Size(max = 20)
-        String telefono
+        String telefono,
+
+        @NotNull(message = "Debe aceptar los términos y condiciones")
+        @AssertTrue(message = "Debe aceptar los términos y condiciones")
+        Boolean aceptaTerminos,
+
+        @NotNull(message = "Debe aceptar la política de privacidad")
+        @AssertTrue(message = "Debe aceptar la política de privacidad")
+        Boolean aceptaPrivacidad,
+
+        // Opcional: información comercial. No condiciona el servicio.
+        Boolean aceptaMarketing,
+
+        // Versión de los textos que el usuario vio al aceptar
+        @Size(max = 20)
+        String versionLegal
 ) {}

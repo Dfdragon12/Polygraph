@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("FormularioPlantillaWordService — detección de marcadores en cuadros de texto")
 class FormularioPlantillaWordServiceTest {
 
-    private final FormularioPlantillaWordService service = new FormularioPlantillaWordService(null, null);
+    private final FormularioPlantillaWordService service = new FormularioPlantillaWordService(null, null, null);
 
     @Test
     @DisplayName("Detecta el texto de un cuadro de texto VML (w:pict > v:textbox)")

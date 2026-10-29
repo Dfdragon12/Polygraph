@@ -62,11 +62,31 @@ public class FormularioColumna {
     @Column(name = "clave", length = 50)
     private String clave;
 
-    /** Solo aplica cuando tipoDato es LISTA — opciones de la lista desplegable separadas por
-     *  coma, en el orden en que las escribió el administrador. Null/vacío para cualquier otro
-     *  tipo de dato. */
-    @Column(name = "opciones", length = 1000)
+    /** Solo aplica cuando tipoDato es LISTA — opciones de la lista desplegable, una por línea, en
+     *  el orden en que las escribió el administrador (leer/escribir siempre con OpcionesLista).
+     *  Null/vacío para cualquier otro tipo de dato. */
+    @Column(name = "opciones", columnDefinition = "TEXT")
     private String opciones;
+
+    /** Clave de CampoServicio: dato del estudio (N° de estudio, cliente, cargo...) que se resuelve
+     *  en vivo, igual que campoCandidato/campoCliente. Los tres son mutuamente excluyentes. */
+    @Column(name = "campo_servicio", length = 50)
+    private String campoServicio;
+
+    /** El valor lo calcula el código del subservicio (fórmula, puntaje, semáforo, notas); quien
+     *  diligencia solo lo ve. Nunca se guarda como FormularioDato. */
+    @Builder.Default
+    @Column(name = "calculado", nullable = false)
+    private Boolean calculado = false;
+
+    /** Lo que vale el campo mientras nadie lo cambie (ej. "—" en las columnas Ref.). */
+    @Column(name = "valor_defecto", length = 200)
+    private String valorDefecto;
+
+    /** No se puede completar el subproceso con este campo vacío. */
+    @Builder.Default
+    @Column(name = "obligatorio", nullable = false)
+    private Boolean obligatorio = false;
 
     /** El campo cuenta para la calificación de riesgo (solo Lista o Sí/No) — los puntos de cada
      *  respuesta están en puntajes. Ver docs/modelo-calificacion-riesgo.md §3. */
@@ -80,4 +100,58 @@ public class FormularioColumna {
     @EqualsAndHashCode.Exclude
     @OneToMany(mappedBy = "columna", cascade = CascadeType.ALL, orphanRemoval = true)
     private java.util.List<FormularioColumnaPuntaje> puntajes = new java.util.ArrayList<>();
+
+    /** Para qué sirve el campo en la calificación por hallazgos (V205): null = campo normal;
+     *  HALLAZGO = quien diligencia elige un hallazgo del catálogo (las opciones son los códigos que
+     *  escogió el admin); CRITICIDAD = criticidad del cargo; CONDICION = "Sí" habilita los
+     *  hallazgos "solo con condición" (conducción). Ver riesgo/hallazgos/MotorHallazgos. */
+    @Column(name = "uso_calificacion", length = 20)
+    private String usoCalificacion;
+
+    /** Solo columnas calculadas: qué resultado muestran (PUNTAJE, FORMULA, NIVEL, SEMAFORO_*,
+     *  NUMERO_FILA, NOTA y, en la tabla de hallazgos, REF, DESCRIPCION, FUENTE, DETALLE, PUNTOS). */
+    @Column(name = "calculo", length = 20)
+    private String calculo;
+
+    /** NOTA: clave del campo o tabla que se mira; el texto sale si no tiene valor. */
+    @Column(name = "referencia", length = 50)
+    private String referencia;
+
+    @Column(name = "texto_nota", length = 500)
+    private String textoNota;
+
+    /** Cómo se escribe el hallazgo en la tabla de hallazgos ({clave} = valor de ese campo). Vacío:
+     *  fuente = nombre de la sección, detalle = lo diligenciado en la fila o el campo. */
+    @Column(name = "fuente_hallazgo", length = 300)
+    private String fuenteHallazgo;
+
+    @Column(name = "detalle_hallazgo", length = 300)
+    private String detalleHallazgo;
+
+    /** Hallazgo que genera cada opción de una lista normal (ej. "No encontrada" → LEG-01).
+     *  Mutar esta MISMA colección (clear/add), nunca reemplazarla: orphanRemoval=true. */
+    @Builder.Default
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    @OneToMany(mappedBy = "columna", cascade = CascadeType.ALL, orphanRemoval = true)
+    private java.util.List<FormularioColumnaHallazgo> hallazgos = new java.util.ArrayList<>();
+
+    /** Máximo de caracteres de un campo de texto (V209); null = LONGITUD_TEXTO_DEFECTO. */
+    @Column(name = "longitud_maxima")
+    private Integer longitudMaxima;
+
+    public static final int LONGITUD_TEXTO_DEFECTO = 2000;
+
+    /** El máximo que se aplica: el configurado o, en texto, el de por defecto. null = sin límite
+     *  (fechas, números, listas…). */
+    public Integer longitudMaximaEfectiva() {
+        if (tipoDato != com.polygraph.erp.shared.enums.TipoDatoFormulario.TEXTO) return null;
+        return longitudMaxima != null ? longitudMaxima : LONGITUD_TEXTO_DEFECTO;
+    }
+
+    /** Nadie la diligencia: dato del candidato, del cliente, del estudio, o calculado por el
+     *  código. Su valor se resuelve al mostrarla y nunca se guarda en formulario_datos. */
+    public boolean esAutomatica() {
+        return campoCandidato != null || campoCliente != null || campoServicio != null || Boolean.TRUE.equals(calculado);
+    }
 }

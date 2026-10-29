@@ -6,8 +6,8 @@ import { hoyLocalDateString } from '../utils/fechas'
 // filas) y zoom sobre el eje del tiempo: al acercar no solo se agranda, se ven también los
 // minutos (30 min, luego 15 min), no solo la hora en punto. Mismo rango horario que usa el
 // backend para las franjas disponibles (AsignacionService.JORNADA_INICIO/JORNADA_FIN).
-const JORNADA_INICIO_H = 8
-const JORNADA_FIN_H = 17
+const JORNADA_INICIO_H = 7    // igual que ReglasAgenda.JORNADA_INICIO/FIN del backend (SE-08: 7:00 a. m. – 6:00 p. m.)
+const JORNADA_FIN_H = 18
 const TOTAL_MIN = (JORNADA_FIN_H - JORNADA_INICIO_H) * 60
 
 const ANCHO_COL_HORA = 56          // vertical: ancho de la columna de horas
@@ -32,8 +32,11 @@ const NIVELES_ZOOM = [
 const DURACION_MIN_VISUAL = 30
 
 const ESTILO_ESTADO = {
-  ASIGNADO:   { borde_l: 'border-l-blue-500',    punto: 'bg-blue-500',    texto: 'text-blue-800',    fondo: 'bg-blue-50',    fondoHover: 'hover:bg-blue-100/80' },
-  COMPLETADO: { borde_l: 'border-l-violet-500',  punto: 'bg-violet-500',  texto: 'text-violet-800',  fondo: 'bg-violet-50',  fondoHover: 'hover:bg-violet-100/80' },
+  PENDIENTE:    { borde_l: 'border-l-amber-500',  punto: 'bg-amber-500',  texto: 'text-amber-800',  fondo: 'bg-amber-50',  fondoHover: 'hover:bg-amber-100/80' },
+  PROGRAMANDO:  { borde_l: 'border-l-sky-500',    punto: 'bg-sky-500',    texto: 'text-sky-800',    fondo: 'bg-sky-50',    fondoHover: 'hover:bg-sky-100/80' },
+  REPROGRAMADO: { borde_l: 'border-l-orange-500', punto: 'bg-orange-500', texto: 'text-orange-800', fondo: 'bg-orange-50', fondoHover: 'hover:bg-orange-100/80' },
+  EN_EJECUCION:   { borde_l: 'border-l-blue-500',    punto: 'bg-blue-500',    texto: 'text-blue-800',    fondo: 'bg-blue-50',    fondoHover: 'hover:bg-blue-100/80' },
+  FINALIZADO: { borde_l: 'border-l-violet-500',  punto: 'bg-violet-500',  texto: 'text-violet-800',  fondo: 'bg-violet-50',  fondoHover: 'hover:bg-violet-100/80' },
   PUBLICADO:  { borde_l: 'border-l-emerald-500', punto: 'bg-emerald-500', texto: 'text-emerald-800', fondo: 'bg-emerald-50', fondoHover: 'hover:bg-emerald-100/80' },
   CANCELADO:  { borde_l: 'border-l-red-400',     punto: 'bg-red-400',     texto: 'text-red-700 line-through decoration-red-300', fondo: 'bg-red-50', fondoHover: 'hover:bg-red-100/70' },
 }
@@ -66,17 +69,21 @@ function generarMarcas(intervaloMin) {
  *  (para que subprocesos cortos como "Antecedentes" de 15 min no queden ilegibles) se infla
  *  después, pero solo hasta donde alcance el hueco real antes del siguiente bloque de su mismo
  *  carril — así nunca termina pisándolo ni inventa un choque que no existe. */
-function empaquetarCarriles(items) {
+function empaquetarCarriles(items, minVisualMin = DURACION_MIN_VISUAL) {
   const conRango = items
     .map(a => {
-      const inicio = Math.max(0, Math.min(TOTAL_MIN, minutosDesdeJornada(a.fechaProgramada)))
+      // Una cita fuera de la jornada se acota al borde, pero deja lugar para que su tarjeta se lea completa.
+      const inicio = Math.max(0, Math.min(TOTAL_MIN - 1, minutosDesdeJornada(a.fechaProgramada)))
       const real = Math.max(1, Math.min(TOTAL_MIN - inicio, a.duracionMinutos ?? 60))
-      return { ...a, _inicio: inicio, _duracionReal: real, _fin: inicio + real }
+      const visual = Math.max(real, minVisualMin)
+      // Si no cabe hacia abajo, la tarjeta se sube: nunca se sale de la cuadrícula.
+      const inicioVisual = Math.max(0, Math.min(inicio, TOTAL_MIN - visual))
+      return { ...a, _inicio: inicioVisual, _duracionReal: real, _duracionVisual: visual, _fin: inicioVisual + visual }
     })
     .sort((a, b) => a._inicio - b._inicio || a._fin - b._fin)
 
-  // 1) Carriles según el horario real — dos bloques pegados sin hueco (fin de uno = inicio del
-  //    siguiente) van en el MISMO carril, porque de verdad no chocan.
+  // Los carriles se reparten según el espacio que la tarjeta OCUPA en pantalla (no su duración real):
+  // así una cita de 15 min, que se dibuja con un mínimo legible, no se monta sobre la siguiente.
   const finPorCarril = [] // minuto en que queda libre cada carril
   conRango.forEach(item => {
     let carril = finPorCarril.findIndex(fin => fin <= item._inicio)
@@ -86,23 +93,12 @@ function empaquetarCarriles(items) {
   })
   const numCarriles = Math.max(1, finPorCarril.length)
 
-  // 2) Duración visual: se infla para legibilidad, acotada al hueco real disponible antes del
-  //    siguiente bloque de su mismo carril (o el fin de la jornada si es el último).
-  const porCarril = new Map()
-  conRango.forEach(item => {
-    if (!porCarril.has(item._carril)) porCarril.set(item._carril, [])
-    porCarril.get(item._carril).push(item)
-  })
-  porCarril.forEach(itemsDelCarril => {
-    itemsDelCarril.forEach((item, i) => {
-      const limite = itemsDelCarril[i + 1]?._inicio ?? TOTAL_MIN
-      const deseado = item._inicio + Math.max(item._duracionReal, DURACION_MIN_VISUAL)
-      item._duracionVisual = Math.max(item._duracionReal, Math.min(deseado, limite) - item._inicio)
-    })
-  })
-
   return { items: conRango, numCarriles }
 }
+
+const ALTO_MIN_TARJETA_V = 40    // px: vertical, lo mínimo para ver subproceso y evaluado
+const ANCHO_MIN_TARJETA_H = 110  // px: horizontal, lo mínimo para leer el nombre
+const minutosVisibles = (px, pxPorMinuto) => Math.ceil(px / pxPorMinuto)
 
 function ControlZoom({ nivel, onCambiar }) {
   const idx = NIVELES_ZOOM.findIndex(n => n.id === nivel.id)
@@ -127,9 +123,13 @@ function ControlZoom({ nivel, onCambiar }) {
 
 function Leyenda({ mostrarLineaActual }) {
   return (
-    <div className="flex items-center gap-4 px-4 py-2.5 border-t border-gray-100 bg-gray-50/50 text-[11px] text-gray-500">
-      <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-blue-500" /> Asignado</span>
-      <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Completado</span>
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2.5 border-t border-gray-100 bg-gray-50/50 text-[11px] text-gray-600">
+      <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-500" /> Pendiente</span>
+      <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-sky-500" /> Programando</span>
+      <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-blue-500" /> En ejecución</span>
+      <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-orange-500" /> Reprogramado</span>
+      <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-violet-500" /> Finalizado</span>
+      <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Publicado</span>
       <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-400" /> Cancelado</span>
       {mostrarLineaActual && (
         <span className="flex items-center gap-1.5 ml-auto"><span className="w-2 h-0.5 bg-red-500" /> Hora actual</span>
@@ -158,7 +158,7 @@ function VistaVertical({ empleados, marcas, pxPorMinuto, onSeleccionar, mostrarL
       </div>
 
       {empleados.map(([key, { nombre, items }]) => {
-        const { items: itemsCarril, numCarriles } = empaquetarCarriles(items)
+        const { items: itemsCarril, numCarriles } = empaquetarCarriles(items, minutosVisibles(ALTO_MIN_TARJETA_V, pxPorMinuto))
         return (
           <div key={key} className="flex-shrink-0 border-l border-gray-100" style={{ width: `${ANCHO_COL_EMPLEADO_V}px` }}>
             <div className="border-b border-gray-200 bg-gray-50/90 sticky top-0 z-10 flex items-center gap-2 px-3" style={{ height: `${ALTO_HEADER}px` }}>
@@ -233,7 +233,7 @@ function VistaHorizontal({ empleados, marcas, pxPorMinuto, onSeleccionar, mostra
       </div>
 
       {empleados.map(([key, { nombre, items }]) => {
-        const { items: itemsCarril, numCarriles } = empaquetarCarriles(items)
+        const { items: itemsCarril, numCarriles } = empaquetarCarriles(items, minutosVisibles(ANCHO_MIN_TARJETA_H, pxPorMinuto))
         const altoFila = numCarriles * ALTO_CARRIL
         return (
           <div key={key} className="flex border-b border-gray-100 last:border-0 hover:bg-gray-50/40 transition-colors">

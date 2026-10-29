@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useId, useState, useEffect, useCallback } from 'react'
 import riesgoService from '../services/riesgoService'
 
 // Pestaña "Riesgo" del detalle de la solicitud (gestor): la recomendación del motor con su
@@ -20,6 +20,8 @@ const ESTADO_SUB = {
   REALIZADO:    { texto: 'Realizado',    clase: 'text-green-700' },
   NO_REALIZADO: { texto: 'No realizado', clase: 'text-gray-500' },
   PENDIENTE:    { texto: 'Pendiente',    clase: 'text-amber-600' },
+  // Todavía no tiene cómo calificar: queda fuera del estudio y su peso se reparte.
+  SIN_CALIFICACION: { texto: 'Sin calificación (no cuenta)', clase: 'text-gray-400' },
 }
 const AJUSTE = {
   PISO: 'Subió a MEDIO por regla de piso',
@@ -31,8 +33,17 @@ const num = (v, dec = 1) => v == null ? '—' : Number(v).toLocaleString('es-CO'
 const pct = (v) => v == null ? '—' : `${Number(v).toLocaleString('es-CO', { maximumFractionDigits: 2 })} %`
 const fecha = (iso) => iso ? new Date(iso).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' }) : ''
 
+// Sin puntaje calculado (falta la criticidad del cargo, el formulario no se ha diligenciado...): NUNCA «BAJO 0», siempre «Sin calificar».
+export function SinCalificar({ grande, motivo }) {
+  return (
+    <span title={motivo} className={`inline-flex items-center gap-1.5 font-semibold rounded-full ring-1 bg-gray-100 text-gray-700 ring-gray-300 ${grande ? 'text-sm px-3 py-1' : 'text-[11px] px-2 py-0.5'}`}>
+      <span className={`rounded-full bg-gray-400 ${grande ? 'w-2 h-2' : 'w-1.5 h-1.5'}`} />Sin calificar
+    </span>
+  )
+}
+
 export function ChipNivel({ nivel, grande }) {
-  if (!nivel) return <span className="text-gray-400">—</span>
+  if (!nivel) return <SinCalificar grande={grande} />
   const c = NIVEL[nivel] ?? NIVEL.MEDIO
   return (
     <span className={`inline-flex items-center gap-1.5 font-bold rounded-full ring-1 ${c.clase} ${grande ? 'text-sm px-3 py-1' : 'text-[11px] px-2 py-0.5'}`}>
@@ -57,6 +68,7 @@ function EstadoSinResultado({ d }) {
 }
 
 export default function RiesgoServicio({ idServicio, onToast }) {
+  const idCampos = useId()
   const [d, setD] = useState(null)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
@@ -123,7 +135,7 @@ export default function RiesgoServicio({ idServicio, onToast }) {
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Recomendación del motor</p>
           <div className="flex items-center gap-2 text-xs">
             <span className="text-gray-400">Criticidad del caso</span>
-            <select value={d.criticidadAjustada ? d.criticidad : ''} disabled={!d.puedeCambiarCriticidad || guardando}
+            <select aria-label="Criticidad del caso" value={d.criticidadAjustada ? d.criticidad : ''} disabled={!d.puedeCambiarCriticidad || guardando}
               onChange={e => cambiarCriticidad(e.target.value)}
               className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:bg-gray-50">
               <option value="">{`${ETIQUETA_CRITICIDAD[d.criticidadProceso] ?? 'Estándar'} (del proceso)`}</option>
@@ -169,7 +181,7 @@ export default function RiesgoServicio({ idServicio, onToast }) {
         {/* Detalle por subproceso */}
         {d.subprocesos?.length > 0 && (
           <div className="overflow-x-auto border-t border-gray-100">
-            <table className="min-w-full text-xs">
+            <table className="table-stack min-w-full text-xs">
               <thead className="bg-gray-50 text-gray-500">
                 <tr>
                   {['Subproceso', 'Estado', 'Peso', 'Efectivo', 'Puntos', 'Nivel'].map(h => (
@@ -252,8 +264,8 @@ export default function RiesgoServicio({ idServicio, onToast }) {
                     </select>
                   </label>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Justificación <span className="text-red-500">*</span></label>
-                    <textarea value={justificacion} onChange={e => setJustificacion(e.target.value)} rows={2} maxLength={2000}
+                    <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">Justificación <span className="text-red-500">*</span></label>
+                    <textarea id={`${idCampos}-1`} value={justificacion} onChange={e => setJustificacion(e.target.value)} rows={2} maxLength={2000}
                       placeholder="¿Por qué cambias el nivel que recomienda el motor?"
                       className={`w-full border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 ${faltaJustificacion ? 'border-red-300' : 'border-gray-200'}`} />
                   </div>

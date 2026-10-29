@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 
 /** Una entrada del seguimiento de una NovedadSubproceso — solo inserción, nunca se edita. */
 @Entity
+@jakarta.persistence.EntityListeners(com.polygraph.erp.modules.tiemporeal.CambiosEntityListener.class)
 @Table(name = "novedad_seguimientos")
 @Data
 @Builder

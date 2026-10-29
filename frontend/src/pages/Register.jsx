@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useId } from 'react'
+import { asociarEtiqueta } from '../utils/asociarEtiqueta'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -8,6 +9,9 @@ import { useAuth } from '../hooks/useAuth'
 import GoogleSignInButton from '../components/GoogleSignInButton'
 import BrandShowcase from '../components/BrandShowcase'
 import HeartbeatMonitor from '../components/HeartbeatMonitor'
+import PieLegal from '../components/legal/PieLegal'
+import CasillasLegales from '../components/legal/CasillasLegales'
+import { VERSION_LEGAL } from '../config/empresa'
 
 const RUTA_POR_ROL = {
   ADMIN_POLYGRAPH:  '/admin/dashboard',
@@ -28,6 +32,13 @@ const passwordRules = z
   .regex(/[A-Z]/, 'Debe tener al menos una mayúscula')
   .regex(/[0-9]/, 'Debe tener al menos un número')
 
+// Aceptaciones legales: ninguna viene marcada; términos y privacidad son obligatorias, marketing no.
+const reglasLegales = {
+  aceptaTerminos: z.boolean().refine((v) => v === true, "Debe aceptar los términos y condiciones"),
+  aceptaPrivacidad: z.boolean().refine((v) => v === true, "Debe aceptar la política de privacidad"),
+  aceptaMarketing: z.boolean().optional(),
+}
+
 const esquemaNatural = z
   .object({
     nombre: z.string().min(2, 'Mínimo 2 caracteres').max(100),
@@ -36,6 +47,7 @@ const esquemaNatural = z
     password: passwordRules,
     confirmarPassword: z.string(),
     telefono: z.string().max(20).optional(),
+    ...reglasLegales,
   })
   .refine((d) => d.password === d.confirmarPassword, {
     message: 'Las contraseñas no coinciden',
@@ -58,6 +70,7 @@ const esquemaJuridica2 = z
     password: passwordRules,
     confirmarPassword: z.string(),
     telefono: z.string().max(20).optional(),
+    ...reglasLegales,
   })
   .refine((d) => d.password === d.confirmarPassword, {
     message: 'Las contraseñas no coinciden',
@@ -129,7 +142,7 @@ const IconoOjoCerrado = (
 function FormNatural({ onExito, onGoogle }) {
   const [error, setError] = useState(null)
   const [cargando, setCargando] = useState(false)
-  const { register, handleSubmit, watch, formState: { errors } } = useForm({
+  const { register, handleSubmit, watch, getValues, formState: { errors } } = useForm({
     resolver: zodResolver(esquemaNatural),
   })
   const passwordActual = watch('password', '')
@@ -145,6 +158,10 @@ function FormNatural({ onExito, onGoogle }) {
         email: datos.email,
         password: datos.password,
         telefono: datos.telefono || undefined,
+        aceptaTerminos: datos.aceptaTerminos,
+        aceptaPrivacidad: datos.aceptaPrivacidad,
+        aceptaMarketing: !!datos.aceptaMarketing,
+        versionLegal: VERSION_LEGAL,
       })
       onExito()
     } catch (err) {
@@ -156,7 +173,15 @@ function FormNatural({ onExito, onGoogle }) {
 
   return (
     <div className="space-y-5">
-      <GoogleSignInButton onCredential={onGoogle} texto="signup_with" />
+      <GoogleSignInButton
+        onCredential={(idToken) => onGoogle(idToken, {
+          aceptaTerminos: !!getValues("aceptaTerminos"),
+          aceptaPrivacidad: !!getValues("aceptaPrivacidad"),
+          aceptaMarketing: !!getValues("aceptaMarketing"),
+          versionLegal: VERSION_LEGAL,
+        })}
+        texto="signup_with"
+      />
       <Separador />
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
@@ -187,6 +212,8 @@ function FormNatural({ onExito, onGoogle }) {
             <input {...register('telefono')} className={estiloInput(errors.telefono, true)} placeholder="3001234567" />
           </CampoConIcono>
         </Campo>
+
+        <CasillasLegales register={register} errors={errors} prefijo="nat-" />
 
         <BotonSubmit cargando={cargando} texto="Crear cuenta" />
       </form>
@@ -219,6 +246,10 @@ function FormJuridica({ onExito }) {
         email: datos.email,
         password: datos.password,
         telefono: datos.telefono || undefined,
+        aceptaTerminos: datos.aceptaTerminos,
+        aceptaPrivacidad: datos.aceptaPrivacidad,
+        aceptaMarketing: !!datos.aceptaMarketing,
+        versionLegal: VERSION_LEGAL,
       })
       onExito()
     } catch (err) {
@@ -297,6 +328,8 @@ function FormJuridica({ onExito }) {
             </CampoConIcono>
           </Campo>
 
+          <CasillasLegales register={form2.register} errors={form2.formState.errors} prefijo="jur-" />
+
           <div className="flex gap-3">
             <button type="button" onClick={() => setPaso(1)}
               className="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors">
@@ -315,11 +348,13 @@ function FormJuridica({ onExito }) {
 /* ─── Componentes auxiliares ─────────────────────────────────────── */
 
 function Campo({ label, error, children }) {
+  const id = useId()
+  const idError = `${id}-err`
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1.5">{label}</label>
-      {children}
-      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+      <label htmlFor={id} className="block text-sm font-medium text-gray-700 mb-1.5">{label}</label>
+      {asociarEtiqueta(children, { id, describedby: error ? idError : undefined, invalido: !!error })}
+      {error && <p id={idError} role="alert" className="mt-1 text-xs text-red-700">{error}</p>}
     </div>
   )
 }
@@ -348,7 +383,7 @@ function CampoPassword({ label, error, register, fortaleza }) {
           className={estiloInput(error, true, true)}
           placeholder="••••••••"
         />
-        <button type="button" onClick={() => setMostrar((v) => !v)} tabIndex={-1}
+        <button type="button" onClick={() => setMostrar((v) => !v)} aria-pressed={mostrar}
           className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
           aria-label={mostrar ? 'Ocultar contraseña' : 'Mostrar contraseña'}>
           {mostrar ? IconoOjoCerrado : IconoOjoAbierto}
@@ -452,11 +487,11 @@ export default function Register() {
   const [errorGoogle, setErrorGoogle] = useState(null)
   const [cargandoGoogle, setCargandoGoogle] = useState(false)
 
-  const onGoogle = async (idToken) => {
+  const onGoogle = async (idToken, aceptaciones) => {
     setErrorGoogle(null)
     setCargandoGoogle(true)
     try {
-      const datos = await authService.continuarConGoogle(idToken)
+      const datos = await authService.continuarConGoogle(idToken, aceptaciones)
       establecerSesion(datos)
       const ruta = RUTA_POR_ROL[datos?.usuario?.rol] ?? '/'
       navigate(ruta, { replace: true })
@@ -569,6 +604,7 @@ export default function Register() {
                 Inicia sesión
               </Link>
             </p>
+            <PieLegal className="mt-4" />
           </div>
         </div>
       </div>

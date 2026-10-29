@@ -7,6 +7,8 @@ import ProtectedRoute from './components/ProtectedRoute'
 import OfflineIndicator from './components/OfflineIndicator'
 import PWAInstallBanner from './components/PWAInstallBanner'
 import { ConfirmModal } from './components/ui/Modal'
+import BannerCookies from './components/legal/BannerCookies'
+import PaginaLegal from './pages/legal/PaginaLegal'
 
 // Layouts
 import ClientLayout      from './components/layout/ClientLayout'
@@ -46,14 +48,23 @@ import ResultadoPagoFactura  from './pages/client/ResultadoPagoFactura'
 import AdminDashboard    from './pages/admin/AdminDashboard'
 import UsuariosInternos  from './pages/admin/UsuariosInternos'
 import Clientes          from './pages/admin/Clientes'
+import Productividad from './pages/shared/Productividad'
 import SemaforoServicios from './pages/admin/SemaforoServicios'
 import Catalogo          from './pages/admin/catalogo/Catalogo'
 import PlantillaFormulario from './pages/admin/catalogo/PlantillaFormulario'
 import TiposNovedad from './pages/admin/catalogo/TiposNovedad'
+import HojaVidaCandidato from './pages/admin/catalogo/HojaVidaCandidato'
+import TemasPoligrafia from './pages/admin/catalogo/TemasPoligrafia'
+import MotivosSubproceso from './pages/admin/catalogo/MotivosSubproceso'
 import ParametrosRiesgo from './pages/admin/riesgo/ParametrosRiesgo'
+import CentralesRiesgo from './pages/admin/riesgo/CentralesRiesgo'
+import CatalogoHallazgos from './pages/admin/riesgo/CatalogoHallazgos'
+import TrabajosSegundoPlano from './pages/admin/TrabajosSegundoPlano'
 import AdminReversiones  from './pages/admin/AdminReversiones'
 import Descuentos        from './pages/admin/Descuentos'
 import Ciudades          from './pages/admin/Ciudades'
+import Festivos          from './pages/admin/Festivos'
+import ParametrosTiempo  from './pages/admin/ParametrosTiempo'
 import Departamentos     from './pages/admin/Departamentos'
 import Facturacion         from './pages/admin/Facturacion'
 import GestionCuentas      from './pages/admin/GestionCuentas'
@@ -69,6 +80,8 @@ import ProgramadorAgenda     from './pages/programador/Agenda'
 // Compartidas entre analista/poligrafista/visitador — mismo backend filtra por rol autenticado
 import AsignacionDashboard from './pages/shared/AsignacionDashboard'
 import MisAsignaciones from './pages/shared/MisAsignaciones'
+import MiPerfil from './pages/shared/MiPerfil'
+import MiPerfilAnalista from './pages/client/MiPerfilAnalista'
 import Formulario       from './pages/shared/Formulario'
 import CandidatoPerfil  from './pages/shared/CandidatoPerfil'
 
@@ -125,12 +138,15 @@ function InactivityWatcher() {
 function App() {
   return (
     <AuthProvider>
+      <a href="#contenido" className="saltar-contenido">Saltar al contenido</a>
       <InactivityWatcher />
       <OfflineIndicator />
       <PWAInstallBanner />
+      <BannerCookies />
       <Routes>
         {/* ── Públicas ── */}
         <Route path="/login"              element={<Login />} />
+        <Route path="/legal/:tipo"        element={<PaginaLegal />} />
         <Route path="/registro"           element={<Register />} />
         <Route path="/recuperar-password" element={<RecuperarPassword />} />
         <Route path="/reset-password"     element={<ResetPassword />} />
@@ -169,11 +185,13 @@ function App() {
           <Route path="pospago/resultado/:referencia" element={<ResultadoPagoFactura />} />
           <Route path="documentos"        element={<Documentos />} />
           <Route path="equipo"            element={<MiEquipo />} />
+          <Route path="perfil"            element={<ProtectedRoute roles={['ANALISTA_CLIENTE']}><MiPerfilAnalista /></ProtectedRoute>} />
           <Route path="estadisticas"      element={<Proximamente titulo="Estadísticas" />} />
         </Route>
 
         {/* ── Portal ADMIN_POLYGRAPH ── */}
         <Route path="/admin" element={<ProtectedRoute roles={['ADMIN_POLYGRAPH']}><AdminLayout /></ProtectedRoute>}>
+          <Route path="productividad" element={<Productividad />} />
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard"         element={<AdminDashboard />} />
           <Route path="usuarios-internos" element={<UsuariosInternos />} />
@@ -183,11 +201,19 @@ function App() {
           <Route path="catalogo"                  element={<Catalogo key="grid" />} />
           <Route path="catalogo/plantilla/:idTipoProgreso" element={<PlantillaFormulario />} />
           <Route path="tipos-novedad" element={<TiposNovedad />} />
+          <Route path="hoja-vida-candidato" element={<HojaVidaCandidato />} />
+          <Route path="temas-poligrafia" element={<TemasPoligrafia />} />
+          <Route path="motivos-subproceso" element={<MotivosSubproceso />} />
           <Route path="riesgo/parametros" element={<ParametrosRiesgo />} />
+          <Route path="riesgo/centrales" element={<CentralesRiesgo />} />
+          <Route path="riesgo/hallazgos" element={<CatalogoHallazgos />} />
+          <Route path="trabajos" element={<TrabajosSegundoPlano />} />
           <Route path="formulario/:idServicioSubproceso" element={<Formulario />} />
           <Route path="catalogo/:clasificacion"   element={<Catalogo key="detalle" />} />
           <Route path="descuentos"                element={<Descuentos />} />
           <Route path="ciudades"                  element={<Ciudades />} />
+          <Route path="festivos"                  element={<Festivos />} />
+          <Route path="parametros-tiempo"         element={<ParametrosTiempo />} />
           <Route path="departamentos"             element={<Departamentos />} />
           <Route path="facturacion"                          element={<Facturacion />} />
           <Route path="gestion-cuentas"                      element={<GestionCuentas />} />
@@ -195,11 +221,13 @@ function App() {
 
         {/* ── Portal GESTOR ── */}
         <Route path="/gestor" element={<ProtectedRoute roles={['GESTOR']}><GestorLayout /></ProtectedRoute>}>
+          <Route path="productividad" element={<Productividad />} />
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard"    element={<GestorDashboard />} />
           <Route path="solicitudes"   element={<GestorSolicitudes />} />
           <Route path="agenda"       element={<GestorAgenda />} />
           <Route path="reversiones"  element={<GestorReversiones />} />
+          <Route path="perfil" element={<MiPerfil />} />
           <Route path="clientes/:idCliente" element={<GestorClienteDetalle />} />
           <Route path="formulario/:idServicioSubproceso" element={<Formulario />} />
           <Route path="candidatos/:idCandidato" element={<CandidatoPerfil />} />
@@ -207,36 +235,44 @@ function App() {
 
         {/* ── Portal ANALISTA_INTERNO ── */}
         <Route path="/analista" element={<ProtectedRoute roles={['ANALISTA_INTERNO']}><AnalistaLayout /></ProtectedRoute>}>
+          <Route path="productividad" element={<Productividad />} />
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<AsignacionDashboard />} />
           <Route path="asignaciones" element={<MisAsignaciones />} />
+          <Route path="perfil" element={<MiPerfil />} />
           <Route path="formulario/:idServicioSubproceso" element={<Formulario />} />
           <Route path="candidatos/:idCandidato" element={<CandidatoPerfil />} />
         </Route>
 
         {/* ── Portal PROGRAMADOR ── */}
         <Route path="/programador" element={<ProtectedRoute roles={['PROGRAMADOR']}><ProgramadorLayout /></ProtectedRoute>}>
+          <Route path="productividad" element={<Productividad />} />
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<ProgramadorDashboard />} />
           <Route path="agenda" element={<ProgramadorAgenda />} />
+          <Route path="perfil" element={<MiPerfil />} />
           <Route path="formulario/:idServicioSubproceso" element={<Formulario />} />
           <Route path="candidatos/:idCandidato" element={<CandidatoPerfil />} />
         </Route>
 
         {/* ── Portal POLIGRAFISTA ── */}
         <Route path="/poligrafista" element={<ProtectedRoute roles={['POLIGRAFISTA']}><PoligrafistLayout /></ProtectedRoute>}>
+          <Route path="productividad" element={<Productividad />} />
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<AsignacionDashboard />} />
           <Route path="servicios" element={<MisAsignaciones />} />
+          <Route path="perfil" element={<MiPerfil />} />
           <Route path="formulario/:idServicioSubproceso" element={<Formulario />} />
           <Route path="candidatos/:idCandidato" element={<CandidatoPerfil />} />
         </Route>
 
         {/* ── Portal VISITADOR ── */}
         <Route path="/visitador" element={<ProtectedRoute roles={['VISITADOR']}><VisitadorLayout /></ProtectedRoute>}>
+          <Route path="productividad" element={<Productividad />} />
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<AsignacionDashboard />} />
           <Route path="visitas" element={<MisAsignaciones />} />
+          <Route path="perfil" element={<MiPerfil />} />
           <Route path="formulario/:idServicioSubproceso" element={<Formulario />} />
           <Route path="candidatos/:idCandidato" element={<CandidatoPerfil />} />
         </Route>

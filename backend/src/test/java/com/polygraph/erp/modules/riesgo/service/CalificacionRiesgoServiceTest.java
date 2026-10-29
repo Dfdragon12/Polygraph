@@ -36,9 +36,15 @@ import org.springframework.test.context.ActiveProfiles;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import com.polygraph.erp.modules.riesgo.codigos.ModeloCodigos;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 
 /** Fase D del motor de riesgo, contra H2 real: un caso de punta a punta — respuestas con puntos,
  *  subproceso pendiente, "No realizado", historial sin duplicados, decisión del gestor y bloqueo
@@ -54,12 +60,16 @@ class CalificacionRiesgoServiceTest {
     @Autowired private CalificacionRiesgoService service;
     @Autowired private jakarta.persistence.EntityManager em;
     @MockBean private NotificacionService notificacionService;
+    /** Cálculo propio de subservicios (docs/antecedentes). Sin stub devuelve vacío: los subprocesos
+     *  de este caso no tienen grupo, igual que antes. */
+    @MockBean private com.polygraph.erp.modules.formularios.service.CalculoSubprocesoService calculoSubprocesoService;
 
     private Usuario gestor;
     private Servicio servicio;
     private ServicioSubproceso antecedentes;
     private ServicioSubproceso poligrafia;
     private FormularioDato respuesta;
+    private FormularioColumna columnaPoligrafia;
 
     @BeforeEach
     void setUp() {
@@ -89,18 +99,28 @@ class CalificacionRiesgoServiceTest {
         servicio = persistir(Servicio.builder().cliente(cliente).candidato(candidato).proceso(proceso).usuarioSolicita(gestor)
                 .fechaSolicitud(LocalDate.now()).estado(EstadoServicio.EN_EJECUCION).build());
         antecedentes = persistir(ServicioSubproceso.builder().servicio(servicio).tipoProgreso(tAnt).usuarioAsignado(analista)
-                .estado(EstadoAsignacion.COMPLETADO).fechaCreacion(LocalDateTime.now()).build());
+                .estado(EstadoSubproceso.FINALIZADO).fechaCreacion(LocalDateTime.now()).build());
         poligrafia = persistir(ServicioSubproceso.builder().servicio(servicio).tipoProgreso(tPol)
-                .estado(EstadoAsignacion.ASIGNADO).fechaCreacion(LocalDateTime.now()).build());
+                .estado(EstadoSubproceso.EN_EJECUCION).fechaCreacion(LocalDateTime.now()).build());
 
         // Plantilla de Antecedentes: "Resultado" (Lista, califica) — Multas = 40 pts, OFAC = crítica.
         FormularioSeccion seccion = persistir(FormularioSeccion.builder().tipoProgreso(tAnt).nombre("Consulta")
                 .tipo(TipoSeccionFormulario.CAMPOS).orden(0).clave("consulta").build());
         FormularioColumna columna = FormularioColumna.builder().seccion(seccion).nombre("Resultado").tipoDato(TipoDatoFormulario.LISTA)
-                .orden(0).clave("resultado").opciones("Limpio,Multas,OFAC").calificaRiesgo(true).build();
+                .orden(0).clave("resultado").opciones("Limpio\nMultas\nOFAC").calificaRiesgo(true).build();
         columna.getPuntajes().add(FormularioColumnaPuntaje.builder().columna(columna).opcion("Multas").puntos(bd("40")).build());
         columna.getPuntajes().add(FormularioColumnaPuntaje.builder().columna(columna).opcion("OFAC").puntos(bd("0")).esCritico(true).build());
         persistir(columna);
+        seccion.getColumnas().add(columna); // la relación en memoria también (la sección sigue en caché)
+        // Poligrafía también califica (un Sí/No con puntos, sin responder = 0). Sin ningún campo que
+        // califique quedaría SIN_CALIFICACION y fuera del estudio (decisión 06-oct-2026, opción b).
+        FormularioSeccion seccionPol = persistir(FormularioSeccion.builder().tipoProgreso(tPol).nombre("Entrevista")
+                .tipo(TipoSeccionFormulario.CAMPOS).orden(0).clave("entrevista").build());
+        columnaPoligrafia = FormularioColumna.builder().seccion(seccionPol).nombre("Indicadores de engaño").tipoDato(TipoDatoFormulario.BOOLEANO)
+                .orden(0).clave("engano").calificaRiesgo(true).build();
+        columnaPoligrafia.getPuntajes().add(FormularioColumnaPuntaje.builder().columna(columnaPoligrafia).opcion("true").puntos(bd("50")).build());
+        persistir(columnaPoligrafia);
+        seccionPol.getColumnas().add(columnaPoligrafia);
         Formulario formulario = persistir(Formulario.builder().servicioSubproceso(antecedentes).fechaCreacion(LocalDateTime.now()).build());
         respuesta = persistir(FormularioDato.builder().formulario(formulario).columna(columna).valor("Multas").build());
         em.flush();
@@ -121,7 +141,7 @@ class CalificacionRiesgoServiceTest {
     @Test
     @DisplayName("Encabezado del formulario: quien diligencia ve su puntaje parcial (sin el estudio); el gestor ve también el estudio")
     void resumenSubproceso_porRol() {
-        antecedentes.setEstado(EstadoAsignacion.ASIGNADO); // todavía llenándolo
+        antecedentes.setEstado(EstadoSubproceso.EN_EJECUCION); // todavía llenándolo
         em.flush();
         em.clear(); // la sección se recarga con su columna calificable
         antecedentes = em.find(ServicioSubproceso.class, antecedentes.getId());
@@ -149,7 +169,7 @@ class CalificacionRiesgoServiceTest {
     @Test
     @DisplayName("Poligrafía no realizada: su peso se reparte (40 × 100 % = 40, MEDIO) y pide revisión por el obligatorio")
     void noRealizado_repartePeso() {
-        poligrafia.setEstado(EstadoAsignacion.CANCELADO);
+        poligrafia.setEstado(EstadoSubproceso.CANCELADO);
         poligrafia.setNoRealizado(true);
         em.flush();
 
@@ -164,7 +184,7 @@ class CalificacionRiesgoServiceTest {
     @Test
     @DisplayName("Recalcular sin cambios no agrega historial; cambiar una respuesta sí (y la anterior deja de ser vigente)")
     void historial_soloSiCambia() {
-        poligrafia.setEstado(EstadoAsignacion.COMPLETADO);
+        poligrafia.setEstado(EstadoSubproceso.FINALIZADO);
         em.flush();
         CalificacionRiesgo primero = service.recalcular(servicio.getIdServicio(), gestor.getIdUsuario());
         CalificacionRiesgo igual = service.recalcular(servicio.getIdServicio(), gestor.getIdUsuario());
@@ -180,9 +200,46 @@ class CalificacionRiesgoServiceTest {
     }
 
     @Test
+    @DisplayName("Opción b: un subservicio sin cómo calificar queda fuera — no deja el caso en proceso y su peso se reparte")
+    void sinCalificacion_quedaFueraYRepartePeso() {
+        // Poligrafía sigue ASIGNADA, pero ya no tiene ningún campo que califique.
+        columnaPoligrafia = em.find(FormularioColumna.class, columnaPoligrafia.getIdColumna());
+        columnaPoligrafia.setActivo(false);
+        em.flush();
+
+        CalificacionRiesgo r = service.recalcular(servicio.getIdServicio(), gestor.getIdUsuario());
+
+        assertThat(r.getEstado()).isEqualTo(EstadoResultado.CALCULADO); // no queda "en proceso"
+        assertThat(r.getPuntajePonderado()).isEqualByComparingTo("40.0"); // solo Antecedentes (40 × 60 / 60)
+        assertThat(r.getNivelFinal()).isEqualTo(NivelRiesgo.MEDIO);
+        assertThat(r.getCobertura()).isEqualByComparingTo("60.00"); // el peso de Poligrafía no cuenta
+    }
+
+    @Test
+    @DisplayName("Manda la criticidad de los formularios; si difieren, la más exigente (aunque el gestor haya puesto otra)")
+    void criticidadDeLosFormularios_laMasExigente() {
+        poligrafia.setEstado(EstadoSubproceso.FINALIZADO); // 40 × 60 % + 0 × 40 % = 24
+        em.flush();
+        org.mockito.Mockito.when(calculoSubprocesoService.calcular(org.mockito.ArgumentMatchers.argThat(sp -> sp != null && sp.getId().equals(antecedentes.getId()))))
+                .thenReturn(java.util.Optional.of(conCriticidad(CriticidadCargo.SENSIBLE)));
+        org.mockito.Mockito.when(calculoSubprocesoService.calcular(org.mockito.ArgumentMatchers.argThat(sp -> sp != null && sp.getId().equals(poligrafia.getId()))))
+                .thenReturn(java.util.Optional.of(conCriticidad(CriticidadCargo.CRITICO)));
+
+        // El gestor pone ESTÁNDAR, pero los formularios dicen SENSIBLE y CRÍTICO: vale CRÍTICO.
+        CalificacionRiesgoResponse r = service.cambiarCriticidad(servicio.getIdServicio(), "ESTANDAR", gestor);
+        assertThat(r.criticidad()).isEqualTo("CRITICO");
+        assertThat(r.nivelFinal()).isEqualTo("MEDIO"); // 24 > 20 (límite BAJO de Crítico)
+    }
+
+    private static com.polygraph.erp.modules.riesgo.codigos.ModeloCodigos.CalculoFormulario conCriticidad(CriticidadCargo c) {
+        return new com.polygraph.erp.modules.riesgo.codigos.ModeloCodigos.CalculoFormulario(
+                java.util.Map.of(), java.util.Map.of(), null, null, c, java.util.List.of());
+    }
+
+    @Test
     @DisplayName("Criticidad del caso: CRITICO cambia los umbrales (24 ponderado → MEDIO en vez de BAJO)")
     void criticidadDelCaso() {
-        poligrafia.setEstado(EstadoAsignacion.COMPLETADO); // 40 × 60 % + 0 × 40 % = 24
+        poligrafia.setEstado(EstadoSubproceso.FINALIZADO); // 40 × 60 % + 0 × 40 % = 24
         em.flush();
         assertThat(service.recalcular(servicio.getIdServicio(), gestor.getIdUsuario()).getNivelFinal()).isEqualTo(NivelRiesgo.BAJO);
 
@@ -195,7 +252,7 @@ class CalificacionRiesgoServiceTest {
     @Test
     @DisplayName("Nivel automático: sin tocar nada vale la recomendación; cambiarlo exige justificación y se puede volver al automático")
     void decisionAutomaticaConOpcionDeCambiar() {
-        poligrafia.setEstado(EstadoAsignacion.COMPLETADO); // 24 → BAJO
+        poligrafia.setEstado(EstadoSubproceso.FINALIZADO); // 24 → BAJO
         em.flush();
 
         CalificacionRiesgoResponse auto = service.obtener(servicio.getIdServicio(), gestor);
@@ -222,7 +279,7 @@ class CalificacionRiesgoServiceTest {
         assertThatThrownBy(() -> service.prepararPublicacion(servicio, gestor)) // poligrafía sigue asignada
                 .isInstanceOf(ApiException.class).hasMessageContaining("en proceso");
 
-        poligrafia.setEstado(EstadoAsignacion.COMPLETADO);
+        poligrafia.setEstado(EstadoSubproceso.FINALIZADO);
         em.flush();
         service.prepararPublicacion(servicio, gestor);
         servicio.setEstado(EstadoServicio.PUBLICADO); // lo que hace SolicitudService.cambiarEstado
@@ -249,7 +306,7 @@ class CalificacionRiesgoServiceTest {
         assertThat(enProceso.riesgo()).containsEntry("nivel", "En proceso").containsEntry("puntaje", "");
         assertThat(enProceso.calificacion()).containsEntry("nivel", "MEDIO").containsEntry("puntaje", "40,0");
 
-        poligrafia.setEstado(EstadoAsignacion.COMPLETADO);
+        poligrafia.setEstado(EstadoSubproceso.FINALIZADO);
         em.flush();
         service.recalcular(servicio.getIdServicio(), gestor.getIdUsuario());
         service.decidir(servicio.getIdServicio(), "ALTO", "Criterio del gestor.", gestor);
@@ -260,6 +317,20 @@ class CalificacionRiesgoServiceTest {
     }
 
     @Test
+    @DisplayName("Marcadores sin cálculo guardado: se calculan en memoria y NO escriben en la BD")
+    void marcadoresWord_sinCalculo_noEscribe() {
+        Long antes = em.createQuery("select count(c) from CalificacionRiesgo c", Long.class).getSingleResult();
+
+        var marcadores = service.marcadoresWord(servicio.getIdServicio(), antecedentes.getId());
+
+        assertThat(marcadores.riesgo()).containsEntry("nivel", "En proceso");
+        em.flush();
+        Long despues = em.createQuery("select count(c) from CalificacionRiesgo c", Long.class).getSingleResult();
+        // Antes hacía un INSERT, que en la transacción readOnly del documento fallaba y el PDF no salía.
+        assertThat(despues).isEqualTo(antes);
+    }
+
+    @Test
     @DisplayName("Otro gestor no puede ver ni decidir el riesgo del caso")
     void otroGestor_403() {
         Usuario otro = persistir(Usuario.builder().nombre("Otro").email("otro.gestor@test.com").password("x")
@@ -267,6 +338,60 @@ class CalificacionRiesgoServiceTest {
         assertThatThrownBy(() -> service.obtener(servicio.getIdServicio(), otro))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.FORBIDDEN));
+    }
+
+    // ───────────────────────── SE-06: «Sin calificar», nunca «BAJO 0» ─────────────────────────
+
+    @Test
+    @DisplayName("Un subproceso cuyo formulario no se ha diligenciado queda «Sin calificar»: sin nivel ni puntaje (no «BAJO 0»)")
+    void sinFormularioEsSinCalificar() {
+        em.clear();
+        gestor = em.find(Usuario.class, gestor.getIdUsuario());
+        var r = service.resumenSubproceso(poligrafia.getId(), gestor);
+        assertThat(r.califica()).isTrue();
+        assertThat(r.calculado()).isFalse();
+        assertThat(r.nivel()).isNull();
+        assertThat(r.puntaje()).isNull();
+        assertThat(r.tieneCritica()).isFalse();
+        assertThat(r.motivoSinCalcular()).isEqualTo("Todavía no se ha diligenciado el formulario.");
+    }
+
+    @Test
+    @DisplayName("Con calificación por hallazgos y sin criticidad del cargo no hay puntaje: «Sin calificar» con el motivo, y el estudio no se cuenta como 0")
+    void sinCriticidadEsSinCalificar() {
+        antecedentes.getTipoProgreso().setGrupoCalificacion("HALLAZGOS");
+        em.flush();
+        when(calculoSubprocesoService.calcular(any())).thenReturn(Optional.of(new ModeloCodigos.CalculoFormulario(
+                Map.of(), Map.of(), null, "Falta la criticidad del cargo.", null, List.of())));
+
+        var r = service.resumenSubproceso(antecedentes.getId(), gestor);
+        assertThat(r.calculado()).isFalse();
+        assertThat(r.nivel()).isNull();
+        assertThat(r.puntaje()).isNull();
+        assertThat(r.motivoSinCalcular()).isEqualTo("Falta la criticidad del cargo.");
+
+        // Antecedentes está FINALIZADO pero sin puntaje: el estudio lo espera (EN_PROCESO), no lo cuenta como realizado con 0 puntos.
+        poligrafia.setEstado(EstadoSubproceso.CANCELADO);
+        poligrafia.setNoRealizado(true);
+        em.flush();
+        CalificacionRiesgo estudio = service.recalcular(servicio.getIdServicio(), gestor.getIdUsuario());
+        assertThat(estudio.getEstado()).isNotEqualTo(EstadoResultado.CALCULADO);
+        assertThat(service.resultadoParaCliente(servicio.getIdServicio())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Con la criticidad elegida el cálculo corre y el puntaje 0 es un resultado real (BAJO), no «Sin calificar»")
+    void conCriticidadElPuntajeCeroEsReal() {
+        antecedentes.getTipoProgreso().setGrupoCalificacion("HALLAZGOS");
+        em.flush();
+        var limpio = new ModeloCodigos.ResultadoCalificacionCodigos(List.of(), 0.0, NivelRiesgo.BAJO, false, List.of(), "0 de 100 posibles", List.of());
+        when(calculoSubprocesoService.calcular(any())).thenReturn(Optional.of(new ModeloCodigos.CalculoFormulario(
+                Map.of(), Map.of(), limpio, null, CriticidadCargo.ESTANDAR, List.of())));
+        var r = service.resumenSubproceso(antecedentes.getId(), gestor);
+        assertThat(r.calculado()).isTrue();
+        assertThat(r.motivoSinCalcular()).isNull();
+        assertThat(r.nivel()).isEqualTo("BAJO");
+        assertThat(r.puntaje()).isEqualByComparingTo("0");
     }
 
     private <T> T persistir(T entidad) {

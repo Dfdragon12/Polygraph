@@ -34,7 +34,9 @@ export default function PWAInstallBanner() {
     setVisible(false)
   }
 
-  if (!visible) return null
+  // El portal del candidato (/evaluado/...) es público y de un solo uso: ofrecerle "Instalar
+  // Polygraph ERP" (la app del equipo interno) lo confunde y se ve poco profesional.
+  if (!visible || window.location.pathname.startsWith('/evaluado')) return null
 
   return (
     <div

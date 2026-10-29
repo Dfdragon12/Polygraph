@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useId, useState, useEffect, useMemo } from 'react'
 import api from '../../../services/api'
 import Paginacion from '../../../components/ui/Paginacion'
 import MenuAcciones from '../../../components/ui/MenuAcciones'
@@ -68,28 +68,29 @@ function IconoPower() {
 }
 
 function Formulario({ form, onChange, onSubmit, onCancel, guardando, error, esEdicion }) {
+  const idCampos = useId()
   return (
     <form onSubmit={onSubmit} className="px-6 py-5 space-y-4">
       {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{error}</div>}
 
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Nombre <span className="text-red-500">*</span></label>
-        <input name="nombreProgreso" value={form.nombreProgreso} onChange={onChange} required
+        <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">Nombre <span className="text-red-500">*</span></label>
+        <input id={`${idCampos}-1`} name="nombreProgreso" value={form.nombreProgreso} onChange={onChange} required
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
       </div>
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Descripción</label>
-        <textarea name="descripcion" value={form.descripcion} onChange={onChange} rows={3}
+        <label htmlFor={`${idCampos}-2`} className="block text-xs font-medium text-gray-600 mb-1">Descripción</label>
+        <textarea id={`${idCampos}-2`} name="descripcion" value={form.descripcion} onChange={onChange} rows={3}
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" />
       </div>
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Orden</label>
-        <input name="orden" type="number" min={0} value={form.orden} onChange={onChange}
+        <label htmlFor={`${idCampos}-3`} className="block text-xs font-medium text-gray-600 mb-1">Orden</label>
+        <input id={`${idCampos}-3`} name="orden" type="number" min={0} value={form.orden} onChange={onChange}
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
       </div>
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Rol responsable <span className="text-red-500">*</span></label>
-        <select name="rolResponsable" value={form.rolResponsable} onChange={onChange} required
+        <label htmlFor={`${idCampos}-4`} className="block text-xs font-medium text-gray-600 mb-1">Rol responsable <span className="text-red-500">*</span></label>
+        <select id={`${idCampos}-4`} name="rolResponsable" value={form.rolResponsable} onChange={onChange} required
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
           {ROLES_RESPONSABLE.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
         </select>
@@ -240,7 +241,7 @@ export default function TiposProgreso() {
 
       {/* Barra de filtros */}
       <div className="flex flex-wrap items-center gap-3 mb-3">
-        <input
+        <input aria-label="Buscar por nombre o descripción…"
           type="search"
           value={busqueda}
           onChange={e => setBusqueda(e.target.value)}
@@ -289,7 +290,7 @@ export default function TiposProgreso() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-100">
+            <table className="table-stack min-w-full divide-y divide-gray-100">
               <thead className="bg-gray-50/80">
                 <tr>
                   {columnas.map(col => (

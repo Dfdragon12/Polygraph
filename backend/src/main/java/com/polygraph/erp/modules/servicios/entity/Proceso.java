@@ -39,12 +39,32 @@ public class Proceso {
     @Column(name = "dias_habiles_entrega")
     private Integer diasHabilesEntrega;
 
+    /** NS-08: el servicio incluye una visita: Nueva solicitud pide la dirección y rotula la ciudad «Ciudad de la visita». */
+    @Builder.Default
+    @Column(name = "requiere_direccion", nullable = false)
+    private Boolean requiereDireccion = false;
+
+    /** NS-08: el servicio incluye poligrafía o VerifEye: la ciudad se rotula «Ciudad donde presentará la prueba». */
+    @Builder.Default
+    @Column(name = "ciudad_es_de_prueba", nullable = false)
+    private Boolean ciudadEsDePrueba = false;
+
     @Column(name = "aplica_precio_ciudad", nullable = false)
     private Boolean aplicaPrecioCiudad;
+
+    /** El servicio necesita la hoja de vida del candidato: solo entonces el reloj arranca en pausa esperando el link (SE-05). Antecedentes no la necesita. */
+    @Builder.Default
+    @Column(name = "requiere_hoja_vida", nullable = false)
+    private Boolean requiereHojaVida = true;
 
     /** Puntos clave cortos para la tarjeta de la tienda — un punto por línea. */
     @Column(name = "puntos_clave", columnDefinition = "TEXT")
     private String puntosClave;
+
+    /** Formato adicional que el cliente diligencia al solicitar este proceso (poligrafías); null = ninguno. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "formato_solicitud", length = 20)
+    private com.polygraph.erp.modules.solicitudes.formato.FormatoSolicitud formatoSolicitud;
 
     // ── Calificación de riesgo (ver docs/modelo-calificacion-riesgo.md §2) ──
 

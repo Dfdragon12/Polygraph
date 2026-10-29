@@ -1,8 +1,11 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useId, useState, useEffect, useCallback, useMemo } from 'react'
 import tiposNovedadService from '../../../services/tiposNovedadService'
 import Toast from '../../../components/Toast'
 import { Modal, ConfirmModal } from '../../../components/ui/Modal'
 import MenuAcciones from '../../../components/ui/MenuAcciones'
+import {
+  EncabezadoPagina, Indicador, AlertaError, EsqueletoPagina, EstadoVacio, botonPrimario, botonSecundario,
+} from '../../../components/admin/PaginaAdmin'
 import { PALETA_NOVEDAD, colorNovedad, ROLES_NOVEDAD } from '../../../utils/paletaNovedades'
 
 // Plantilla de novedades: las opciones de "¿Qué pasó?" que ven analista/poligrafista/visitador al
@@ -30,6 +33,7 @@ const ICONO_OJO = (
 )
 
 function ModalCategoria({ categoria, onClose, onGuardado }) {
+  const idCampos = useId()
   const esEdicion = !!categoria
   const [nombre, setNombre] = useState(categoria?.nombre ?? '')
   const [color, setColor] = useState(categoria?.color ?? 'gray')
@@ -57,8 +61,8 @@ function ModalCategoria({ categoria, onClose, onGuardado }) {
       <form onSubmit={guardar} className="px-6 py-5 space-y-4">
         {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{error}</div>}
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Nombre <span className="text-red-500">*</span></label>
-          <input value={nombre} onChange={e => setNombre(e.target.value)} autoFocus maxLength={100}
+          <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">Nombre <span className="text-red-500">*</span></label>
+          <input id={`${idCampos}-1`} value={nombre} onChange={e => setNombre(e.target.value)} autoFocus maxLength={100}
             placeholder="Ej: Asistencia del candidato" className={inputCls} />
           <p className="text-[11px] text-gray-400 mt-1">Es el título del grupo en la lista "¿Qué pasó?".</p>
         </div>
@@ -75,8 +79,8 @@ function ModalCategoria({ categoria, onClose, onGuardado }) {
           </div>
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Orden</label>
-          <input type="number" min={0} value={orden} onChange={e => setOrden(e.target.value)}
+          <label htmlFor={`${idCampos}-2`} className="block text-xs font-medium text-gray-600 mb-1">Orden</label>
+          <input id={`${idCampos}-2`} type="number" min={0} value={orden} onChange={e => setOrden(e.target.value)}
             placeholder="Al final" className={`${inputCls} max-w-[120px]`} />
         </div>
         <div className="flex justify-end gap-3 pt-1">
@@ -93,11 +97,15 @@ function ModalCategoria({ categoria, onClose, onGuardado }) {
 }
 
 function ModalTipo({ tipo, categorias, idCategoriaInicial, onClose, onGuardado }) {
+  const idCampos = useId()
   const esEdicion = !!tipo
   const [idCategoria, setIdCategoria] = useState(tipo?.idCategoriaNovedad ?? idCategoriaInicial ?? categorias[0]?.idCategoriaNovedad ?? '')
   const [nombre, setNombre] = useState(tipo?.nombre ?? '')
   const [roles, setRoles] = useState(new Set(tipo?.roles ?? []))
   const [textoAyuda, setTextoAyuda] = useState(tipo?.textoAyuda ?? '')
+  const [visibleCliente, setVisibleCliente] = useState(!!tipo?.visibleCliente)
+  const [pausaReloj, setPausaReloj] = useState(!!tipo?.pausaReloj)
+  const [imputableA, setImputableA] = useState(tipo?.imputableA ?? 'POLYGRAPH')
   const [orden, setOrden] = useState(tipo?.orden ?? '')
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState(null)
@@ -117,7 +125,7 @@ function ModalTipo({ tipo, categorias, idCategoriaInicial, onClose, onGuardado }
     try {
       const payload = {
         idCategoriaNovedad: Number(idCategoria), nombre: nombre.trim(), roles: [...roles],
-        textoAyuda: textoAyuda.trim() || null, orden: orden === '' ? null : Number(orden),
+        textoAyuda: textoAyuda.trim() || null, orden: orden === '' ? null : Number(orden), visibleCliente, pausaReloj, imputableA,
       }
       const data = esEdicion
         ? await tiposNovedadService.actualizarTipo(tipo.idTipoNovedad, payload)
@@ -134,14 +142,14 @@ function ModalTipo({ tipo, categorias, idCategoriaInicial, onClose, onGuardado }
       <form onSubmit={guardar} className="px-6 py-5 space-y-4">
         {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{error}</div>}
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">¿Qué pasó? <span className="text-red-500">*</span></label>
-          <input value={nombre} onChange={e => setNombre(e.target.value)} autoFocus maxLength={150}
+          <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">¿Qué pasó? <span className="text-red-500">*</span></label>
+          <input id={`${idCampos}-1`} value={nombre} onChange={e => setNombre(e.target.value)} autoFocus maxLength={150}
             placeholder="Ej: El candidato llegó en estado de embriaguez" className={inputCls} />
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-[1fr_120px] gap-3">
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Categoría <span className="text-red-500">*</span></label>
-            <select value={idCategoria} onChange={e => setIdCategoria(e.target.value)} className={inputCls}>
+            <label htmlFor={`${idCampos}-2`} className="block text-xs font-medium text-gray-600 mb-1">Categoría <span className="text-red-500">*</span></label>
+            <select id={`${idCampos}-2`} value={idCategoria} onChange={e => setIdCategoria(e.target.value)} className={inputCls}>
               {categorias.map(c => (
                 <option key={c.idCategoriaNovedad} value={c.idCategoriaNovedad}>
                   {c.nombre}{c.activo ? '' : ' (inactiva)'}
@@ -150,8 +158,8 @@ function ModalTipo({ tipo, categorias, idCategoriaInicial, onClose, onGuardado }
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Orden</label>
-            <input type="number" min={0} value={orden} onChange={e => setOrden(e.target.value)} placeholder="Al final" className={inputCls} />
+            <label htmlFor={`${idCampos}-3`} className="block text-xs font-medium text-gray-600 mb-1">Orden</label>
+            <input id={`${idCampos}-3`} type="number" min={0} value={orden} onChange={e => setOrden(e.target.value)} placeholder="Al final" className={inputCls} />
           </div>
         </div>
         <div>
@@ -171,10 +179,36 @@ function ModalTipo({ tipo, categorias, idCategoriaInicial, onClose, onGuardado }
           <p className="text-[11px] text-gray-400 mt-1">Solo le sale a quien ejecuta subprocesos de ese rol.</p>
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Texto de ayuda (ejemplo para el campo "Detalle")</label>
-          <textarea value={textoAyuda} onChange={e => setTextoAyuda(e.target.value)} rows={2} maxLength={300}
+          <label htmlFor={`${idCampos}-4`} className="block text-xs font-medium text-gray-600 mb-1">Texto de ayuda (ejemplo para el campo "Detalle")</label>
+          <textarea id={`${idCampos}-4`} value={textoAyuda} onChange={e => setTextoAyuda(e.target.value)} rows={2} maxLength={300}
             placeholder="Ej: Llegó con aliento alcohólico; no se realizó la prueba." className={inputCls} />
           <p className="text-[11px] text-gray-400 mt-0.5 text-right">{textoAyuda.length}/300</p>
+        </div>
+        <label className="flex items-start gap-3 rounded-lg border border-gray-200 px-3 py-2.5 cursor-pointer hover:bg-gray-50">
+          <input type="checkbox" checked={visibleCliente} onChange={e => setVisibleCliente(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+          <span>
+            <span className="block text-sm font-medium text-gray-800">Visible para el cliente</span>
+            <span className="block text-[11px] text-gray-400">El cliente la ve en el detalle de su solicitud: el tipo, el estado y la respuesta al resolverla. Nunca ve lo que escribió el ejecutor.</span>
+          </span>
+        </label>
+        <div className="rounded-lg border border-gray-200 px-3 py-2.5 space-y-2.5">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input type="checkbox" checked={pausaReloj} onChange={e => setPausaReloj(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+            <span>
+              <span className="block text-sm font-medium text-gray-800">Detiene el reloj de la solicitud</span>
+              <span className="block text-[11px] text-gray-400">Mientras la novedad esté abierta, los días hábiles no cuentan para el plazo de entrega.</span>
+            </span>
+          </label>
+          <div>
+            <label htmlFor={`${idCampos}-imputable`} className="block text-xs font-medium text-gray-600 mb-1">¿De quién es la causa?</label>
+            <select id={`${idCampos}-imputable`} value={imputableA} onChange={e => setImputableA(e.target.value)} className={inputCls}>
+              <option value="POLYGRAPH">Polygraph</option>
+              <option value="CANDIDATO">El candidato</option>
+              <option value="CLIENTE">El cliente</option>
+            </select>
+          </div>
         </div>
         {tipo?.clave && (
           <p className="text-[11px] text-gray-400">Código interno: <span className="font-mono">{tipo.clave}</span> (no cambia al renombrar)</p>
@@ -238,17 +272,6 @@ function ModalVistaPrevia({ categorias, tipos, onClose }) {
   )
 }
 
-function Indicador({ valor, etiqueta, detalle, icono }) {
-  return (
-    <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex items-center gap-3">
-      <span className="flex-shrink-0 w-9 h-9 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center">{icono}</span>
-      <div className="min-w-0">
-        <p className="text-xl font-bold text-gray-900 leading-none">{valor}</p>
-        <p className="text-xs text-gray-500 mt-1">{etiqueta}{detalle && <span className="text-gray-400"> · {detalle}</span>}</p>
-      </div>
-    </div>
-  )
-}
 
 const ICONO_CARPETA = (
   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -281,6 +304,8 @@ function FilaTipo({ t, onEditar, onEstado, onEliminar }) {
         <div className="flex items-center gap-2 flex-wrap">
           <p className={`text-sm font-medium ${t.activo ? 'text-gray-900' : 'text-gray-400'}`}>{t.nombre}</p>
           {!t.activo && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-200 text-gray-500">Inactivo</span>}
+          {t.pausaReloj && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 ring-1 ring-slate-200" title={`Detiene el reloj de la solicitud · causa: ${t.imputableA === 'CANDIDATO' ? 'el candidato' : t.imputableA === 'CLIENTE' ? 'el cliente' : 'Polygraph'}`}>Pausa el reloj</span>}
+          {t.visibleCliente && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 ring-1 ring-sky-200" title="El cliente la ve en el detalle de su solicitud">Visible al cliente</span>}
         </div>
         {t.textoAyuda && (
           <p className="text-xs text-gray-400 mt-0.5 line-clamp-1" title={t.textoAyuda}>
@@ -438,53 +463,39 @@ export default function TiposNovedad() {
 
   return (
     <div className="max-w-6xl">
-      {/* Encabezado */}
-      <div className="flex items-start justify-between mb-5 flex-wrap gap-3">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Tipos de novedad</h2>
-          <p className="text-sm text-gray-500 mt-1 max-w-2xl">
-            Las opciones de "¿Qué pasó?" que ven analista, poligrafista y visitador al reportar una novedad. Lo que ya se
-            usó no se borra: se desactiva y deja de aparecer en la lista.
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={() => setVistaPrevia(true)}
-            className="inline-flex items-center gap-1.5 border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 text-sm font-medium px-3.5 py-2 rounded-lg">
-            {ICONO_OJO} Vista previa
-          </button>
-          <button onClick={() => setModalCategoria('nueva')}
-            className="border border-primary-200 bg-white text-primary-700 hover:bg-primary-50 text-sm font-medium px-3.5 py-2 rounded-lg">
-            + Categoría
-          </button>
-          <button onClick={() => setModalTipo({})} disabled={categorias.length === 0}
-            className="bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg shadow-sm">
-            + Tipo de novedad
-          </button>
-        </div>
-      </div>
+      <EncabezadoPagina
+        seccion="Novedades"
+        titulo="Tipos de novedad"
+        icono={<svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M3 3v1.5M3 21v-6m0 0l2.77-.693a9 9 0 016.208.682l.108.054a9 9 0 006.086.71l3.114-.732a48.524 48.524 0 01-.005-10.499l-3.11.732a9 9 0 01-6.085-.711l-.108-.054a9 9 0 00-6.208-.682L3 4.5M3 15V4.5" /></svg>}
+        descripcion={'Las opciones de "¿Qué pasó?" que ven analista, poligrafista y visitador al reportar una novedad. Lo que ya se usó no se borra: se desactiva y deja de aparecer en la lista.'}
+        acciones={<>
+          <button onClick={() => setVistaPrevia(true)} className={botonSecundario}>{ICONO_OJO} Vista previa</button>
+          <button onClick={() => setModalCategoria('nueva')} className={botonSecundario}>+ Categoría</button>
+          <button onClick={() => setModalTipo({})} disabled={categorias.length === 0} className={botonPrimario}>+ Tipo de novedad</button>
+        </>}
+      />
 
-      {error && (
-        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg flex items-center justify-between">
-          {error}<button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 ml-4">×</button>
-        </div>
-      )}
+      <AlertaError mensaje={error} onCerrar={() => setError(null)} />
 
       {cargando ? (
-        <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-4 border-primary-600 border-t-transparent" /></div>
+        <EsqueletoPagina indicadores={4} bloques={2} />
       ) : (
         <>
           {/* Indicadores */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-            <Indicador valor={categoriasActivas} etiqueta="Categorías" detalle={categorias.length > categoriasActivas ? `${categorias.length - categoriasActivas} inactivas` : null} icono={ICONO_CARPETA} />
-            <Indicador valor={tiposActivos} etiqueta="Tipos activos" icono={ICONO_LISTA} />
-            <Indicador valor={tiposInactivos} etiqueta="Tipos inactivos" icono={ICONO_PAUSA} />
-            <Indicador valor={totalUsos} etiqueta="Novedades registradas" icono={ICONO_BANDERA} />
+            <Indicador valor={categoriasActivas} etiqueta="Categorías activas" detalle={categorias.length > categoriasActivas ? `${categorias.length - categoriasActivas} inactivas` : 'Todas activas'} icono={ICONO_CARPETA} />
+            <Indicador valor={tiposActivos} etiqueta="Tipos activos" detalle="Aparecen al reportar" icono={ICONO_LISTA} tono="verde" />
+            <Indicador valor={tiposInactivos} etiqueta="Tipos inactivos" detalle="Ocultos, se conservan" icono={ICONO_PAUSA} tono="gris" />
+            <Indicador valor={totalUsos} etiqueta="Novedades registradas" detalle="Con estos tipos" icono={ICONO_BANDERA} tono="ambar" />
           </div>
 
           {/* Filtros */}
-          <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 mb-5 flex flex-wrap items-center gap-3">
-            <input type="search" value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar un tipo de novedad…"
-              className="flex-1 min-w-[200px] border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm px-4 py-3 mb-5 flex flex-wrap items-center gap-3">
+            <div className="relative flex-1 min-w-[220px]">
+              <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg>
+              <input aria-label="Buscar un tipo de novedad…" type="search" value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar un tipo de novedad…"
+                className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+            </div>
             <div className="inline-flex rounded-lg bg-gray-100 p-0.5 text-xs">
               {[{ valor: 'todos', etiqueta: 'Todos los roles' }, ...ROLES_NOVEDAD].map(r => (
                 <button key={r.valor} type="button" onClick={() => setFiltroRol(r.valor)}
@@ -501,13 +512,16 @@ export default function TiposNovedad() {
 
           {/* Categorías con sus tipos */}
           {categorias.length === 0 ? (
-            <div className="bg-white border border-dashed border-gray-300 rounded-2xl py-14 text-center">
-              <p className="text-sm font-medium text-gray-700">Todavía no hay categorías</p>
-              <p className="text-xs text-gray-400 mt-1">Crea una categoría (ej. "Asistencia del candidato") y luego agrégale tipos.</p>
-              <button onClick={() => setModalCategoria('nueva')} className="mt-3 text-sm font-medium text-primary-600 hover:text-primary-800">+ Crear categoría</button>
+            <div className="bg-white border border-dashed border-gray-300 rounded-2xl">
+              <EstadoVacio icono={ICONO_CARPETA} titulo="Todavía no hay categorías"
+                descripcion={'Crea una categoría (ej. "Asistencia del candidato") y luego agrégale tipos.'}
+                accion={<button onClick={() => setModalCategoria('nueva')} className={botonPrimario}>+ Crear categoría</button>} />
             </div>
           ) : categoriasVisibles.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-10">Ningún tipo de novedad coincide con el filtro.</p>
+            <div className="bg-white border border-gray-200 rounded-2xl">
+              <EstadoVacio icono={ICONO_LISTA} titulo="Ningún tipo coincide con el filtro"
+                descripcion="Prueba con otra palabra, cambia el rol o activa «Mostrar inactivos»." />
+            </div>
           ) : (
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
               {categoriasVisibles.map(({ c, tipos: ts }) => (

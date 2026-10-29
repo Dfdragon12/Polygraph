@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useId, useState, useEffect, useCallback, useMemo } from 'react'
 import ciudadService from '../../services/ciudadService'
 import barrioService from '../../services/barrioService'
 import catalogoService from '../../services/catalogoService'
@@ -20,6 +20,7 @@ const NIVELES_CIUDAD = [
  * DepartamentosColombiaUtil en el backend). Solo falta el de la ciudad/municipio, que sigue siendo
  * texto libre. Si por algún caso viejo no se puede derivar, el error del backend lo dice. */
 function ModalConfirmarConDane({ ciudad, onCerrar, onConfirmado, onError }) {
+  const idCampos = useId()
   const [codigoDaneCiudad, setCodigoDaneCiudad] = useState(ciudad.codigoDaneCiudad ?? '')
   const [guardando, setGuardando] = useState(false)
   const [errorLocal, setErrorLocal] = useState(null)
@@ -57,8 +58,8 @@ function ModalConfirmarConDane({ ciudad, onCerrar, onConfirmado, onError }) {
             <div className="bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2 rounded-lg">{errorLocal}</div>
           )}
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Código DANE ciudad</label>
-            <input type="text" inputMode="numeric" value={codigoDaneCiudad} onChange={e => setCodigoDaneCiudad(e.target.value)}
+            <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">Código DANE ciudad</label>
+            <input id={`${idCampos}-1`} type="text" inputMode="numeric" value={codigoDaneCiudad} onChange={e => setCodigoDaneCiudad(e.target.value)}
               placeholder="Ej: 11001" autoFocus
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
           </div>
@@ -160,7 +161,7 @@ function ModalBarriosDeCiudad({ ciudad, onClose, onToast, onCambioPendientes }) 
         )}
 
         <form onSubmit={agregar} className="flex gap-2">
-          <input value={nuevoNombre} onChange={e => setNuevoNombre(e.target.value)}
+          <input aria-label="Agregar un barrio a esta ciudad..." value={nuevoNombre} onChange={e => setNuevoNombre(e.target.value)}
             placeholder="Agregar un barrio a esta ciudad..."
             className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
           <button type="submit" disabled={agregando || !nuevoNombre.trim()}
@@ -170,7 +171,7 @@ function ModalBarriosDeCiudad({ ciudad, onClose, onToast, onCambioPendientes }) 
         </form>
 
         {barrios !== null && barrios.length > 5 && (
-          <input type="search" value={busqueda} onChange={e => setBusqueda(e.target.value)}
+          <input aria-label="Buscar barrio..." type="search" value={busqueda} onChange={e => setBusqueda(e.target.value)}
             placeholder="Buscar barrio..."
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
         )}
@@ -289,7 +290,7 @@ function BotonIcono({ onClick, title, tono, disabled = false, children }) {
 function BarraFiltros({ busqueda, onBusqueda, filtro, onFiltro, total, pendientes }) {
   return (
     <div className="flex flex-wrap items-center gap-3 mb-3">
-      <input type="search" value={busqueda} onChange={e => onBusqueda(e.target.value)}
+      <input aria-label="Buscar por ciudad, departamento o código DANE…" type="search" value={busqueda} onChange={e => onBusqueda(e.target.value)}
         placeholder="Buscar por ciudad, departamento o código DANE…"
         className="flex-1 min-w-[220px] max-w-sm border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
       <div className="flex gap-1">
@@ -324,7 +325,7 @@ function TablaCiudades({ ciudades, cargando, onClasificar, onConfirmar, onElimin
 
   return (
     <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-100">
+      <table className="table-stack min-w-full divide-y divide-gray-100">
         <thead className="bg-gray-50">
           <tr>
             {['Ciudad / Municipio', 'Departamento', 'Cód. DANE ciudad', 'Cód. DANE depto', 'Nivel logístico', 'Estado', '···'].map(h => (

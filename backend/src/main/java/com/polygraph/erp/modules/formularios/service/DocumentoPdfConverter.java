@@ -2,6 +2,7 @@ package com.polygraph.erp.modules.formularios.service;
 
 import com.polygraph.erp.shared.exceptions.ApiException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -13,6 +14,7 @@ import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
 /** Convierte a PDF el .docx que ya arma FormularioPlantillaWordService, usando LibreOffice en
@@ -40,7 +42,54 @@ public class DocumentoPdfConverter {
     @Value("${app.libreoffice.timeout-segundos:60}")
     private long timeoutSegundos = 60;
 
+    // Cada soffice pesa ~150-300 MB FUERA del heap de Java y se come un núcleo entero mientras
+    // convierte — sin tope, 20 descargas simultáneas eran 20 LibreOffice a la vez y el
+    // contenedor se quedaba sin RAM/CPU. El semáforo deja pasar solo max-concurrentes; el resto
+    // espera su turno hasta espera-maxima-segundos y, si no le toca, recibe 503 en vez de tumbar
+    // el servidor. Todas las conversiones vienen de la cola (INFORME_PDF y FORMULARIO_PDF), así
+    // que quien espera es un hilo de la cola, nunca un request; un 503 se reintenta solo.
+    private final Semaphore permisos;
+    private final int maxConcurrentes;
+
+    @Value("${app.libreoffice.espera-maxima-segundos:60}")
+    private long esperaMaximaSegundos = 60;
+
+    @Autowired
+    public DocumentoPdfConverter(@Value("${app.libreoffice.max-concurrentes:2}") int maxConcurrentes) {
+        this.maxConcurrentes = Math.max(1, maxConcurrentes);
+        this.permisos = new Semaphore(this.maxConcurrentes, true);
+    }
+
+    /** Para pruebas que instancian con "new" sin Spring. */
+    public DocumentoPdfConverter() {
+        this(2);
+    }
+
+    public int maxConcurrentes() { return maxConcurrentes; }
+    public int enUso() { return maxConcurrentes - permisos.availablePermits(); }
+    public int esperando() { return permisos.getQueueLength(); }
+
     public byte[] convertir(byte[] docx) {
+        boolean adquirido;
+        try {
+            adquirido = permisos.tryAcquire(esperaMaximaSegundos, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new ApiException("La conversión a PDF fue interrumpida.", HttpStatus.SERVICE_UNAVAILABLE);
+        }
+        if (!adquirido) {
+            log.warn("Conversión a PDF rechazada: {} conversiones en curso y {} esperando", enUso(), esperando());
+            throw new ApiException("El servidor está generando muchos documentos en este momento. Intenta de nuevo en un minuto.",
+                    HttpStatus.SERVICE_UNAVAILABLE);
+        }
+        try {
+            return convertirConPermiso(docx);
+        } finally {
+            permisos.release();
+        }
+    }
+
+    private byte[] convertirConPermiso(byte[] docx) {
         Path carpetaTemporal = null;
         try {
             carpetaTemporal = Files.createTempDirectory("polygraph-pdf-");

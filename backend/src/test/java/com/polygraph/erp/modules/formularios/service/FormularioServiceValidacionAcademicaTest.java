@@ -52,6 +52,9 @@ class FormularioServiceValidacionAcademicaTest {
     @Autowired private jakarta.persistence.EntityManager em;
     @MockBean private NotificacionService notificacionService;
     @MockBean private AlmacenamientoDocumentosService almacenamientoService;
+    // Cálculo propio de subservicios (docs/antecedentes): estas plantillas no tienen grupo, así que
+    // el simulado devuelve vacío, igual que en producción.
+    @MockBean private com.polygraph.erp.modules.riesgo.codigos.CalculoSubservicioService calculoSubservicioService;
 
     private Usuario analista;
     private ServicioSubproceso subproceso;
@@ -99,7 +102,7 @@ class FormularioServiceValidacionAcademicaTest {
 
         subproceso = persistir(ServicioSubproceso.builder()
                 .servicio(servicio).tipoProgreso(tipoProgreso).usuarioAsignado(analista)
-                .estado(EstadoAsignacion.ASIGNADO).fechaCreacion(java.time.LocalDateTime.now()).build());
+                .estado(EstadoSubproceso.EN_EJECUCION).fechaCreacion(java.time.LocalDateTime.now()).build());
 
         seccionEducacion = persistir(FormularioSeccion.builder()
                 .tipoProgreso(tipoProgreso).nombre("Educación").tipo(TipoSeccionFormulario.TABLA)

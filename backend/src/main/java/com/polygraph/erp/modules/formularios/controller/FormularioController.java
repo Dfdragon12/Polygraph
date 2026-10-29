@@ -7,6 +7,9 @@ import com.polygraph.erp.modules.formularios.dto.FichaCandidatoResponse;
 import com.polygraph.erp.modules.formularios.dto.FormularioResponse;
 import com.polygraph.erp.modules.formularios.dto.GuardarFormularioRequest;
 import com.polygraph.erp.modules.formularios.dto.ProgresoFormularioResponse;
+import com.polygraph.erp.modules.formularios.dto.RevisarSoporteRequest;
+import com.polygraph.erp.modules.formularios.service.FormularioPdfProcesador;
+import com.polygraph.erp.modules.trabajos.dto.TrabajoResponse;
 import com.polygraph.erp.modules.formularios.service.FichaCandidatoService;
 import com.polygraph.erp.modules.formularios.service.FormularioDocumentoService;
 import com.polygraph.erp.modules.formularios.service.FormularioService;
@@ -40,6 +43,7 @@ public class FormularioController {
 
     private final FormularioService service;
     private final FormularioDocumentoService documentoService;
+    private final FormularioPdfProcesador formularioPdfProcesador;
     private final FichaCandidatoService fichaCandidatoService;
     private final UsuarioRepository usuarioRepository;
 
@@ -76,14 +80,12 @@ public class FormularioController {
     }
 
     /** Mismo documento que /documento (mismo .docx con los marcadores ya resueltos), convertido a
-     *  PDF — mismo diseño que armó el administrador en Word, ver DocumentoPdfConverter. */
-    @GetMapping("/subproceso/{idServicioSubproceso}/documento-pdf")
-    public ResponseEntity<byte[]> descargarDocumentoPdf(@PathVariable Long idServicioSubproceso, Authentication auth) {
-        byte[] documento = documentoService.generarPdf(idServicioSubproceso, resolverUsuario(auth));
-        return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=formulario-" + idServicioSubproceso + ".pdf")
-                .contentType(MediaType.APPLICATION_PDF)
-                .body(documento);
+     *  PDF — mismo diseño que armó el administrador en Word. Responde 202 con un trabajo de la cola
+     *  (FORMULARIO_PDF): el frontend lo sigue en GET /api/v1/trabajos/{id} y baja el archivo de
+     *  GET /api/v1/trabajos/{id}/resultado. Los 403/404 de acceso se responden aquí mismo. */
+    @PostMapping("/subproceso/{idServicioSubproceso}/documento-pdf")
+    public ResponseEntity<TrabajoResponse> descargarDocumentoPdf(@PathVariable Long idServicioSubproceso, Authentication auth) {
+        return ResponseEntity.accepted().body(formularioPdfProcesador.solicitar(idServicioSubproceso, resolverUsuario(auth)));
     }
 
     /** El frontend sube el archivo apenas se selecciona y guarda la "ruta" devuelta como el
@@ -126,6 +128,16 @@ public class FormularioController {
                                 .filename(descarga.nombreArchivo(), StandardCharsets.UTF_8)
                                 .build().toString())
                 .body(descarga.recurso());
+    }
+
+    /** Aprobar o devolver un soporte del candidato (devolver exige observación). Devuelve la ficha
+     *  actualizada. Quién puede: ver FichaCandidatoService.puedeRevisar. */
+    @PatchMapping("/subproceso/{idServicioSubproceso}/soportes/{idDocumento}/revision")
+    public ResponseEntity<FichaCandidatoResponse> revisarSoporte(
+            @PathVariable Long idServicioSubproceso, @PathVariable Long idDocumento,
+            @Valid @RequestBody RevisarSoporteRequest req, Authentication auth) {
+        return ResponseEntity.ok(fichaCandidatoService.revisarSoporte(idServicioSubproceso, idDocumento,
+                req.estado(), req.observacion(), resolverUsuario(auth)));
     }
 
     private Usuario resolverUsuario(Authentication auth) {

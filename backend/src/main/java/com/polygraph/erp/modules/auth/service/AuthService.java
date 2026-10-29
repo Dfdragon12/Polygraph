@@ -56,9 +56,13 @@ public class AuthService {
     private final NotificacionService notificacionService;
     private final GoogleOAuthProperties googleOAuthProperties;
     private final ObjectMapper objectMapper;
+    private final AceptacionLegalService aceptacionLegalService;
 
     @Value("${app.jwt.refresh-expiration-ms}")
     private long refreshExpiracionMs;
+
+    /** Días que dura una contraseña: pasado este plazo el login exige cambiarla. */
+    public static final int DIAS_VIGENCIA_PASSWORD = 30;
 
     public LoginResponse login(LoginRequest request) {
         authenticationManager.authenticate(
@@ -72,7 +76,7 @@ public class AuthService {
         boolean cambioRequerido = Boolean.TRUE.equals(usuario.getRequiereCambioPassword());
         if (!cambioRequerido && usuario.getFechaUltimoCambioPassword() != null) {
             cambioRequerido = usuario.getFechaUltimoCambioPassword()
-                    .isBefore(LocalDateTime.now().minusDays(30));
+                    .isBefore(LocalDateTime.now().minusDays(DIAS_VIGENCIA_PASSWORD));
         }
 
         String token = jwtUtil.generarToken(usuario);
@@ -112,13 +116,17 @@ public class AuthService {
     /** "Continuar con Google" — sirve tanto para registrar (si el email no existe, crea un
      *  cliente natural PREPAGO, igual que registrarNatural pero sin contraseña ni activación por
      *  correo, porque Google ya verificó el email) como para iniciar sesión (si ya existe). */
-    public LoginResponse continuarConGoogle(GoogleAuthRequest request) {
+    public LoginResponse continuarConGoogle(GoogleAuthRequest request, String ip) {
         GoogleTokenInfo info = verificarTokenGoogle(request.idToken());
 
         Usuario usuario = usuarioRepository.findByEmail(info.email()).orElse(null);
         boolean esNuevo = usuario == null;
 
         if (esNuevo) {
+            if (!Boolean.TRUE.equals(request.aceptaTerminos()) || !Boolean.TRUE.equals(request.aceptaPrivacidad())) {
+                throw new ApiException("Para crear tu cuenta debes aceptar los términos y condiciones y la política de privacidad.",
+                        HttpStatus.BAD_REQUEST);
+            }
             String nombre = !info.givenName().isBlank() ? info.givenName() : info.email();
             Cliente cliente = Cliente.builder()
                     .tipoCliente(TipoCliente.PREPAGO)
@@ -147,6 +155,8 @@ public class AuthService {
                     .fechaCreacion(LocalDateTime.now())
                     .build();
             usuarioRepository.save(usuario);
+            aceptacionLegalService.registrarRegistro(usuario.getIdUsuario(), info.email(), request.versionLegal(), ip,
+                    Boolean.TRUE.equals(request.aceptaMarketing()));
 
             notificacionService.crearParaAdmins("CLIENTE", "Nuevo cliente registrado",
                     "El cliente " + nombre + " " + (info.familyName() != null ? info.familyName() : "")
@@ -258,7 +268,7 @@ public class AuthService {
         log.info("Contraseña actualizada para: {}", email);
     }
 
-    public void registrarNatural(RegistroNaturalRequest request) {
+    public void registrarNatural(RegistroNaturalRequest request, String ip) {
         validarEmailDisponible(request.email());
 
         Cliente cliente = Cliente.builder()
@@ -287,6 +297,8 @@ public class AuthService {
                 .fechaCreacion(LocalDateTime.now())
                 .build();
         usuarioRepository.save(usuario);
+        aceptacionLegalService.registrarRegistro(usuario.getIdUsuario(), request.email(), request.versionLegal(), ip,
+                Boolean.TRUE.equals(request.aceptaMarketing()));
 
         notificacionService.crearParaAdmins("CLIENTE", "Nuevo cliente registrado",
                 "El cliente " + request.nombre() + " " + (request.apellido() != null ? request.apellido() : "")
@@ -294,7 +306,7 @@ public class AuthService {
         log.info("Registro natural completado: {}", request.email());
     }
 
-    public void registrarJuridica(RegistroJuridicaRequest request) {
+    public void registrarJuridica(RegistroJuridicaRequest request, String ip) {
         validarEmailDisponible(request.email());
 
         // Antes se podía elegir PREPAGO o POSPAGO libremente al auto-registrarse — pospago sin
@@ -329,6 +341,8 @@ public class AuthService {
                 .fechaCreacion(LocalDateTime.now())
                 .build();
         usuarioRepository.save(usuario);
+        aceptacionLegalService.registrarRegistro(usuario.getIdUsuario(), request.email(), request.versionLegal(), ip,
+                Boolean.TRUE.equals(request.aceptaMarketing()));
 
         notificacionService.crearParaAdmins("CLIENTE", "Nuevo cliente registrado",
                 "La empresa " + request.razonSocial() + " (NIT: " + request.nit() + ") se registró como cliente prepago",
@@ -347,6 +361,12 @@ public class AuthService {
         tokenRefresh.setRevocado(true);
 
         Usuario usuario = tokenRefresh.getUsuario();
+        // Un usuario desactivado no renueva su sesión: antes el refresh token lo mantenía adentro
+        // hasta 7 días aunque el admin lo hubiera dado de baja.
+        if (!usuario.isEnabled() || !usuario.isAccountNonLocked()) {
+            log.warn("Refresh denegado: usuario {} inactivo", usuario.getEmail());
+            throw new ApiException("Tu cuenta está inactiva. Contacta a tu administrador.", HttpStatus.UNAUTHORIZED);
+        }
         String nuevoToken = jwtUtil.generarToken(usuario);
         String nuevoRefresh = crearRefreshToken(usuario);
 

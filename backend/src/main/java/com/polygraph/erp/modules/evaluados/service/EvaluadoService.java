@@ -3,7 +3,10 @@ package com.polygraph.erp.modules.evaluados.service;
 import com.polygraph.erp.modules.auth.entity.Usuario;
 import com.polygraph.erp.modules.auth.repository.UsuarioRepository;
 import com.polygraph.erp.modules.catalogo.dto.DocumentoRequeridoResponse;
+import com.polygraph.erp.modules.catalogo.entity.ItemHojaVida;
+import com.polygraph.erp.modules.catalogo.entity.ListaHojaVida;
 import com.polygraph.erp.modules.catalogo.repository.DocumentoRequeridoProcesoRepository;
+import com.polygraph.erp.modules.catalogo.repository.ItemHojaVidaRepository;
 import com.polygraph.erp.modules.clientes.entity.Cliente;
 import com.polygraph.erp.modules.evaluados.dto.*;
 import com.polygraph.erp.modules.evaluados.entity.*;
@@ -11,7 +14,9 @@ import com.polygraph.erp.modules.evaluados.repository.CandidatoRepository;
 import com.polygraph.erp.modules.evaluados.repository.DocumentoEvaluadoRepository;
 import com.polygraph.erp.modules.evaluados.repository.HojaVidaEvaluadoRepository;
 import com.polygraph.erp.modules.pagos.service.RecargoPendienteService;
+import com.polygraph.erp.modules.servicios.entity.EstadoLink;
 import com.polygraph.erp.modules.servicios.entity.HistorialEstadoServicio;
+import com.polygraph.erp.shared.enums.EstadoRevisionDocumento;
 import com.polygraph.erp.modules.servicios.entity.LinkCandidato;
 import com.polygraph.erp.modules.servicios.entity.Servicio;
 import com.polygraph.erp.modules.servicios.repository.HistorialEstadoServicioRepository;
@@ -52,7 +57,21 @@ public class EvaluadoService {
     private final AlmacenamientoDocumentosService almacenamientoService;
     private final RecargoPendienteService recargoPendienteService;
     private final HistorialEstadoServicioRepository historialEstadoServicioRepository;
-    private final DiasHabilesService diasHabilesService;
+    private final com.polygraph.erp.modules.servicios.service.SemaforoTiempoService semaforoTiempoService;
+    private final ValidadorArchivoCandidato validadorArchivo;
+    private final ItemHojaVidaRepository itemHojaVidaRepository;
+    private final com.polygraph.erp.modules.auth.service.AceptacionLegalService aceptacionLegalService;
+
+    /** Niveles educativos del portal, del más bajo al más alto — con esto se saca el "nivel
+     *  educativo" del candidato de sus estudios (ya no lo escribe aparte). */
+    private static final List<String> NIVELES_EDUCATIVOS = List.of(
+            "Bachiller básico (hasta noveno grado)", "Bachiller académico (hasta grado once)",
+            "Técnico laboral (SENA u otras instituciones)", "Técnico", "Técnico profesional", "Tecnológico", "Profesional",
+            "Especialización", "Maestría", "Doctorado", "Posdoctorado");
+    private static final String SIN_ESTUDIOS = "Sin estudios";
+    private static final String ESTADO_EN_CURSO = "En curso";
+    private static final List<String> ESTADOS_ESTUDIO = List.of(
+            "Graduado", "Terminó materias, pendiente de grado", ESTADO_EN_CURSO, "Retirado sin graduarse", "Aplazado");
 
     @Transactional
     public LinkValidacionResponse validarLink(String token) {
@@ -65,10 +84,11 @@ public class EvaluadoService {
             linkCandidatoRepository.save(link);
         }
 
-        boolean completada = candidato != null && hojaVidaRepository
-                .findByCandidato_IdCandidato(candidato.getIdCandidato())
-                .map(HojaVidaEvaluado::getCompletado)
-                .orElse(false);
+        HojaVidaEvaluado hv = candidato != null
+                ? hojaVidaRepository.findByCandidato_IdCandidato(candidato.getIdCandidato()).orElse(null)
+                : null;
+        boolean completada = hv != null && Boolean.TRUE.equals(hv.getCompletado());
+        boolean autorizo = hv != null && Boolean.TRUE.equals(hv.getAutorizacionDatos());
 
         List<DocumentoRequeridoResponse> documentosRequeridos = servicio.getProceso() != null
                 ? documentoRequeridoProcesoRepository
@@ -83,8 +103,21 @@ public class EvaluadoService {
                 candidato != null ? candidato.getApellidos() : null,
                 servicio.getCargo(),
                 servicio.getProceso() != null ? servicio.getProceso().getNombreProceso() : null,
+                nombreEmpresa(servicio.getCliente()),
                 completada,
+                autorizo,
+                autorizo ? hv.getFechaAutorizacion() : null,
+                validadorArchivo.maxPdfMb(),
+                validadorArchivo.maxImagenMb(),
                 documentosRequeridos);
+    }
+
+    /** Nombre de la empresa cliente como lo ve el candidato: comercial, si no razón social, si no nombre. */
+    private static String nombreEmpresa(com.polygraph.erp.modules.clientes.entity.Cliente c) {
+        if (c == null) return null;
+        if (c.getNombreComercial() != null && !c.getNombreComercial().isBlank()) return c.getNombreComercial();
+        if (c.getRazonSocial() != null && !c.getRazonSocial().isBlank()) return c.getRazonSocial();
+        return c.getNombre();
     }
 
     @Transactional(readOnly = true)
@@ -99,6 +132,8 @@ public class EvaluadoService {
         Integer idCiudadResidencia = candidato != null ? candidato.getIdCiudadResidencia() : null;
         Integer idPaisNacimiento = candidato != null ? candidato.getIdPaisNacimiento() : null;
         Integer idPaisResidencia = candidato != null ? candidato.getIdPaisResidencia() : null;
+        LocalDate fechaExpedicion = candidato != null ? candidato.getFechaExpedicion() : null;
+        Integer idCiudadExpedicion = candidato != null ? candidato.getIdCiudadExpedicion() : null;
 
         return (idCandidato != null ? hojaVidaRepository.findByCandidato_IdCandidato(idCandidato) : java.util.Optional.<HojaVidaEvaluado>empty())
                 .map(hv -> new HojaVidaRequest(
@@ -112,8 +147,9 @@ public class EvaluadoService {
                         hv.getDireccion(),
                         hv.getBarrio(),
                         hv.getEstrato(),
-                        hv.getEmail(),
-                        hv.getCelular(),
+                        // Si el candidato aún no ha escrito su correo/celular, va lo que puso el cliente al solicitar
+                        vacioANulo(hv.getEmail()) != null ? hv.getEmail() : candidato != null ? candidato.getEmailPrincipal() : null,
+                        vacioANulo(hv.getCelular()) != null ? hv.getCelular() : candidato != null ? candidato.getCelular() : null,
                         hv.getRh(),
                         hv.getLibretaMilitar(),
                         hv.getVisa(),
@@ -124,26 +160,44 @@ public class EvaluadoService {
                         hv.getEducacion().stream()
                                 .map(e -> new EducacionRequest(e.getNivel(), e.getInstitucion(),
                                         e.getTitulo(), e.getFechaInicio(), e.getFechaFin(),
-                                        e.getEnCurso(), e.getCiudad()))
+                                        e.getEnCurso(), e.getCiudad(),
+                                        e.getEstado(), e.getEnExterior(), e.getPaisExterior()))
                                 .toList(),
                         hv.getExperienciaLaboral().stream()
                                 .map(ex -> new ExperienciaLaboralRequest(ex.getEmpresa(), ex.getCargo(),
                                         ex.getFechaInicio(), ex.getFechaFin(), ex.getLaboraActualmente(),
                                         ex.getCiudad(), ex.getTelefonoEmpresa(), ex.getMotivoRetiro(),
-                                        ex.getNombreJefe(), ex.getCargoJefe()))
+                                        ex.getNombreJefe(), ex.getCargoJefe(),
+                                        ex.getTipoContrato(), ex.getSalario(), ex.getLlamadosAtencion(),
+                                        ex.getContratadoPorTemporal(), ex.getNombreTemporal()))
                                 .toList(),
                         hv.getReferencias().stream()
                                 .map(r -> new ReferenciaPersonalRequest(r.getNombre(), r.getParentesco(),
-                                        r.getTelefono(), r.getTiempoConocimiento()))
+                                        r.getTelefono(), r.getTiempoConocimiento(),
+                                        r.getConfirmaNoFamiliar(), r.getHabloUltimos30Dias()))
                                 .toList(),
                         hv.getInactividades().stream()
                                 .filter(i -> i.getJustificacion() != null)
                                 .collect(java.util.stream.Collectors.toMap(
-                                        i -> i.getFechaInicio() + "_" + i.getFechaFin(),
+                                        i -> HistorialLaboralService.clave(i, hv.getExperienciaLaboral()),
                                         InactividadLaboralEvaluado::getJustificacion,
                                         (a, b) -> a)),
                         hv.getPasoActual(),
-                        idPaisNacimiento, idPaisResidencia, hv.getIdBarrio()))
+                        idPaisNacimiento, idPaisResidencia, hv.getIdBarrio(),
+                        fechaExpedicion, idCiudadExpedicion,
+                        hv.getDireccionAdicional(),
+                        hv.getTieneVisa(), hv.getVisaPais(), hv.getTienePasaporte(),
+                        Boolean.TRUE.equals(hv.getSinEstudios()),
+                        hv.getRespuestas().stream()
+                                .filter(r -> r.getIdItem() != null)
+                                .map(r -> new RespuestaHojaVidaRequest(r.getIdItem(), r.getRespuesta(), r.getDetalle()))
+                                .toList(),
+                        hv.getInactividades().stream()
+                                .filter(i -> i.getActividad() != null || i.getQuienConfirma() != null)
+                                .collect(java.util.stream.Collectors.toMap(
+                                        i -> HistorialLaboralService.clave(i, hv.getExperienciaLaboral()),
+                                        i -> new HojaVidaRequest.DetalleInactividad(i.getActividad(), i.getQuienConfirma()),
+                                        (a, b) -> a))))
                 .orElse(new HojaVidaRequest(false, null, null,
                         idCiudadNacimiento, idCiudadResidencia,
                         null, null, null, null, null,
@@ -151,7 +205,55 @@ public class EvaluadoService {
                         candidato != null ? candidato.getCelular() : null,
                         null, null, null, null, null, null, null,
                         List.of(), List.of(), List.of(), Map.of(), null,
-                        idPaisNacimiento, idPaisResidencia, null));
+                        idPaisNacimiento, idPaisResidencia, null,
+                        fechaExpedicion, idCiudadExpedicion,
+                        null, null, null, null, false, List.of()));
+    }
+
+    private static String vacioANulo(String v) {
+        return v == null || v.isBlank() ? null : v;
+    }
+
+    /** El candidato acepta la autorización de tratamiento de datos (Ley 1581 de 2012). Es lo
+     *  primero que ve al abrir el link: sin esto no puede diligenciar, cargar documentos ni
+     *  proponer horarios. Queda registrada la fecha de la primera aceptación. */
+    public void autorizarTratamientoDatos(String token, String ip) {
+        Servicio servicio = obtenerServicio(obtenerLinkValido(token));
+        Candidato candidato = servicio.getCandidato();
+        if (candidato == null) {
+            throw new ApiException("El servicio no tiene un candidato asociado", HttpStatus.CONFLICT);
+        }
+        HojaVidaEvaluado hojaVida = obtenerOCrearHojaVida(candidato);
+        if (Boolean.TRUE.equals(hojaVida.getAutorizacionDatos())) return;
+        hojaVida.setAutorizacionDatos(true);
+        if (hojaVida.getFechaAutorizacion() == null) hojaVida.setFechaAutorizacion(LocalDateTime.now());
+        hojaVidaRepository.save(hojaVida);
+        aceptacionLegalService.registrarAutorizacionCandidato(candidato.getIdCandidato(), servicio.getIdServicio(), ip);
+        log.info("Candidato {} aceptó la autorización de tratamiento de datos (servicio {})",
+                candidato.getIdCandidato(), servicio.getIdServicio());
+    }
+
+    /** 403 si el candidato de este servicio todavía no aceptó la autorización de datos. */
+    public void exigirAutorizacion(Servicio servicio) {
+        Candidato candidato = servicio.getCandidato();
+        boolean autorizo = candidato != null && hojaVidaRepository.findByCandidato_IdCandidato(candidato.getIdCandidato())
+                .map(hv -> Boolean.TRUE.equals(hv.getAutorizacionDatos()))
+                .orElse(false);
+        if (!autorizo) {
+            throw new ApiException("Primero debes aceptar la autorización de tratamiento de datos.", HttpStatus.FORBIDDEN);
+        }
+    }
+
+    /** Documentos y citas se habilitan cuando el candidato ENVÍA su hoja de vida (el portal solo
+     *  muestra Inicio y Hoja de vida antes). 403 si todavía no la ha enviado. */
+    public void exigirHojaVidaEnviada(Servicio servicio) {
+        Candidato candidato = servicio.getCandidato();
+        boolean enviada = candidato != null && hojaVidaRepository.findByCandidato_IdCandidato(candidato.getIdCandidato())
+                .map(hv -> Boolean.TRUE.equals(hv.getCompletado()))
+                .orElse(false);
+        if (!enviada) {
+            throw new ApiException("Primero completa y envía tu hoja de vida.", HttpStatus.FORBIDDEN);
+        }
     }
 
     public void guardarProgreso(String token, HojaVidaRequest request) {
@@ -167,19 +269,114 @@ public class EvaluadoService {
             throw new ApiException("Debe aceptar la autorización de manejo de datos", HttpStatus.BAD_REQUEST);
         }
 
+        validarDeclaraciones(request);
+        validarRevisionCandidato(request);
+
         Servicio servicio = obtenerServicio(link);
+        // El link sigue abierto después de enviar (V197): el candidato puede volver a corregir y
+        // re-enviar. Solo el PRIMER envío avisa a gestión y mueve el servicio; los siguientes
+        // actualizan los datos en silencio (si no, cada corrección era una notificación nueva).
+        boolean primerEnvio = !Boolean.TRUE.equals(link.getUsado());
         guardar(servicio, request, true);
 
-        link.setUsado(true);
-        link.setFechaUso(LocalDateTime.now());
-        linkCandidatoRepository.save(link);
+        if (primerEnvio) {
+            link.setUsado(true);
+            link.setFechaUso(LocalDateTime.now());
+            linkCandidatoRepository.save(link);
+        }
 
-        log.info("Hoja de vida completada: servicio={}, candidato={}",
+        log.info("Hoja de vida {}: servicio={}, candidato={}", primerEnvio ? "completada" : "actualizada",
                 servicio.getIdServicio(),
                 servicio.getCandidato() != null ? servicio.getCandidato().getCedula() : null);
 
-        avanzarAProgramandoSiPendiente(servicio);
-        notificarFormularioCompletado(servicio);
+        if (primerEnvio) {
+            // El candidato ya entregó su parte: el reloj de la solicitud arranca (la espera cuenta como pausa y corre la fecha de compromiso).
+            semaforoTiempoService.cerrarPausas(servicio, com.polygraph.erp.modules.servicios.service.SemaforoTiempoService.MOTIVO_HOJA_DE_VIDA);
+            avanzarAProgramandoSiPendiente(servicio);
+            notificarFormularioCompletado(servicio);
+        }
+    }
+
+    /** Al enviar: estado y lugar de cada estudio, temporal de cada empleo y las referencias
+     *  (revisión del módulo del candidato). Guardar el avance NO exige nada de esto. */
+    private void validarRevisionCandidato(HojaVidaRequest request) {
+        if (request.educacion() != null && !Boolean.TRUE.equals(request.sinEstudios())) {
+            int n = 0;
+            for (EducacionRequest e : request.educacion()) {
+                n++;
+                if (e.estado() == null || !ESTADOS_ESTUDIO.contains(e.estado())) {
+                    throw new ApiException("Estudio #" + n + ": escoja el estado del estudio.", HttpStatus.BAD_REQUEST);
+                }
+                if (e.enExterior() == null) {
+                    throw new ApiException("Estudio #" + n + ": indique si lo realizó en el exterior.", HttpStatus.BAD_REQUEST);
+                }
+                if (e.enExterior() && (e.paisExterior() == null || e.paisExterior().isBlank())) {
+                    throw new ApiException("Estudio #" + n + ": indique el país donde lo realizó.", HttpStatus.BAD_REQUEST);
+                }
+            }
+        }
+        if (request.experienciaLaboral() != null) {
+            int n = 0;
+            for (ExperienciaLaboralRequest ex : request.experienciaLaboral()) {
+                n++;
+                if (ex.contratadoPorTemporal() == null) {
+                    throw new ApiException("Experiencia #" + n + ": indique si lo contrató una empresa de servicios temporales.", HttpStatus.BAD_REQUEST);
+                }
+                if (ex.contratadoPorTemporal() && (ex.nombreTemporal() == null || ex.nombreTemporal().isBlank())) {
+                    throw new ApiException("Experiencia #" + n + ": escriba el nombre de la empresa de servicios temporales.", HttpStatus.BAD_REQUEST);
+                }
+            }
+        }
+        if (request.referencias() != null) {
+            String propio = soloDigitos(request.celular());
+            java.util.Set<String> vistos = new java.util.HashSet<>();
+            int n = 0;
+            for (ReferenciaPersonalRequest r : request.referencias()) {
+                n++;
+                String tel = soloDigitos(r.telefono());
+                if (!tel.matches("3[0-9]{9}")) {
+                    throw new ApiException("Referencia #" + n + ": el celular debe tener 10 dígitos y empezar por 3.", HttpStatus.BAD_REQUEST);
+                }
+                if (tel.equals(propio)) {
+                    throw new ApiException("Referencia #" + n + ": el celular no puede ser el suyo.", HttpStatus.BAD_REQUEST);
+                }
+                if (!vistos.add(tel)) {
+                    throw new ApiException("Referencia #" + n + ": el celular está repetido en otra referencia.", HttpStatus.BAD_REQUEST);
+                }
+                if ("Menos de 1 año".equals(r.tiempoConocimiento())) {
+                    throw new ApiException("Referencia #" + n + ": debe conocerle hace mínimo un (1) año.", HttpStatus.BAD_REQUEST);
+                }
+                if (!Boolean.TRUE.equals(r.confirmaNoFamiliar()) || !Boolean.TRUE.equals(r.habloUltimos30Dias())) {
+                    throw new ApiException("Referencia #" + n + ": debe marcar las dos confirmaciones.", HttpStatus.BAD_REQUEST);
+                }
+            }
+        }
+    }
+
+    private static String soloDigitos(String v) {
+        if (v == null) return "";
+        String d = v.replaceAll("[^0-9]", "");
+        return d.length() == 12 && d.startsWith("57") ? d.substring(2) : d;
+    }
+
+    /** Al enviar, cada pregunta de declaración activa debe tener respuesta y, si es "Sí", su
+     *  explicación. Las preguntas las administra el admin (ItemHojaVida, lista PREGUNTA). */
+    private void validarDeclaraciones(HojaVidaRequest request) {
+        Map<Integer, RespuestaHojaVidaRequest> porPregunta = new java.util.HashMap<>();
+        if (request.respuestas() != null) {
+            request.respuestas().stream()
+                    .filter(r -> r != null && r.idPregunta() != null)
+                    .forEach(r -> porPregunta.put(r.idPregunta(), r));
+        }
+        for (ItemHojaVida pregunta : itemHojaVidaRepository.findByListaAndActivoTrueOrderByOrdenAscIdAsc(ListaHojaVida.PREGUNTA)) {
+            RespuestaHojaVidaRequest r = porPregunta.get(pregunta.getId());
+            if (r == null || r.respuesta() == null) {
+                throw new ApiException("Responda todas las preguntas de la declaración.", HttpStatus.BAD_REQUEST);
+            }
+            if (r.respuesta() && (r.detalle() == null || r.detalle().isBlank())) {
+                throw new ApiException("Explique su respuesta en cada pregunta que respondió Sí.", HttpStatus.BAD_REQUEST);
+            }
+        }
     }
 
     /** Si el candidato termina de diligenciar su hoja de vida mientras el servicio sigue
@@ -187,9 +384,7 @@ public class EvaluadoService {
      *  apenas hay información con la que empezar a programar. Se registra en el historial de
      *  estados igual que un cambio manual (mismo mecanismo que SolicitudService.cambiarEstado),
      *  atribuido al gestor asignado al cliente porque el esquema no tiene un usuario "sistema".
-     *  También recalcula la fecha de entrega estimada desde AHORA (cuando de verdad hay datos
-     *  con qué trabajar) en vez de dejarla contada desde la fecha de solicitud original — antes
-     *  el reloj de entrega corría mientras el candidato todavía no llenaba nada. */
+     *  La espera del candidato ya no se "descuenta" recalculando la fecha: queda como una pausa del reloj (SemaforoTiempoService). */
     private void avanzarAProgramandoSiPendiente(Servicio servicio) {
         if (servicio.getEstado() != EstadoServicio.PENDIENTE) return;
 
@@ -205,12 +400,7 @@ public class EvaluadoService {
         EstadoServicio anterior = servicio.getEstado();
         servicio.setEstado(EstadoServicio.PROGRAMANDO);
 
-        LocalDate fechaEntregaAnterior = servicio.getFechaEntregaEstimada();
-        if (servicio.getProceso() != null) {
-            int diasHabiles = servicio.getProceso().getDiasHabilesEntrega() != null
-                    ? servicio.getProceso().getDiasHabilesEntrega() : 5;
-            servicio.setFechaEntregaEstimada(diasHabilesService.calcularFechaEntrega(LocalDateTime.now(), diasHabiles));
-        }
+        semaforoTiempoService.recalcular(servicio);
 
         historialEstadoServicioRepository.save(HistorialEstadoServicio.builder()
                 .servicio(servicio)
@@ -218,14 +408,12 @@ public class EvaluadoService {
                 .estadoNuevo(EstadoServicio.PROGRAMANDO)
                 .usuario(gestor)
                 .fechaCambio(LocalDateTime.now())
-                .observacion("Cambio automático: el candidato completó su hoja de vida."
-                        + (fechaEntregaAnterior != null && !fechaEntregaAnterior.equals(servicio.getFechaEntregaEstimada())
-                            ? " Fecha de entrega recalculada de " + fechaEntregaAnterior + " a " + servicio.getFechaEntregaEstimada() + "."
-                            : ""))
+                .observacion("Cambio automático: el candidato completó su hoja de vida. La espera quedó como pausa del reloj "
+                        + "(fecha de compromiso: " + servicio.fechaParaMostrar() + ").")
                 .build());
 
-        log.info("Servicio {} pasó automáticamente de PENDIENTE a PROGRAMANDO (candidato completó hoja de vida) — entrega estimada: {}",
-                servicio.getIdServicio(), servicio.getFechaEntregaEstimada());
+        log.info("Servicio {} pasó automáticamente de PENDIENTE a PROGRAMANDO (candidato completó hoja de vida) — compromiso: {}",
+                servicio.getIdServicio(), servicio.fechaParaMostrar());
     }
 
     private void notificarFormularioCompletado(Servicio servicio) {
@@ -278,17 +466,29 @@ public class EvaluadoService {
             }
         }
 
+        // Expedición del documento: solo se escribe si el candidato la diligenció (no borra la que
+        // haya cargado el gestor).
+        if (request.fechaExpedicion() != null || request.idCiudadExpedicion() != null) {
+            if (request.fechaExpedicion() != null) candidato.setFechaExpedicion(request.fechaExpedicion());
+            if (request.idCiudadExpedicion() != null) candidato.setIdCiudadExpedicion(request.idCiudadExpedicion());
+            candidatoRepository.save(candidato);
+        }
+
         if (request.pasoActual() != null) {
             hojaVida.setPasoActual(request.pasoActual());
         }
-        hojaVida.setAutorizacionDatos(Boolean.TRUE.equals(request.autorizacionDatos()));
-        if (Boolean.TRUE.equals(request.autorizacionDatos()) && hojaVida.getFechaAutorizacion() == null) {
-            hojaVida.setFechaAutorizacion(LocalDateTime.now());
+        // La autorización se acepta en su propia pantalla (autorizarTratamientoDatos); guardar la
+        // hoja de vida nunca la quita.
+        if (Boolean.TRUE.equals(request.autorizacionDatos()) && !Boolean.TRUE.equals(hojaVida.getAutorizacionDatos())) {
+            hojaVida.setAutorizacionDatos(true);
+            if (hojaVida.getFechaAutorizacion() == null) hojaVida.setFechaAutorizacion(LocalDateTime.now());
         }
         hojaVida.setFechaNacimiento(request.fechaNacimiento());
         hojaVida.setLugarNacimiento(request.lugarNacimiento());
         hojaVida.setEstadoCivil(request.estadoCivil());
-        hojaVida.setNivelEducativo(request.nivelEducativo());
+        boolean sinEstudios = Boolean.TRUE.equals(request.sinEstudios());
+        hojaVida.setSinEstudios(sinEstudios);
+        hojaVida.setNivelEducativo(nivelEducativoDe(request, sinEstudios));
         hojaVida.setDireccion(request.direccion());
         hojaVida.setBarrio(request.barrio());
         if (request.idBarrio() != null) hojaVida.setIdBarrio(request.idBarrio());
@@ -297,15 +497,20 @@ public class EvaluadoService {
         hojaVida.setCelular(request.celular());
         hojaVida.setRh(request.rh());
         hojaVida.setLibretaMilitar(request.libretaMilitar());
-        hojaVida.setVisa(request.visa());
-        hojaVida.setPasaporte(request.pasaporte());
+        // El número de visa/pasaporte solo se conserva si respondió "Sí"
+        hojaVida.setTieneVisa(request.tieneVisa());
+        hojaVida.setVisa(Boolean.FALSE.equals(request.tieneVisa()) ? null : request.visa());
+        hojaVida.setVisaPais(Boolean.FALSE.equals(request.tieneVisa()) ? null : request.visaPais());
+        hojaVida.setTienePasaporte(request.tienePasaporte());
+        hojaVida.setPasaporte(Boolean.FALSE.equals(request.tienePasaporte()) ? null : request.pasaporte());
+        hojaVida.setDireccionAdicional(request.direccionAdicional());
         hojaVida.setFondoPensiones(request.fondoPensiones());
         hojaVida.setEps(request.eps());
         hojaVida.setTelefonoFijo(request.telefonoFijo());
 
         // Reemplazar educación
         hojaVida.getEducacion().clear();
-        if (request.educacion() != null) {
+        if (request.educacion() != null && !sinEstudios) {
             request.educacion().forEach(e -> hojaVida.getEducacion().add(
                     EducacionEvaluado.builder()
                             .hojaVidaEvaluado(hojaVida)
@@ -316,6 +521,11 @@ public class EvaluadoService {
                             .fechaFin(e.fechaFin())
                             .enCurso(e.enCurso())
                             .ciudad(e.ciudad())
+                            .estado(e.estado())
+                            // "En curso" es el estado; enCurso se deriva para lo que ya lo lee
+                            .enCurso(ESTADO_EN_CURSO.equals(e.estado()) || (e.estado() == null && Boolean.TRUE.equals(e.enCurso())))
+                            .enExterior(e.enExterior())
+                            .paisExterior(Boolean.TRUE.equals(e.enExterior()) ? e.paisExterior() : null)
                             .build()));
         }
 
@@ -335,6 +545,11 @@ public class EvaluadoService {
                             .motivoRetiro(ex.motivoRetiro())
                             .nombreJefe(ex.nombreJefe())
                             .cargoJefe(ex.cargoJefe())
+                            .tipoContrato(ex.tipoContrato())
+                            .salario(ex.salario())
+                            .llamadosAtencion(ex.llamadosAtencion())
+                            .contratadoPorTemporal(ex.contratadoPorTemporal())
+                            .nombreTemporal(Boolean.TRUE.equals(ex.contratadoPorTemporal()) ? ex.nombreTemporal() : null)
                             .build()));
         }
 
@@ -346,8 +561,17 @@ public class EvaluadoService {
                 .calcularInactividades(hojaVida, hojaVida.getExperienciaLaboral());
         Map<String, String> justificaciones = request.justificacionesInactividad() != null
                 ? request.justificacionesInactividad() : Map.of();
-        inactividades.forEach(inact -> inact.setJustificacion(
-                justificaciones.get(inact.getFechaInicio() + "_" + inact.getFechaFin())));
+        Map<String, HojaVidaRequest.DetalleInactividad> detalles = request.detallesInactividad() != null
+                ? request.detallesInactividad() : Map.of();
+        inactividades.forEach(inact -> {
+            String clave = HistorialLaboralService.clave(inact, hojaVida.getExperienciaLaboral());
+            inact.setJustificacion(justificaciones.get(clave));
+            HojaVidaRequest.DetalleInactividad d = detalles.get(clave);
+            if (d != null) {
+                inact.setActividad(d.actividad());
+                inact.setQuienConfirma(d.quienConfirma());
+            }
+        });
         hojaVida.getInactividades().addAll(inactividades);
 
         // Reemplazar referencias
@@ -360,6 +584,25 @@ public class EvaluadoService {
                             .parentesco(r.parentesco())
                             .telefono(r.telefono())
                             .tiempoConocimiento(r.tiempoConocimiento())
+                            .confirmaNoFamiliar(r.confirmaNoFamiliar())
+                            .habloUltimos30Dias(r.habloUltimos30Dias())
+                            .build()));
+        }
+
+        // Reemplazar declaraciones (null = el portal no las mandó: se dejan como están)
+        if (request.respuestas() != null) {
+            Map<Integer, ItemHojaVida> preguntas = new java.util.HashMap<>();
+            itemHojaVidaRepository.findByListaOrderByOrdenAscIdAsc(ListaHojaVida.PREGUNTA)
+                    .forEach(p -> preguntas.put(p.getId(), p));
+            hojaVida.getRespuestas().clear();
+            request.respuestas().stream()
+                    .filter(r -> r != null && r.respuesta() != null && preguntas.containsKey(r.idPregunta()))
+                    .forEach(r -> hojaVida.getRespuestas().add(RespuestaHojaVida.builder()
+                            .hojaVidaEvaluado(hojaVida)
+                            .idItem(r.idPregunta())
+                            .pregunta(preguntas.get(r.idPregunta()).getNombre())
+                            .respuesta(r.respuesta())
+                            .detalle(r.respuesta() && r.detalle() != null && !r.detalle().isBlank() ? r.detalle().trim() : null)
                             .build()));
         }
 
@@ -372,6 +615,18 @@ public class EvaluadoService {
         }
 
         hojaVidaRepository.save(hojaVida);
+    }
+
+    /** El nivel educativo ya no se escribe: es el estudio más alto que registró el candidato. Si
+     *  ninguno es de la lista actual (datos anteriores), se conserva el que venía. */
+    private static String nivelEducativoDe(HojaVidaRequest request, boolean sinEstudios) {
+        if (sinEstudios) return SIN_ESTUDIOS;
+        if (request.educacion() == null) return request.nivelEducativo();
+        return request.educacion().stream()
+                .map(EducacionRequest::nivel)
+                .filter(NIVELES_EDUCATIVOS::contains)
+                .max(java.util.Comparator.comparingInt(NIVELES_EDUCATIVOS::indexOf))
+                .orElse(request.nivelEducativo());
     }
 
     private int calcularProgreso(HojaVidaEvaluado hv) {
@@ -407,13 +662,20 @@ public class EvaluadoService {
         if (candidato == null) {
             throw new ApiException("El servicio no tiene un candidato asociado", HttpStatus.CONFLICT);
         }
+        exigirAutorizacion(servicio);
+        exigirHojaVidaEnviada(servicio);
+        validadorArchivo.validar(archivo);
         HojaVidaEvaluado hojaVida = obtenerOCrearHojaVida(candidato);
 
-        // Reemplaza el documento existente del mismo tipo, si lo hay (un archivo activo por tipo)
+        // Reemplaza el documento existente del mismo tipo, si lo hay (un archivo activo por tipo).
+        // Uno ya APROBADO no se puede cambiar desde el link: se perdería lo que el equipo revisó.
+        // El reemplazo (ej. de uno DEVUELTO) nace PENDIENTE otra vez.
         documentoRepository.findByHojaVidaEvaluado_IdAndTipoDocumento(hojaVida.getId(), tipoDocumento)
                 .ifPresent(existente -> {
+                    exigirNoAprobado(existente);
                     almacenamientoService.eliminar(existente.getRutaArchivo());
                     documentoRepository.delete(existente);
+                    documentoRepository.flush();
                 });
 
         String rutaRelativa = almacenamientoService.guardar(archivo, "evaluados", String.valueOf(servicio.getIdServicio()));
@@ -457,20 +719,40 @@ public class EvaluadoService {
         if (!pertenece) {
             throw new ApiException("Documento no encontrado", HttpStatus.NOT_FOUND);
         }
+        exigirNoAprobado(documento);
 
         almacenamientoService.eliminar(documento.getRutaArchivo());
         documentoRepository.delete(documento);
     }
 
+    private static void exigirNoAprobado(DocumentoEvaluado documento) {
+        if (documento.getEstadoRevision() == EstadoRevisionDocumento.APROBADO) {
+            throw new ApiException("Este documento ya fue aprobado y no se puede cambiar. Si necesitas corregirlo, "
+                    + "comunícate con quien te envió el link.", HttpStatus.CONFLICT);
+        }
+    }
+
+    /** Servicio del link, si el candidato todavía tiene acceso — lo usa también
+     *  PortalCandidatoService (citas y sugerencias). */
+    @Transactional(readOnly = true)
+    public Servicio servicioConAcceso(String token) {
+        return obtenerServicio(obtenerLinkValido(token));
+    }
+
+    /** Desde V197 el acceso NO vence a las 36 h ni al enviar: el candidato sigue editando, viendo
+     *  sus citas y el estado de sus documentos hasta que el servicio se cierre (ver EstadoLink). */
     private LinkCandidato obtenerLinkValido(String token) {
         LinkCandidato link = linkCandidatoRepository.findByToken(token)
                 .orElseThrow(() -> new ApiException("Link no encontrado o inválido", HttpStatus.NOT_FOUND));
 
-        if (Boolean.TRUE.equals(link.getUsado())) {
-            throw new ApiException("Este link ya fue utilizado", HttpStatus.GONE);
-        }
-        if (LocalDateTime.now().isAfter(link.getFechaExpiracion())) {
-            throw new ApiException("El link ha expirado", HttpStatus.GONE);
+        switch (EstadoLink.de(link)) {
+            case REVOCADO -> throw new ApiException(
+                    "Este link fue desactivado. Si necesitas acceso, comunícate con quien te lo envió.", HttpStatus.GONE);
+            case BLOQUEADO -> throw new ApiException(
+                    "Este link fue bloqueado por seguridad. Comunícate con quien te lo envió.", HttpStatus.GONE);
+            case CERRADO -> throw new ApiException(
+                    "Este estudio ya finalizó; el link ya no está disponible. ¡Gracias por tu tiempo!", HttpStatus.GONE);
+            default -> { }
         }
         return link;
     }

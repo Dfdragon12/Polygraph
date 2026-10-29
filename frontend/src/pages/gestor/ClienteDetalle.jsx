@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useId, useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import mensajeService from '../../services/mensajeService'
 import gestorClienteService from '../../services/gestorClienteService'
@@ -28,6 +28,7 @@ function formatRelativo(iso) {
 }
 
 function ModalNuevoUsuario({ idCliente, onClose, onCreado, onToast }) {
+  const idCampos = useId()
   const [form, setForm] = useState({ nombre: '', apellido: '', email: '', password: '' })
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState(null)
@@ -60,25 +61,25 @@ function ModalNuevoUsuario({ idCliente, onClose, onCreado, onToast }) {
         {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{error}</div>}
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Nombre <span className="text-red-500">*</span></label>
-            <input name="nombre" value={form.nombre} onChange={cambiar} required maxLength={100}
+            <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">Nombre <span className="text-red-500">*</span></label>
+            <input id={`${idCampos}-1`} name="nombre" value={form.nombre} onChange={cambiar} required maxLength={100}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Apellido</label>
-            <input name="apellido" value={form.apellido} onChange={cambiar} maxLength={100}
+            <label htmlFor={`${idCampos}-2`} className="block text-xs font-medium text-gray-600 mb-1">Apellido</label>
+            <input id={`${idCampos}-2`} name="apellido" value={form.apellido} onChange={cambiar} maxLength={100}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
           </div>
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Correo electrónico <span className="text-red-500">*</span></label>
-          <input type="email" name="email" value={form.email} onChange={cambiar} required maxLength={150}
+          <label htmlFor={`${idCampos}-3`} className="block text-xs font-medium text-gray-600 mb-1">Correo electrónico <span className="text-red-500">*</span></label>
+          <input id={`${idCampos}-3`} type="email" name="email" value={form.email} onChange={cambiar} required maxLength={150}
             placeholder="usuario@empresa.com"
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Contraseña temporal <span className="text-red-500">*</span></label>
-          <input type="password" name="password" value={form.password} onChange={cambiar} required minLength={8} maxLength={50}
+          <label htmlFor={`${idCampos}-4`} className="block text-xs font-medium text-gray-600 mb-1">Contraseña temporal <span className="text-red-500">*</span></label>
+          <input id={`${idCampos}-4`} type="password" name="password" value={form.password} onChange={cambiar} required minLength={8} maxLength={50}
             placeholder="Mínimo 8 caracteres"
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
         </div>
@@ -257,7 +258,7 @@ export default function ClienteDetalle() {
                 <div ref={finMensajesRef} />
               </div>
               <form onSubmit={enviar} className="px-4 py-3 border-t border-gray-100 flex gap-2 flex-shrink-0">
-                <input value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Escribe un mensaje..."
+                <input aria-label="Escribe un mensaje..." value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Escribe un mensaje..."
                   className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
                 <button type="submit" disabled={enviando || !texto.trim()}
                   className="bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors flex-shrink-0">

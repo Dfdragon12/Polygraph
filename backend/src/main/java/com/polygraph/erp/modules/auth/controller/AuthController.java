@@ -2,6 +2,7 @@ package com.polygraph.erp.modules.auth.controller;
 
 import com.polygraph.erp.modules.auth.dto.*;
 import com.polygraph.erp.modules.auth.service.AuthService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -16,25 +17,35 @@ public class AuthController {
 
     private final AuthService authService;
 
+    /** IP del cliente (detrás de proxy, la primera de X-Forwarded-For); solo se guarda su hash. */
+    private static String ipDe(HttpServletRequest http) {
+        String reenviada = http.getHeader("X-Forwarded-For");
+        if (reenviada != null && !reenviada.isBlank()) return reenviada.split(",")[0].trim();
+        return http.getRemoteAddr();
+    }
+
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
         return ResponseEntity.ok(authService.login(request));
     }
 
     @PostMapping("/google")
-    public ResponseEntity<LoginResponse> continuarConGoogle(@Valid @RequestBody GoogleAuthRequest request) {
-        return ResponseEntity.ok(authService.continuarConGoogle(request));
+    public ResponseEntity<LoginResponse> continuarConGoogle(@Valid @RequestBody GoogleAuthRequest request,
+                                                         HttpServletRequest http) {
+        return ResponseEntity.ok(authService.continuarConGoogle(request, ipDe(http)));
     }
 
     @PostMapping("/register/natural")
-    public ResponseEntity<Void> registrarNatural(@Valid @RequestBody RegistroNaturalRequest request) {
-        authService.registrarNatural(request);
+    public ResponseEntity<Void> registrarNatural(@Valid @RequestBody RegistroNaturalRequest request,
+                                                 HttpServletRequest http) {
+        authService.registrarNatural(request, ipDe(http));
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 
     @PostMapping("/register/juridica")
-    public ResponseEntity<Void> registrarJuridica(@Valid @RequestBody RegistroJuridicaRequest request) {
-        authService.registrarJuridica(request);
+    public ResponseEntity<Void> registrarJuridica(@Valid @RequestBody RegistroJuridicaRequest request,
+                                                   HttpServletRequest http) {
+        authService.registrarJuridica(request, ipDe(http));
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 

@@ -38,6 +38,7 @@ public class DashboardClienteService {
     private final ClienteRepository clienteRepository;
     private final UsuariosIntenosRepository empleadoRepository;
     private final SaldoServicioClienteService saldoServicioClienteService;
+    private final com.polygraph.erp.shared.service.TiempoServicioService tiempoServicioService;
 
     @Transactional(readOnly = true)
     public DashboardClienteResponse obtenerDashboard() {
@@ -75,23 +76,30 @@ public class DashboardClienteService {
         // Suma de cantidadDisponible de todos los procesos de la bolsa prepago — antes esto
         // quedaba hardcodeado en 0, así que la tarjeta "Disponibles en bolsa" del dashboard nunca
         // reflejaba el saldo real (solo se veía correcto en Comprar Servicios / Mi Crédito).
-        long serviciosDisponibles = saldoServicioClienteService.obtenerSaldos(idCliente).stream()
-                .mapToLong(s -> s.cantidadDisponible() != null ? s.cantidadDisponible() : 0)
-                .sum();
+        long serviciosDisponibles = saldoServicioClienteService.totalDisponible(idCliente);
 
         return new DashboardClienteResponse(
                 serviciosActivos, serviciosPendientes, finalizadosMes, serviciosDisponibles, ultimasSolicitudes,
-                cliente.getTipoCliente().name());
+                cliente.getTipoCliente().name(),
+                servicioRepository.countByCliente_IdClienteAndEstadoTiempo(idCliente, com.polygraph.erp.shared.enums.EstadoTiempo.VENCIDA));
     }
 
     @Transactional(readOnly = true)
     public Page<SolicitudResumenResponse> listarSolicitudes(EstadoServicio estado, Pageable pageable) {
+        return listarSolicitudes(estado, null, null, pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<SolicitudResumenResponse> listarSolicitudes(EstadoServicio estado, java.util.List<com.polygraph.erp.shared.enums.EstadoTiempo> tiempo,
+                                                            String orden, Pageable pageable) {
         Integer idCliente = obtenerIdClienteActual();
-        Page<Servicio> pagina = estado != null
-                ? servicioRepository.findByCliente_IdClienteAndEstadoOrderByFechaSolicitudDescHoraSolicitudDesc(
-                        idCliente, estado, pageable)
-                : servicioRepository.findByCliente_IdClienteOrderByFechaSolicitudDescHoraSolicitudDesc(
-                        idCliente, pageable);
+        var filtro = org.springframework.data.jpa.domain.Specification
+                .where(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.delCliente(idCliente))
+                .and(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.conSubprocesoEn(estado == null ? null : com.polygraph.erp.shared.enums.EstadoSubproceso.valueOf(estado.name())))
+                .and(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.conTiempo(
+                        tiempo));
+        Page<Servicio> pagina = servicioRepository.findAll(filtro, org.springframework.data.domain.PageRequest.of(
+                pageable.getPageNumber(), pageable.getPageSize(), com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.orden(orden)));
         return pagina.map(this::toResumen);
     }
 
@@ -142,7 +150,8 @@ public class DashboardClienteService {
                 s.getProceso() != null ? s.getProceso().getNombreProceso() : null,
                 s.getEstado(),
                 s.getFechaSolicitud(),
-                s.getFechaEntregaEstimada()
+                s.fechaParaMostrar(),
+                tiempoServicioService.de(s)
         );
     }
 }

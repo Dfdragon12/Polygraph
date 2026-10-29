@@ -57,6 +57,7 @@ public class NotaAjusteService {
     private final OrdenCompraRepository ordenCompraRepository;
     private final OrdenCompraItemRepository ordenCompraItemRepository;
     private final SaldoServicioClienteRepository saldoServicioClienteRepository;
+    private final com.polygraph.erp.modules.pagos.repository.LotePrepagoRepository lotePrepagoRepository;
     private final FacturaPospagoRepository facturaPospagoRepository;
     private final ClientePospagoRepository clientePospagoRepository;
     private final UsuarioRepository usuarioRepository;
@@ -162,6 +163,16 @@ public class NotaAjusteService {
                 throw new ApiException(
                         "El cliente ya consumió unidades de '" + item.getProceso().getNombreProceso() + "' de esta orden — no se puede generar la nota crédito completa",
                         HttpStatus.CONFLICT);
+            }
+            // El lote de esta compra también pierde las unidades; si la bolsa ya gastó unidades de este lote (FIFO), no se puede devolver completo
+            var lote = lotePrepagoRepository.findByItem_IdItem(item.getIdItem()).orElse(null);
+            if (lote != null) {
+                if (lote.restante() < item.getCantidad()) {
+                    throw new ApiException("Ya se usaron unidades de '" + item.getProceso().getNombreProceso() + "' de esta compra — no se puede generar la nota crédito completa",
+                            HttpStatus.CONFLICT);
+                }
+                lote.setCantidadComprada(lote.getCantidadComprada() - item.getCantidad());
+                if (lote.getCantidadComprada() > 0) lotePrepagoRepository.save(lote); else lotePrepagoRepository.delete(lote);
             }
             saldo.setCantidadDisponible(saldo.getCantidadDisponible() - item.getCantidad());
             saldo.setCantidadComprada(saldo.getCantidadComprada() - item.getCantidad());

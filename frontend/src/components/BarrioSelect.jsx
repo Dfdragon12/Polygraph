@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useId, useEffect, useMemo, useState } from 'react'
 import catalogoService from '../services/catalogoService'
 import { Modal } from './ui/Modal'
 import CiudadSelect from './CiudadSelect'
@@ -22,6 +22,7 @@ const quitarTildes = (s) => (s || '').normalize('NFD').replace(/\p{Diacritic}/gu
  * (para columnas de plantilla, que guardan todo como texto plano, igual que TEXTO/LISTA).
  */
 function BarrioSelect({ idCiudad, value, onChange, className, required = false, valueType = 'id', id, name, placeholder = 'Selecciona o busca tu barrio...', disabled = false }) {
+  const idCampos = useId()
   const modoLibre = !idCiudad
   const [barrios, setBarrios] = useState([])
   const [cargando, setCargando] = useState(!modoLibre)
@@ -188,8 +189,8 @@ function BarrioSelect({ idCiudad, value, onChange, className, required = false, 
               <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{errorModal}</div>
             )}
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Barrio <span className="text-red-500">*</span></label>
-              <input value={mNombre} onChange={(e) => setMNombre(e.target.value)} autoFocus
+              <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">Barrio <span className="text-red-500">*</span></label>
+              <input id={`${idCampos}-1`} value={mNombre} onChange={(e) => setMNombre(e.target.value)} autoFocus
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none" />
             </div>
             {modoLibre && (

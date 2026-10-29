@@ -80,7 +80,7 @@ export default function ComprobanteVista({ comprobante, volverA, volverLabel = '
         <div>
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Servicios</p>
           <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="table-stack w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 text-left text-xs text-gray-400">
                 <th className="py-2 font-medium">Servicio</th>

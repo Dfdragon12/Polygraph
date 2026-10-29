@@ -52,4 +52,21 @@ public class ExperienciaLaboralEvaluado {
 
     @Column(name = "cargo_jefe", length = 100)
     private String cargoJefe;
+
+    @Column(name = "tipo_contrato", length = 100)
+    private String tipoContrato;
+
+    /** Salario devengado, en pesos. */
+    @Column(name = "salario")
+    private Long salario;
+
+    @Column(name = "llamados_atencion", columnDefinition = "TEXT")
+    private String llamadosAtencion;
+
+    @Column(name = "contratado_por_temporal")
+    private Boolean contratadoPorTemporal;
+
+    /** Nombre de la empresa de servicios temporales — solo si contratadoPorTemporal. */
+    @Column(name = "nombre_temporal", length = 200)
+    private String nombreTemporal;
 }

@@ -22,8 +22,9 @@ const asignacionService = {
   completar: (id) =>
     api.patch(`/gestor/asignaciones/${id}/completar`).then(r => r.data),
 
-  devolver: (id, observacion) =>
-    api.patch(`/gestor/asignaciones/${id}/devolver`, { observacion }).then(r => r.data),
+  // motivo: { idMotivo, observacion } — el motivo sale de la lista de devolución (SE-02)
+  devolver: (id, motivo) =>
+    api.patch(`/gestor/asignaciones/${id}/devolver`, motivo).then(r => r.data),
 
   aprobar: (id) =>
     api.patch(`/gestor/asignaciones/${id}/aprobar`).then(r => r.data),
@@ -31,8 +32,21 @@ const asignacionService = {
   desasignar: (id) =>
     api.patch(`/gestor/asignaciones/${id}/desasignar`).then(r => r.data),
 
-  cancelar: (id) =>
-    api.patch(`/gestor/asignaciones/${id}/cancelar`).then(r => r.data),
+  // motivo: { idMotivo, texto } — lista de cancelación (SE-02)
+  cancelar: (id, motivo) =>
+    api.patch(`/gestor/asignaciones/${id}/cancelar`, motivo).then(r => r.data),
+
+  // ── Citas (SE-07) ──
+  iniciarInforme: (id) => api.patch(`/gestor/asignaciones/${id}/iniciar-informe`).then(r => r.data),
+  evaluadoNoHaLlegado: (id) => api.patch(`/gestor/asignaciones/${id}/evaluado-no-ha-llegado`).then(r => r.data),
+  // { idMotivo, texto }
+  citaNoRealizada: (id, payload) => api.patch(`/gestor/asignaciones/${id}/cita-no-realizada`, payload).then(r => r.data),
+  // { fechaProgramada, idMotivo, texto, lugar }
+  reprogramarCita: (id, payload) => api.patch(`/gestor/asignaciones/${id}/reprogramar-cita`, payload).then(r => r.data),
+  // { idUsuarioAsignado, fechaProgramada, idMotivo, texto, lugar }
+  reasignarCita: (id, payload) => api.patch(`/gestor/asignaciones/${id}/reasignar-cita`, payload).then(r => r.data),
+  citasPorConfirmar: () => api.get(`/gestor/asignaciones/citas/por-confirmar`).then(r => r.data),
+  citasResumen: () => api.get(`/gestor/asignaciones/citas/resumen`).then(r => r.data),
 
   asignarProgramador: (id, idProgramador) =>
     api.patch(`/gestor/asignaciones/${id}/asignar-programador`, { idProgramador }).then(r => r.data),
@@ -48,6 +62,13 @@ const asignacionService = {
 
   historialLlamadas: (id) =>
     api.get(`/gestor/asignaciones/${id}/historial-llamadas`).then(r => r.data),
+
+  // Poligrafía/visita: dirección del candidato (prellena el lugar) + la sugerencia de horario que
+  // mandó desde su portal → { direccionCandidato, sugerenciaPendiente: { comentario, fechaCreacion, opciones } }
+  citaCandidato: (id) => api.get(`/gestor/asignaciones/${id}/cita-candidato`).then(r => r.data),
+
+  // Ids de subprocesos con sugerencia de horario del candidato sin atender (para marcarlos).
+  sugerenciasPendientes: () => api.get('/gestor/asignaciones/sugerencias-pendientes').then(r => r.data),
 
   franjasDisponibles: (idUsuarioAsignado, fecha, idTipoProgreso, duracionMinutos, idExcluir) =>
     api.get('/gestor/asignaciones/franjas-disponibles', { params: { idUsuarioAsignado, fecha, idTipoProgreso, duracionMinutos, idExcluir } }).then(r => r.data),

@@ -28,6 +28,7 @@ const ETIQUETAS_RUTA = {
   pospago:              'Mi Crédito',
   facturas:             'Factura',
   equipo:               'Mi Equipo',
+  perfil:               'Mi perfil',
 }
 
 function Breadcrumb() {
@@ -105,6 +106,12 @@ const SECCIONES_ANALISTA = [
       { ruta: '/cliente/nueva-solicitud', etiqueta: 'Nueva Solicitud', icono: <IconoMas /> },
     ],
   },
+  {
+    titulo: 'Mi Perfil',
+    items: [
+      { ruta: '/cliente/perfil', etiqueta: 'Mis datos', icono: <IconoCuenta /> },
+    ],
+  },
 ]
 
 /* ─── Contenido del sidebar (agrupado por secciones) ─── */
@@ -171,7 +178,7 @@ function ConfiguracionMenu() {
 }
 
 /* ─── Avatar de usuario ─── */
-function AvatarUsuario({ usuario, cerrarSesion }) {
+function AvatarUsuario({ usuario, cerrarSesion, rutaPerfil }) {
   const [abierto, setAbierto] = useState(false)
   const ref = useRef(null)
 
@@ -211,6 +218,15 @@ function AvatarUsuario({ usuario, cerrarSesion }) {
             </span>
           </div>
           <div className="py-1">
+            {rutaPerfil && (
+              <NavLink to={rutaPerfil} onClick={() => setAbierto(false)}
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                </svg>
+                Mi perfil
+              </NavLink>
+            )}
             <button onClick={() => { cerrarSesion(); setAbierto(false) }}
               className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors text-left">
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -289,7 +305,7 @@ export default function ClientLayout() {
         <>
           <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setMenuMovil(false)} />
           <aside className="fixed inset-y-0 left-0 z-50 flex flex-col w-72 bg-slate-900 text-white md:hidden shadow-2xl pt-safe pb-safe">
-            <button onClick={() => setMenuMovil(false)}
+            <button onClick={() => setMenuMovil(false)} aria-label="Cerrar menú"
               className="absolute top-4 right-4 p-1 text-slate-400 hover:text-white">
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -304,7 +320,7 @@ export default function ClientLayout() {
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <header className="bg-white border-b border-gray-200 px-4 md:px-6 pt-[calc(0.75rem+var(--sat))] pb-3 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-1">
-            <button onClick={() => setMenuMovil(true)}
+            <button onClick={() => setMenuMovil(true)} aria-label="Abrir menú"
               className="md:hidden p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors">
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -327,13 +343,13 @@ export default function ClientLayout() {
             <HeaderMensajesCliente />
             <Campana />
             <div className="w-px h-6 bg-gray-200 mx-1" />
-            <AvatarUsuario usuario={usuario} cerrarSesion={cerrarSesion} />
+            <AvatarUsuario usuario={usuario} cerrarSesion={cerrarSesion} rutaPerfil={esAdminCliente ? null : '/cliente/perfil'} />
           </div>
         </header>
 
         <Breadcrumb />
 
-        <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 pb-[calc(1rem+var(--sab))] md:pb-[calc(1.5rem+var(--sab))] scrollbar-thin">
+        <main id="contenido" tabIndex={-1} className="flex-1 overflow-y-auto focus:outline-none overflow-x-hidden p-4 md:p-6 pb-[calc(1rem+var(--sab))] md:pb-[calc(1.5rem+var(--sab))] scrollbar-thin">
           <Outlet />
         </main>
       </div>

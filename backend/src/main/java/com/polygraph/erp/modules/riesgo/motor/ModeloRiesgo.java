@@ -17,8 +17,12 @@ public final class ModeloRiesgo {
 
     public enum TipoAjuste { NINGUNO, PISO, CRITICO }
 
-    /** Estado de un subproceso para el motor (ver §4 del documento). */
-    public enum EstadoSubproceso { REALIZADO, NO_REALIZADO, PENDIENTE }
+    /** Estado de un subproceso para el motor (ver §4 del documento). SIN_CALIFICACION: el
+     *  subservicio todavía no tiene cómo calificar (ni cálculo propio por códigos ni campos con
+     *  puntos) — queda fuera del estudio en cualquier estado y su peso se reparte entre los que sí
+     *  tienen resultado, igual que un NO_REALIZADO, pero sin contar como "no realizado" ni dejar el
+     *  estudio en proceso (decisión 2026-10-06, opción b del Prompt 5 de docs/antecedentes). */
+    public enum EstadoSubproceso { REALIZADO, NO_REALIZADO, PENDIENTE, SIN_CALIFICACION }
 
     /** CALCULADO: hay nivel final. EN_PROCESO: algún subproceso sigue pendiente. SIN_INFORMACION:
      *  nada con peso quedó realizado. NO_CALIFICA: la configuración del proceso no es válida

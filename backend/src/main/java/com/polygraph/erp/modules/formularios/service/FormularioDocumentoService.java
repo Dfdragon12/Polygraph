@@ -9,7 +9,8 @@ import com.polygraph.erp.modules.formularios.repository.*;
 import com.polygraph.erp.modules.servicios.entity.Servicio;
 import com.polygraph.erp.modules.servicios.entity.ServicioSubproceso;
 import com.polygraph.erp.modules.servicios.repository.ServicioSubprocesoRepository;
-import com.polygraph.erp.shared.enums.EstadoAsignacion;
+import com.polygraph.erp.shared.enums.EstadoSubproceso;
+import com.polygraph.erp.shared.enums.EstadoServicio;
 import com.polygraph.erp.shared.enums.Rol;
 import com.polygraph.erp.shared.exceptions.ApiException;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +18,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,25 +40,41 @@ public class FormularioDocumentoService {
     private final ServicioSubprocesoRepository servicioSubprocesoRepository;
     private final FormularioPlantillaConfigRepository configRepository;
     private final FormularioPlantillaWordService plantillaWordService;
-    private final DocumentoPdfConverter pdfConverter;
     private final com.polygraph.erp.modules.riesgo.service.CalificacionRiesgoService calificacionRiesgoService;
+    private final com.polygraph.erp.modules.riesgo.codigos.CalculoSubservicioService calculoSubservicioService;
 
     private static final java.util.Set<Rol> ROLES_EJECUTORES = java.util.Set.of(Rol.ANALISTA_INTERNO, Rol.POLIGRAFISTA, Rol.VISITADOR);
 
     /** Misma noción de "cerrado" que FormularioService.estaCongelado — COMPLETADO y PUBLICADO se
      *  documentan igual, congelados en la versión de plantilla que tenían al completarse. */
-    private static boolean estaCongelado(EstadoAsignacion estado) {
-        return estado == EstadoAsignacion.COMPLETADO || estado == EstadoAsignacion.PUBLICADO;
+    private static boolean estaCongelado(EstadoSubproceso estado) {
+        return estado == EstadoSubproceso.FINALIZADO || estado == EstadoSubproceso.PUBLICADO;
     }
 
-    /** Mismo documento que generar() (mismo .docx, mismos marcadores resueltos) — solo se le
-     *  cambia el formato de salida a PDF al final, para que "Descargar PDF" muestre el mismo
-     *  diseño que arma el administrador en Word, no un reporte genérico aparte. */
-    public byte[] generarPdf(Long idServicioSubproceso, Usuario actor) {
-        return pdfConverter.convertir(generar(idServicioSubproceso, actor));
+    // El PDF NO se genera aquí a propósito: esta clase es @Transactional, y convertir con
+    // LibreOffice dentro de ella retenía una conexión del pool de BD hasta 60 s por descarga
+    // (10 descargas a la vez = pool agotado = todo el sistema esperando). Quien necesite PDF
+    // llama generar() (abre y cierra su transacción) y DESPUÉS DocumentoPdfConverter.convertir,
+    // ya sin conexión tomada — ver FormularioPdfProcesador e InformePdfProcesador.
+
+    /** Documento que el actor SÍ puede descargar. publicado = servicio y subproceso PUBLICADOS:
+     *  solo entonces el documento ya no cambia (el riesgo del estudio, que va en los marcadores
+     *  ${riesgo[...]}, se bloquea al publicar el servicio) y el PDF se puede guardar en caché.
+     *  Un subproceso solo COMPLETADO todavía puede cambiar de riesgo por los demás subprocesos. */
+    public record DocumentoAutorizado(Long idServicioSubproceso, boolean publicado, LocalDateTime fechaPublicado) {}
+
+    /** Las mismas reglas de acceso de generar(), sin generar nada — para responder 403/404 en el
+     *  request antes de encolar el PDF. */
+    public DocumentoAutorizado validarDescarga(Long idServicioSubproceso, Usuario actor) {
+        ServicioSubproceso subproceso = cargarAutorizado(idServicioSubproceso, actor);
+        exigirFormularioGuardado(subproceso, formularioRepository.findByServicioSubproceso_Id(idServicioSubproceso).orElse(null));
+        Servicio servicio = subproceso.getServicio();
+        boolean publicado = subproceso.getEstado() == EstadoSubproceso.PUBLICADO
+                && servicio != null && servicio.getEstado() == EstadoServicio.PUBLICADO;
+        return new DocumentoAutorizado(idServicioSubproceso, publicado, subproceso.getFechaPublicado());
     }
 
-    public byte[] generar(Long idServicioSubproceso, Usuario actor) {
+    private ServicioSubproceso cargarAutorizado(Long idServicioSubproceso, Usuario actor) {
         ServicioSubproceso subproceso = servicioSubprocesoRepository.findById(idServicioSubproceso)
                 .orElseThrow(() -> new ApiException("Subproceso no encontrado", HttpStatus.NOT_FOUND));
         com.polygraph.erp.shared.utils.AccesoGestor.validar(subproceso, actor);
@@ -66,18 +84,26 @@ public class FormularioDocumentoService {
                 throw new ApiException("Este subproceso no está asignado a ti.", HttpStatus.FORBIDDEN);
             }
         }
-        Formulario formulario = formularioRepository.findByServicioSubproceso_Id(idServicioSubproceso).orElse(null);
-        // Si el subproceso ya está completado, no bloqueamos la descarga aunque nunca se haya
-        // guardado un Formulario (ej. un tipo de progreso cuyas columnas son todas automáticas,
-        // resueltas del candidato/cliente, sin que el ejecutor tuviera que guardar nada a mano) —
-        // FormularioService.guardar ya no deja guardar una vez COMPLETADO, así que exigir un
-        // Formulario guardado en ese estado sería un callejón sin salida: no se puede guardar
-        // porque está completado, y no se puede descargar porque nunca se guardó. Mientras sigue
-        // en progreso, sí se exige (nudge para que guarde antes de descargar).
+        return subproceso;
+    }
+
+    // Si el subproceso ya está completado, no bloqueamos la descarga aunque nunca se haya
+    // guardado un Formulario (ej. un tipo de progreso cuyas columnas son todas automáticas,
+    // resueltas del candidato/cliente, sin que el ejecutor tuviera que guardar nada a mano) —
+    // FormularioService.guardar ya no deja guardar una vez COMPLETADO, así que exigir un
+    // Formulario guardado en ese estado sería un callejón sin salida: no se puede guardar
+    // porque está completado, y no se puede descargar porque nunca se guardó. Mientras sigue
+    // en progreso, sí se exige (nudge para que guarde antes de descargar).
+    private static void exigirFormularioGuardado(ServicioSubproceso subproceso, Formulario formulario) {
         if (formulario == null && !estaCongelado(subproceso.getEstado())) {
             throw new ApiException("Aún no se ha guardado el formulario de este subproceso.", HttpStatus.NOT_FOUND);
         }
+    }
 
+    public byte[] generar(Long idServicioSubproceso, Usuario actor) {
+        ServicioSubproceso subproceso = cargarAutorizado(idServicioSubproceso, actor);
+        Formulario formulario = formularioRepository.findByServicioSubproceso_Id(idServicioSubproceso).orElse(null);
+        exigirFormularioGuardado(subproceso, formulario);
         Servicio servicio = subproceso.getServicio();
         Candidato candidato = servicio != null ? servicio.getCandidato() : null;
         Cliente cliente = servicio != null ? servicio.getCliente() : null;
@@ -117,13 +143,24 @@ public class FormularioDocumentoService {
         FormularioPlantillaConfig config = (estaCongelado(subproceso.getEstado()) && subproceso.getRutaWordCongelada() != null)
                 ? FormularioPlantillaConfig.builder().plantillaWordRuta(subproceso.getRutaWordCongelada()).build()
                 : configRepository.findById(subproceso.getTipoProgreso().getIdTipoProgreso()).orElse(null);
-        boolean actorPuedeEditarPlantilla = !ROLES_EJECUTORES.contains(actor.getRol());
+        // Solo roles internos de coordinación ven el detalle técnico de un error de plantilla — ni
+        // los ejecutores ni el cliente (que descarga su informe publicado) pueden corregirla.
+        boolean actorPuedeEditarPlantilla = actor.getRol() == Rol.ADMIN_POLYGRAPH
+                || actor.getRol() == Rol.GESTOR || actor.getRol() == Rol.PROGRAMADOR;
         var marcadores = servicio != null
                 ? calificacionRiesgoService.marcadoresWord(servicio.getIdServicio(), idServicioSubproceso)
                 : null;
-        return plantillaWordService.generar(config, candidato, cliente, secciones, valoresCampos, filasPorSeccion, valoresPorFila,
+        // Se calcula otra vez justo antes de generar, con lo guardado (docs/antecedentes, Prompt 4):
+        // el Word nunca queda con un puntaje o una numeración vieja.
+        ValoresPorClave.Entrada entrada = ValoresPorClave.armar(secciones, valoresCampos, filasPorSeccion, valoresPorFila);
+        var calculo = calculoSubservicioService.calcular(secciones,
+                com.polygraph.erp.modules.riesgo.codigos.CalculoSubservicioService.criticidadDelEstudio(subproceso),
+                com.polygraph.erp.modules.riesgo.codigos.CalculoSubservicioService.datosDelEstudio(subproceso),
+                entrada.campos(), entrada.tablas()).orElse(null);
+        return plantillaWordService.generar(config, subproceso, candidato, cliente, secciones, valoresCampos, filasPorSeccion, valoresPorFila,
                 actorPuedeEditarPlantilla, marcadores != null ? marcadores.riesgo() : null,
-                marcadores != null ? marcadores.calificacion() : null);
+                marcadores != null ? marcadores.calificacion() : null, calculo,
+                formulario != null ? formulario.getSeccionesOmitidas() : java.util.Set.of());
     }
 
     /** Vista previa de cómo quedaría el documento, generada directo desde la estructura que se

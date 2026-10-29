@@ -46,6 +46,10 @@ public class SecurityConfig {
             .csrf(AbstractHttpConfigurer::disable)
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .authorizeHttpRequests(auth -> auth
+                // Despachos ASYNC/ERROR de una petición que YA pasó la seguridad (ej. el cierre de
+                // una conexión de avisos en tiempo real, SseEmitter): el filtro JWT no corre en el
+                // despacho async, así que sin esto terminaban en "acceso denegado" en el log.
+                .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ASYNC, jakarta.servlet.DispatcherType.ERROR).permitAll()
                 .requestMatchers("/api/v1/auth/**").permitAll()
                 .requestMatchers("/api/v1/evaluees/link/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/ciudades", "/api/v1/ciudades/**").permitAll()

@@ -29,7 +29,7 @@ import com.polygraph.erp.modules.servicios.entity.ServicioSubproceso;
 import com.polygraph.erp.modules.servicios.repository.ServicioRepository;
 import com.polygraph.erp.modules.servicios.repository.ServicioSubprocesoRepository;
 import com.polygraph.erp.shared.enums.CriticidadCargo;
-import com.polygraph.erp.shared.enums.EstadoAsignacion;
+
 import com.polygraph.erp.shared.enums.EstadoServicio;
 import com.polygraph.erp.shared.enums.Rol;
 import com.polygraph.erp.shared.enums.TipoDatoFormulario;
@@ -77,6 +77,7 @@ public class CalificacionRiesgoService {
     private final UsuarioRepository usuarioRepository;
     private final CalificacionProcesoService calificacionProcesoService;
     private final ObjectMapper objectMapper;
+    private final com.polygraph.erp.modules.formularios.service.CalculoSubprocesoService calculoSubprocesoService;
 
     /** Valores de los marcadores del Word para un subproceso (docs/modelo-calificacion-riesgo.md §7). */
     public record MarcadoresWord(Map<String, String> riesgo, Map<String, String> calificacion) {}
@@ -85,7 +86,7 @@ public class CalificacionRiesgoService {
      *  campos que suman puntos. estado: EN_CURSO (puntaje parcial con lo guardado hasta ahora),
      *  REALIZADO o NO_REALIZADO. estudio: solo para gestor/admin (null para quien diligencia). */
     public record ResumenSubproceso(boolean califica, String estado, String nivel, BigDecimal puntaje,
-                                    boolean tieneCritica, Estudio estudio) {}
+                                    boolean tieneCritica, Estudio estudio, boolean calculado, String motivoSinCalcular) {}
 
     /** estado: CALCULADO / EN_PROCESO / SIN_INFORMACION / NO_CALIFICA; nivel = el que vale. */
     public record Estudio(String estado, String nivel, BigDecimal puntaje, boolean cambiadoPorGestor) {}
@@ -121,18 +122,27 @@ public class CalificacionRiesgoService {
                     idServicio, servicio.getEstado());
         }
 
-        CriticidadCargo criticidad = criticidadDe(servicio);
-        ConfiguracionCalculo config = configuracion(servicio, criticidad);
-        ResultadoCalificacion resultado = MotorCalificacionRiesgo.calcular(config, entradas(servicio));
-        String detalle = json(new DetalleCalculo(config, criticidad.name(), resultado));
-
-        if (vigente != null && detalle.equals(vigente.getDetalleJson())) return vigente; // nada cambió
+        CalificacionRiesgo calculo = calcularSinGuardar(servicio);
+        if (vigente != null && calculo.getDetalleJson().equals(vigente.getDetalleJson())) return vigente; // nada cambió
 
         if (vigente != null) {
             vigente.setVigente(false);
             calificacionRepository.saveAndFlush(vigente); // antes del insert: índice único de vigente
         }
-        CalificacionRiesgo nuevo = calificacionRepository.save(CalificacionRiesgo.builder()
+        calculo.setCalculadoPor(idActor != null ? usuarioRepository.findById(idActor).orElse(null) : null);
+        CalificacionRiesgo nuevo = calificacionRepository.save(calculo);
+        log.info("Riesgo recalculado: servicio={} estado={} final={} nivel={} ajuste={}",
+                idServicio, nuevo.getEstado(), nuevo.getPuntajeFinal(), nuevo.getNivelFinal(), nuevo.getTipoAjuste());
+        return nuevo;
+    }
+
+    /** Corre el motor y arma la fila vigente SIN guardarla. recalcular() la persiste;
+     *  marcadoresWord() la usa en memoria cuando todavía no hay cálculo guardado. */
+    private CalificacionRiesgo calcularSinGuardar(Servicio servicio) {
+        CriticidadCargo criticidad = criticidadDe(servicio);
+        ConfiguracionCalculo config = configuracion(servicio, criticidad);
+        ResultadoCalificacion resultado = MotorCalificacionRiesgo.calcular(config, entradas(servicio));
+        return CalificacionRiesgo.builder()
                 .servicio(servicio)
                 .vigente(true)
                 .estado(resultado.estado())
@@ -145,13 +155,9 @@ public class CalificacionRiesgoService {
                 .requiereRevision(resultado.requiereRevisionManual())
                 .criticidad(criticidad)
                 .versionConfiguracion(config.version())
-                .detalleJson(detalle)
-                .calculadoPor(idActor != null ? usuarioRepository.findById(idActor).orElse(null) : null)
+                .detalleJson(json(new DetalleCalculo(config, criticidad.name(), resultado)))
                 .fechaCalculo(LocalDateTime.now())
-                .build());
-        log.info("Riesgo recalculado: servicio={} estado={} final={} nivel={} ajuste={}",
-                idServicio, resultado.estado(), resultado.puntajeFinal(), resultado.nivelFinal(), resultado.tipoAjuste());
-        return nuevo;
+                .build();
     }
 
     // ───────────────────────────── Consulta y acciones del gestor ─────────────────────────────
@@ -256,11 +262,18 @@ public class CalificacionRiesgoService {
     /** Marcadores del Word para el documento de un subproceso. riesgo: el nivel que vale y el
      *  puntaje final del estudio ("En proceso" si falta algo, "Sin calificar" si no aplica).
      *  calificacion: el del propio subproceso, vacío si todavía no se realizó. Nunca el registro
-     *  interno (ponderado sin ajustar, tipo de ajuste, motivos). */
-    @Transactional
+     *  interno (ponderado sin ajustar, tipo de ajuste, motivos).
+     *
+     *  Solo lectura a propósito: generar un documento no debe escribir en la BD. Antes, si el
+     *  servicio aún no tenía cálculo guardado, llamaba recalcular() y hacía un INSERT — que
+     *  fallaba siempre, porque quien genera el documento (FormularioDocumentoService) corre en una
+     *  transacción readOnly ("no se puede ejecutar INSERT en una transacción de sólo lectura") y
+     *  el PDF de ese subproceso no salía nunca. Ahora se calcula en memoria; el cálculo se guarda
+     *  con el siguiente recálculo normal (guardar formulario, completar, publicar...). */
+    @Transactional(readOnly = true)
     public MarcadoresWord marcadoresWord(Integer idServicio, Long idServicioSubproceso) {
         CalificacionRiesgo v = calificacionRepository.findFirstByServicio_IdServicioAndVigenteTrue(idServicio)
-                .orElseGet(() -> recalcular(idServicio, null));
+                .orElseGet(() -> calcularSinGuardar(servicio(idServicio)));
         Map<String, String> riesgo = new HashMap<>();
         switch (v.getEstado()) {
             case CALCULADO -> {
@@ -296,7 +309,8 @@ public class CalificacionRiesgoService {
             throw new ApiException("No tienes acceso al riesgo de este subproceso.", HttpStatus.FORBIDDEN);
         }
 
-        boolean califica = seccionRepository.findByTipoProgreso_IdTipoProgresoOrderByOrdenAsc(sp.getTipoProgreso().getIdTipoProgreso())
+        boolean califica = sp.getTipoProgreso().getGrupoCalificacion() != null
+                || seccionRepository.findByTipoProgreso_IdTipoProgresoOrderByOrdenAsc(sp.getTipoProgreso().getIdTipoProgreso())
                 .stream().filter(sec -> Boolean.TRUE.equals(sec.getActivo()))
                 .flatMap(sec -> sec.getColumnas().stream())
                 .anyMatch(c -> Boolean.TRUE.equals(c.getActivo()) && Boolean.TRUE.equals(c.getCalificaRiesgo()));
@@ -305,18 +319,26 @@ public class CalificacionRiesgoService {
         String nivel = null;
         BigDecimal puntaje = null;
         boolean critica = false;
-        if (sp.getEstado() == EstadoAsignacion.CANCELADO) {
+        boolean calculado = true;
+        String motivoSinCalcular = null;
+        if (sp.getEstado() == com.polygraph.erp.shared.enums.EstadoSubproceso.CANCELADO) {
             estado = "NO_REALIZADO";
         } else {
-            estado = sp.getEstado() == EstadoAsignacion.COMPLETADO || sp.getEstado() == EstadoAsignacion.PUBLICADO
+            estado = sp.getEstado() == com.polygraph.erp.shared.enums.EstadoSubproceso.FINALIZADO || sp.getEstado() == com.polygraph.erp.shared.enums.EstadoSubproceso.PUBLICADO
                     ? "REALIZADO" : "EN_CURSO";
             if (califica) {
-                Umbrales umbrales = configuracion(servicio, criticidadDe(servicio)).umbrales();
-                ResultadoServicio r = CalificadorServicio.calificar(new ServicioEvaluado(String.valueOf(sp.getId()),
-                        sp.getTipoProgreso().getNombreProgreso(), BigDecimal.ZERO, false, EstadoSubproceso.REALIZADO, hallazgos(sp)), umbrales);
-                nivel = r.nivel() != null ? r.nivel().name() : null;
-                puntaje = r.puntajeFinal();
-                critica = r.tieneCritico();
+                // SE-06: solo hay nivel y puntaje si el puntaje se pudo CALCULAR. Sin eso (falta la criticidad del cargo, o el formulario
+                // no se ha diligenciado) el subproceso queda «Sin calificar»: nunca «BAJO 0».
+                motivoSinCalcular = motivoSinCalcular(sp);
+                calculado = motivoSinCalcular == null;
+                if (calculado) {
+                    Umbrales umbrales = configuracion(servicio, criticidadDe(servicio)).umbrales();
+                    ResultadoServicio r = CalificadorServicio.calificar(new ServicioEvaluado(String.valueOf(sp.getId()),
+                            sp.getTipoProgreso().getNombreProgreso(), BigDecimal.ZERO, false, EstadoSubproceso.REALIZADO, hallazgos(sp)), umbrales);
+                    nivel = r.nivel() != null ? r.nivel().name() : null;
+                    puntaje = r.puntajeFinal();
+                    critica = r.tieneCritico();
+                }
             }
         }
 
@@ -328,7 +350,16 @@ public class CalificacionRiesgoService {
             estudio = new Estudio(v.getEstado().name(), efectivo != null ? efectivo.name() : null,
                     v.getPuntajeFinal(), v.getNivelDecidido() != null);
         }
-        return new ResumenSubproceso(califica, estado, nivel, puntaje, critica, estudio);
+        return new ResumenSubproceso(califica, estado, nivel, puntaje, critica, estudio, calculado, motivoSinCalcular);
+    }
+
+    /** Lo que ve el cliente en el detalle de su solicitud publicada: nivel que vale y puntaje
+     *  final, solo si el cálculo vigente quedó CALCULADO. */
+    @Transactional(readOnly = true)
+    public Optional<Map.Entry<String, BigDecimal>> resultadoParaCliente(Integer idServicio) {
+        return calificacionRepository.findFirstByServicio_IdServicioAndVigenteTrue(idServicio)
+                .filter(v -> v.getEstado() == EstadoResultado.CALCULADO && nivelEfectivo(v) != null)
+                .map(v -> Map.entry(nivelEfectivo(v).name(), v.getPuntajeFinal()));
     }
 
     /** 21.2 -> "21,2" (1 decimal, coma decimal). */
@@ -338,7 +369,20 @@ public class CalificacionRiesgoService {
 
     // ───────────────────────────── Entrada del motor ─────────────────────────────
 
+    /** Decisión 2026-10-05 (docs/antecedentes): manda la criticidad que el analista elige en el
+     *  formulario de cada subservicio que califica con códigos (ev_criticidad); si difieren, la MÁS
+     *  EXIGENTE (Crítico > Sensible > Estándar). Si ningún formulario la tiene todavía, la que fijó el
+     *  gestor en el caso y, si no, la del proceso. */
     private CriticidadCargo criticidadDe(Servicio servicio) {
+        Optional<CriticidadCargo> deFormularios = subprocesoRepository
+                .findByServicio_IdServicioOrderByTipoProgreso_OrdenAsc(servicio.getIdServicio()).stream()
+                .filter(sp -> sp.getEstado() != com.polygraph.erp.shared.enums.EstadoSubproceso.CANCELADO)
+                .map(calculoSubprocesoService::calcular)
+                .flatMap(Optional::stream)
+                .map(com.polygraph.erp.modules.riesgo.codigos.ModeloCodigos.CalculoFormulario::criticidad)
+                .filter(Objects::nonNull)
+                .max(Comparator.naturalOrder()); // el orden del enum va de menos a más exigente
+        if (deFormularios.isPresent()) return deFormularios.get();
         if (servicio.getCriticidadCargo() != null) return servicio.getCriticidadCargo();
         Proceso proceso = servicio.getProceso();
         return proceso != null && proceso.getCriticidadDefecto() != null ? proceso.getCriticidadDefecto() : CriticidadCargo.ESTANDAR;
@@ -367,15 +411,19 @@ public class CalificacionRiesgoService {
 
         List<ServicioEvaluado> entradas = new ArrayList<>();
         Set<Integer> tiposEnCaso = new HashSet<>();
+        Map<Integer, Boolean> califica = new HashMap<>();
         for (ServicioSubproceso sp : subprocesos) {
             Integer idTipo = sp.getTipoProgreso().getIdTipoProgreso();
             if (!tiposEnCaso.add(idTipo)) continue; // un tipo repetido en el caso cuenta una vez
             ProcesoTipoProgreso paso = pasoPorTipo.get(idTipo);
-            EstadoSubproceso estado = switch (sp.getEstado()) {
-                case COMPLETADO, PUBLICADO -> EstadoSubproceso.REALIZADO;
-                case CANCELADO -> EstadoSubproceso.NO_REALIZADO;
-                default -> EstadoSubproceso.PENDIENTE;
-            };
+            EstadoSubproceso estado = !califica.computeIfAbsent(idTipo, k -> tieneComoCalificar(sp.getTipoProgreso()))
+                    ? EstadoSubproceso.SIN_CALIFICACION
+                    : switch (sp.getEstado()) {
+                        // Terminado pero sin puntaje calculable (falta la criticidad, etc.): el estudio lo espera, no lo cuenta como 0 (SE-06)
+                        case FINALIZADO, PUBLICADO -> motivoSinCalcular(sp) == null ? EstadoSubproceso.REALIZADO : EstadoSubproceso.PENDIENTE;
+                        case CANCELADO -> EstadoSubproceso.NO_REALIZADO;
+                        default -> EstadoSubproceso.PENDIENTE;
+                    };
             BigDecimal peso = paso != null ? paso.getPeso() : BigDecimal.ZERO; // ya no está en el proceso: peso 0
             entradas.add(new ServicioEvaluado(String.valueOf(sp.getId()), sp.getTipoProgreso().getNombreProgreso(), peso,
                     paso != null && Boolean.TRUE.equals(paso.getObligatorio()), estado,
@@ -384,14 +432,54 @@ public class CalificacionRiesgoService {
         // Subprocesos del proceso que este caso no tiene: no se hicieron.
         pasoPorTipo.forEach((idTipo, paso) -> {
             if (tiposEnCaso.contains(idTipo)) return;
+            EstadoSubproceso estado = califica.computeIfAbsent(idTipo, k -> tieneComoCalificar(paso.getTipoProgreso()))
+                    ? EstadoSubproceso.NO_REALIZADO : EstadoSubproceso.SIN_CALIFICACION;
             entradas.add(new ServicioEvaluado("tipo-" + idTipo, paso.getTipoProgreso().getNombreProgreso() + " (no incluido en el caso)",
-                    paso.getPeso(), Boolean.TRUE.equals(paso.getObligatorio()), EstadoSubproceso.NO_REALIZADO, List.of()));
+                    paso.getPeso(), Boolean.TRUE.equals(paso.getObligatorio()), estado, List.of()));
         });
         return entradas;
     }
 
-    /** Respuestas calificables elegidas en el formulario del subproceso → hallazgos del motor. */
+    /**
+     * Por qué el subproceso NO tiene puntaje calculado, o null si lo tiene (SE-06). Mientras no lo tenga se muestra «Sin calificar», nunca
+     * «BAJO 0». Con calificación por hallazgos hace falta que el cálculo del formulario haya podido correr (p. ej. que el analista haya elegido
+     * la criticidad del cargo); con campos que suman puntos, que el formulario se haya diligenciado.
+     */
+    String motivoSinCalcular(ServicioSubproceso sp) {
+        if (sp.getTipoProgreso().getGrupoCalificacion() != null) {
+            Optional<com.polygraph.erp.modules.riesgo.codigos.ModeloCodigos.CalculoFormulario> c = calculoSubprocesoService.calcular(sp);
+            if (c.isEmpty()) return "Todavía no se ha diligenciado el formulario.";
+            if (c.get().resultado() == null) return c.get().aviso() != null && !c.get().aviso().isBlank() ? c.get().aviso() : "No se pudo calcular el puntaje.";
+            return null;
+        }
+        // Terminado = el formulario ya se validó al enviarlo (AsignacionService.completar); antes de eso, sin nada guardado no hay puntaje.
+        boolean terminado = sp.getEstado() == com.polygraph.erp.shared.enums.EstadoSubproceso.FINALIZADO
+                || sp.getEstado() == com.polygraph.erp.shared.enums.EstadoSubproceso.PUBLICADO;
+        return terminado || formularioRepository.findByServicioSubproceso_Id(sp.getId()).isPresent() ? null : "Todavía no se ha diligenciado el formulario.";
+    }
+
+    /** ¿El subservicio tiene cómo calificar? Con cálculo propio por códigos (grupo_calificacion) o
+     *  con algún campo activo que "califica riesgo" en su plantilla. Si no, entra al motor como
+     *  SIN_CALIFICACION: fuera del estudio y su peso se reparte (decisión 2026-10-06). */
+    private boolean tieneComoCalificar(com.polygraph.erp.modules.catalogo.entity.TipoProgreso tipo) {
+        if (tipo.getGrupoCalificacion() != null) return true;
+        return seccionRepository.findByTipoProgreso_IdTipoProgresoOrderByOrdenAsc(tipo.getIdTipoProgreso()).stream()
+                .filter(sec -> Boolean.TRUE.equals(sec.getActivo()))
+                .flatMap(sec -> sec.getColumnas().stream())
+                .anyMatch(c -> Boolean.TRUE.equals(c.getActivo()) && Boolean.TRUE.equals(c.getCalificaRiesgo()));
+    }
+
+    /** Respuestas calificables elegidas en el formulario del subproceso → hallazgos del motor. Un
+     *  subservicio que califica con códigos propios (ej. Antecedentes) entrega SUS hallazgos (los
+     *  LEG que quedaron, con sus puntos o crítico): el motor del estudio los suma con el mismo tope
+     *  de 100 y la misma regla de crítico, así que su puntaje es el del propio subservicio — no se
+     *  duplica ninguna regla (Prompt 5 de docs/antecedentes). */
     private List<Hallazgo> hallazgos(ServicioSubproceso sp) {
+        if (sp.getTipoProgreso().getGrupoCalificacion() != null) {
+            return calculoSubprocesoService.calcular(sp)
+                    .map(c -> com.polygraph.erp.modules.riesgo.codigos.ModeloCodigos.paraMotorEstudio(c.resultado()))
+                    .orElse(List.of());
+        }
         return formularioRepository.findByServicioSubproceso_Id(sp.getId())
                 .map(f -> datoRepository.findByFormulario_IdFormulario(f.getIdFormulario()).stream()
                         .map(this::hallazgoDe)

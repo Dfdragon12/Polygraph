@@ -1,3 +1,4 @@
+import { parseFecha } from '../../utils/fechas'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import pospagoService from '../../services/pospagoService'
@@ -17,7 +18,7 @@ const ESTADO_LABEL = {
 
 function formatFecha(iso) {
   if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
+  return parseFecha(iso).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 export default function MiCredito() {

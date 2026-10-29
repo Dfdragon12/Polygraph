@@ -39,6 +39,9 @@ self.addEventListener('fetch', event => {
     return
   }
 
+  // Avisos en tiempo real (Server-Sent Events): conexión larga, nunca por caché ni con timeout
+  if (url.pathname.endsWith('/eventos') || (request.headers.get('Accept') || '').includes('text/event-stream')) return
+
   // API — network first, fallback a cache (5 min)
   if (url.pathname.startsWith('/api/')) {
     event.respondWith(networkFirst(request, API_CACHE, 8000))

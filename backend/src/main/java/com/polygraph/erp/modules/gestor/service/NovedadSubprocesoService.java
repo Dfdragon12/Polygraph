@@ -18,7 +18,7 @@ import com.polygraph.erp.modules.servicios.entity.ServicioSubproceso;
 import com.polygraph.erp.modules.servicios.repository.NovedadSeguimientoRepository;
 import com.polygraph.erp.modules.servicios.repository.NovedadSubprocesoRepository;
 import com.polygraph.erp.modules.servicios.repository.ServicioSubprocesoRepository;
-import com.polygraph.erp.shared.enums.EstadoAsignacion;
+import com.polygraph.erp.shared.enums.EstadoSubproceso;
 import com.polygraph.erp.shared.enums.EstadoNovedad;
 import com.polygraph.erp.shared.enums.Rol;
 import com.polygraph.erp.shared.enums.TipoSeguimientoNovedad;
@@ -55,7 +55,7 @@ public class NovedadSubprocesoService {
     private static final Set<Rol> ROLES_PRESENCIALES = Set.of(Rol.POLIGRAFISTA, Rol.VISITADOR);
     /** Una novedad se puede reportar mientras el subproceso está en curso o recién completado
      *  (ej. se acuerda de algo después de cerrarlo). Una vez PUBLICADO o CANCELADO ya no. */
-    private static final Set<EstadoAsignacion> ESTADOS_ADMITEN_NOVEDAD = Set.of(EstadoAsignacion.ASIGNADO, EstadoAsignacion.COMPLETADO);
+    private static final Set<EstadoSubproceso> ESTADOS_ADMITEN_NOVEDAD = Set.of(EstadoSubproceso.EN_EJECUCION, EstadoSubproceso.FINALIZADO);
     private static final int LARGO_MAXIMO_EN_NOTIFICACION = 180;
 
     private final NovedadSubprocesoRepository novedadRepository;
@@ -64,6 +64,7 @@ public class NovedadSubprocesoService {
     private final NovedadSeguimientoRepository seguimientoRepository;
     private final AsignacionService asignacionService;
     private final TipoNovedadRepository tipoNovedadRepository;
+    private final com.polygraph.erp.modules.servicios.service.SemaforoTiempoService semaforoTiempoService;
 
     private static final DateTimeFormatter FORMATO_FECHA_HORA = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
@@ -104,7 +105,7 @@ public class NovedadSubprocesoService {
         boolean puedeResolver = puedeResolver(subproceso, actor);
         return new NovedadesSubprocesoResponse(novedades, tipos, puedeRegistrar(subproceso, actor), puedeResolver,
                 puedeResolver || esEjecutorAsignado(subproceso, actor),
-                puedeResolver && subproceso.getEstado() == EstadoAsignacion.ASIGNADO,
+                puedeResolver && subproceso.getEstado() == EstadoSubproceso.EN_EJECUCION,
                 subproceso.getFechaProgramada());
     }
 
@@ -135,10 +136,67 @@ public class NovedadSubprocesoService {
                 .registradoPor(actor)
                 .build());
 
+        abrirPausaSiAplica(subproceso, novedad, actor);
         notificarCoordinadores(subproceso, novedad, actor);
         log.info("Novedad registrada: id={}, subproceso={}, tipo={}, actor={}",
                 novedad.getId(), idServicioSubproceso, tipo.getClave(), actor.getIdUsuario());
         return toResponse(novedad, List.of());
+    }
+
+    /** Cuando analista/poligrafista/visitador devuelve un documento del candidato desde "Soportes"
+     *  (Denegado, Ilegible, Vencido, Incompleto, No corresponde — un tipo de novedad por motivo, V199),
+     *  queda registrado como novedad de SU subproceso — gestor y programador se enteran igual que
+     *  con cualquier novedad y pueden hacerle seguimiento. Si el subproceso ya no admite novedades o
+     *  el admin desactivó el tipo, la devolución sigue valiendo, solo que sin novedad (se deja log). */
+    @org.springframework.context.event.EventListener
+    public void alDevolverDocumento(com.polygraph.erp.modules.formularios.service.DocumentoDevueltoPorEjecutor e) {
+        ServicioSubproceso subproceso = obtenerOFallar(e.idServicioSubproceso());
+        if (!esEjecutorAsignado(subproceso, e.actor()) || !ESTADOS_ADMITEN_NOVEDAD.contains(subproceso.getEstado())) {
+            log.info("Documento devuelto sin novedad automática (subproceso {} en {}, actor {})",
+                    subproceso.getId(), subproceso.getEstado(), e.actor().getIdUsuario());
+            return;
+        }
+        String clave = e.resultado().claveTipoNovedad();
+        TipoNovedad tipo = tipoNovedadRepository.findByClave(clave)
+                .filter(t -> Boolean.TRUE.equals(t.getActivo()) && Boolean.TRUE.equals(t.getCategoria().getActivo()))
+                .filter(t -> t.aplicaA(subproceso.getTipoProgreso().getRolResponsable()))
+                .orElse(null);
+        if (tipo == null) {
+            log.warn("Tipo de novedad {} inactivo o no aplica al rol — documento devuelto sin novedad (subproceso {})",
+                    clave, subproceso.getId());
+            return;
+        }
+        String descripcion = "Documento «" + e.nombreDocumento() + "» revisado como " + e.resultado().etiqueta()
+                + " y devuelto al candidato. Observación: " + e.motivo();
+        NovedadSubproceso novedad = novedadRepository.save(NovedadSubproceso.builder()
+                .servicioSubproceso(subproceso)
+                .tipo(tipo)
+                .descripcion(descripcion.length() > 2000 ? descripcion.substring(0, 2000) : descripcion)
+                .registradoPor(e.actor())
+                .build());
+        abrirPausaSiAplica(subproceso, novedad, e.actor());
+        notificarCoordinadores(subproceso, novedad, e.actor());
+        log.info("Novedad automática por documento devuelto: novedad={}, subproceso={}", novedad.getId(), subproceso.getId());
+    }
+
+    private static String motivoPausa(NovedadSubproceso novedad) {
+        return "Novedad #" + novedad.getId() + ": " + novedad.getTipo().getNombre();
+    }
+
+    /** Si el tipo de novedad detiene el reloj y la causa es del candidato o del cliente, la solicitud queda en pausa mientras la novedad esté abierta. */
+    private void abrirPausaSiAplica(ServicioSubproceso subproceso, NovedadSubproceso novedad, Usuario actor) {
+        TipoNovedad tipo = novedad.getTipo();
+        if (!Boolean.TRUE.equals(tipo.getPausaReloj()) || tipo.getImputableA() == null
+                || tipo.getImputableA() == com.polygraph.erp.shared.enums.ImputableA.POLYGRAPH || subproceso.getServicio() == null) return;
+        var origen = tipo.getImputableA() == com.polygraph.erp.shared.enums.ImputableA.CLIENTE
+                ? com.polygraph.erp.shared.enums.OrigenPausa.CLIENTE : com.polygraph.erp.shared.enums.OrigenPausa.CANDIDATO;
+        semaforoTiempoService.abrirPausa(subproceso.getServicio(), origen, motivoPausa(novedad), actor.getEmail(), null);
+    }
+
+    private void cerrarPausaDeNovedad(ServicioSubproceso subproceso, NovedadSubproceso novedad) {
+        if (Boolean.TRUE.equals(novedad.getTipo().getPausaReloj()) && subproceso.getServicio() != null) {
+            semaforoTiempoService.cerrarPausas(subproceso.getServicio(), motivoPausa(novedad));
+        }
     }
 
     @Transactional
@@ -181,6 +239,7 @@ public class NovedadSubprocesoService {
         novedad.setRespuesta(req.respuesta().trim());
         novedad.setResueltaPor(actor);
         novedad.setFechaResolucion(LocalDateTime.now());
+        cerrarPausaDeNovedad(subproceso, novedad);
 
         Usuario reporto = novedad.getRegistradoPor();
         if (reporto != null && !reporto.getIdUsuario().equals(actor.getIdUsuario())) {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useId, useState, useEffect, useMemo } from 'react'
 import api from '../../../services/api'
 import Paginacion from '../../../components/ui/Paginacion'
 import MenuAcciones from '../../../components/ui/MenuAcciones'
@@ -59,6 +59,7 @@ function IconoPower() {
 
 /* ─── Modal crear / editar proceso ─── */
 function ModalProceso({ proceso, onClose, onGuardado }) {
+  const idCampos = useId()
   const [form, setForm] = useState({
     nombreProceso: proceso?.nombreProceso ?? '',
     descripcion: proceso?.descripcion ?? '',
@@ -86,13 +87,13 @@ function ModalProceso({ proceso, onClose, onGuardado }) {
       {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{error}</div>}
 
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Nombre del proceso <span className="text-red-500">*</span></label>
-        <input name="nombreProceso" value={form.nombreProceso} onChange={handleChange} required
+        <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">Nombre del proceso <span className="text-red-500">*</span></label>
+        <input id={`${idCampos}-1`} name="nombreProceso" value={form.nombreProceso} onChange={handleChange} required
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
       </div>
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Descripción</label>
-        <textarea name="descripcion" value={form.descripcion} onChange={handleChange} rows={3}
+        <label htmlFor={`${idCampos}-2`} className="block text-xs font-medium text-gray-600 mb-1">Descripción</label>
+        <textarea id={`${idCampos}-2`} name="descripcion" value={form.descripcion} onChange={handleChange} rows={3}
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" />
       </div>
 
@@ -109,6 +110,7 @@ function ModalProceso({ proceso, onClose, onGuardado }) {
 
 /* ─── Modal configurar pasos de un proceso ─── */
 function ModalPasos({ proceso, onClose }) {
+  const idCampos = useId()
   const [pasos, setPasos] = useState([])
   const [tipos, setTipos] = useState([])
   const [cargando, setCargando] = useState(true)
@@ -224,8 +226,8 @@ function ModalPasos({ proceso, onClose }) {
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Agregar paso</p>
           <form onSubmit={agregarPaso} className="flex items-end gap-3">
             <div className="flex-1">
-              <label className="block text-xs font-medium text-gray-600 mb-1">Tipo de subproceso</label>
-              <select value={formPaso.idTipoProgreso} onChange={e => setFormPaso(p => ({ ...p, idTipoProgreso: e.target.value }))}
+              <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">Tipo de subproceso</label>
+              <select id={`${idCampos}-1`} value={formPaso.idTipoProgreso} onChange={e => setFormPaso(p => ({ ...p, idTipoProgreso: e.target.value }))}
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
                 <option value="">Seleccionar...</option>
                 {tiposDisponibles.map(t => (
@@ -348,7 +350,7 @@ export default function Procesos() {
 
       {/* Barra de filtros */}
       <div className="flex flex-wrap items-center gap-3 mb-3">
-        <input
+        <input aria-label="Buscar por nombre o descripción…"
           type="search"
           value={busqueda}
           onChange={e => setBusqueda(e.target.value)}
@@ -397,7 +399,7 @@ export default function Procesos() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-100">
+            <table className="table-stack min-w-full divide-y divide-gray-100">
               <thead className="bg-gray-50/80">
                 <tr>
                   {columnas.map(col => (

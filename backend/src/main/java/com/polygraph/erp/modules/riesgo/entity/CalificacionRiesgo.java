@@ -16,6 +16,7 @@ import java.time.LocalDateTime;
  *  cambia el resultado agrega una fila vigente y deja la anterior de historial. La decisión del
  *  gestor vive en la fila vigente; al publicar el informe queda bloqueada. */
 @Entity
+@jakarta.persistence.EntityListeners(com.polygraph.erp.modules.tiemporeal.CambiosEntityListener.class)
 @Table(name = "calificaciones_riesgo")
 @Data
 @Builder

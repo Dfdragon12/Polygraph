@@ -109,6 +109,13 @@ se calculó. Cambiar pesos, puntos, umbrales o parámetros **no recalcula result
 | `REALIZADO` | `ServicioSubproceso` COMPLETADO o PUBLICADO |
 | `NO_REALIZADO` | Marcado explícitamente por quien coordina (gestor/programador) al resolver una novedad (ej. "El candidato se negó"), con motivo. **No penaliza.** |
 | `PENDIENTE` | Cualquier otro estado (PENDIENTE, ASIGNADO) |
+| `SIN_CALIFICACION` | El subservicio todavía no tiene cómo calificar: ni cálculo propio por códigos (`tipos_progreso.grupo_calificacion`, ej. Antecedentes) ni campos con puntos en su plantilla. |
+
+**Decisión 06-oct-2026 (opción b del Prompt 5 de `docs/antecedentes/`):** mientras un subservicio no
+tenga cómo calificar, queda **fuera del estudio** en cualquier estado: no suma, no deja el caso "en
+proceso" y su peso se reparte proporcionalmente entre los que sí tienen resultado, igual que un
+NO_REALIZADO — pero sin contar como "obligatorio no realizado" para la revisión manual. Sí baja la
+cobertura, y si queda bajo la mínima del proceso, el caso pide revisión manual.
 
 **Decisiones 25-sep-2026 (reemplazan la nota anterior):** cuenta como REALIZADO **desde que se
 completa** (COMPLETADO), no solo al aprobarse; **todo CANCELADO cuenta como NO_REALIZADO** — el

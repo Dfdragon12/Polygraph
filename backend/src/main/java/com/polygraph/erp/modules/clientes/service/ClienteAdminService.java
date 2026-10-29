@@ -65,6 +65,7 @@ public class ClienteAdminService {
     private final MovimientoCreditoPospagoRepository movimientoCreditoPospagoRepository;
     private final FacturaPospagoRepository facturaPospagoRepository;
     private final SaldoServicioClienteRepository saldoServicioClienteRepository;
+    private final com.polygraph.erp.modules.pagos.service.BolsaPrepagoService bolsaPrepagoService;
     private final UsuarioRepository usuarioRepository;
     private final UsuariosIntenosRepository empleadoRepository;
     private final CiudadRepository ciudadRepository;
@@ -72,6 +73,7 @@ public class ClienteAdminService {
     private final BarrioRepository barrioRepository;
     private final SoporteClienteService soporteClienteService;
     private final NotificacionService notificacionService;
+    private final ReasignacionGestorService reasignacionGestorService;
     private final PasswordEncoder passwordEncoder;
 
     @Transactional(readOnly = true)
@@ -109,9 +111,7 @@ public class ClienteAdminService {
                     pospago != null && pospago.getEstadoMora() != null ? pospago.getEstadoMora().name() : null,
                     pospago != null ? pospago.getRequiereAprobacion() : null);
         }
-        int totalUnidades = saldoServicioClienteRepository.findByCliente_IdCliente(cliente.getIdCliente()).stream()
-                .mapToInt(s -> s.getCantidadDisponible() != null ? s.getCantidadDisponible() : 0)
-                .sum();
+        int totalUnidades = bolsaPrepagoService.saldoPorServicio(cliente.getIdCliente()).totalDisponible();
         return new EstadoCuentaClienteResponse(
                 cliente.getIdCliente(), cliente.getNit(), nombre, "PREPAGO", totalUnidades,
                 null, null, null, null);
@@ -163,7 +163,14 @@ public class ClienteAdminService {
             if (gestor.getRol() != Rol.GESTOR) {
                 throw new ApiException("El usuario seleccionado no tiene rol Gestor", HttpStatus.BAD_REQUEST);
             }
+            boolean cambiaDeGestor = !gestor.getIdUsuario().equals(idGestorAnterior);
+            if (cambiaDeGestor && !Boolean.TRUE.equals(gestor.getActivo())) {
+                throw new ApiException("El gestor seleccionado está inactivo", HttpStatus.BAD_REQUEST);
+            }
             cliente.setIdGestor(gestor.getIdUsuario());
+            if (cambiaDeGestor) {
+                reasignacionGestorService.avisarClienteNuevoGestor(cliente, gestor);
+            }
         }
 
         String nombre = nombreCliente(cliente);
@@ -232,7 +239,7 @@ public class ClienteAdminService {
         }
 
         if (nuevoTipo == TipoCliente.PREPAGO) {
-            if (movimientoCreditoPospagoRepository.existsByCliente_IdClienteAndFacturaIsNull(cliente.getIdCliente())) {
+            if (movimientoCreditoPospagoRepository.existsByCliente_IdClienteAndFacturaIsNullAndAnuladoEnIsNull(cliente.getIdCliente())) {
                 throw new ApiException(
                         "Este cliente tiene consumo pospago sin facturar. Genera esa factura antes de cambiarlo a prepago.",
                         HttpStatus.CONFLICT);
@@ -244,7 +251,7 @@ public class ClienteAdminService {
                         HttpStatus.CONFLICT);
             }
         } else {
-            if (saldoServicioClienteRepository.existsByCliente_IdClienteAndCantidadDisponibleGreaterThan(cliente.getIdCliente(), 0)) {
+            if (bolsaPrepagoService.saldoPorServicio(cliente.getIdCliente()).totalDisponible() > 0) {
                 throw new ApiException(
                         "Este cliente todavía tiene saldo prepago sin usar. Debe consumirlo (o coordinarlo de otra forma) antes de cambiarlo a pospago.",
                         HttpStatus.CONFLICT);
@@ -359,7 +366,8 @@ public class ClienteAdminService {
                 c.getIdCliente(), c.getTipoPersona().name(), c.getTipoCliente().name(),
                 c.getNit(), c.getDv(), c.getRazonSocial(), c.getNombreComercial(), c.getRepresentanteLegal(),
                 c.getNombre(), c.getApellido(), c.getEmailPrincipal(), c.getTelefono(), c.getDireccion(),
-                c.getIdCiudad(), nombreCiudad);
+                c.getIdCiudad(), nombreCiudad,
+                null, null, null, null, 0, false);
     }
 
     public ClienteAdminResponse cambiarEstado(Integer id, boolean activar) {

@@ -1,18 +1,24 @@
 package com.polygraph.erp.modules.servicios.repository;
 
 import com.polygraph.erp.modules.servicios.entity.Servicio;
-import com.polygraph.erp.shared.enums.EstadoAsignacion;
+import com.polygraph.erp.shared.enums.EstadoSubproceso;
 import com.polygraph.erp.shared.enums.EstadoServicio;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
 import java.util.List;
 
-public interface ServicioRepository extends JpaRepository<Servicio, Integer> {
+public interface ServicioRepository extends JpaRepository<Servicio, Integer>, JpaSpecificationExecutor<Servicio> {
+
+    /** Solicitudes anteriores a las columnas de tiempo (ver TiempoHistoricoInicializador). */
+    List<Servicio> findByFechaRecepcionEfectivaIsNull();
+    /** Las publicadas cuyo cumplimiento hay que (re)calcular: la migración V227 lo deja vacío cuando cambió una pausa. */
+    List<Servicio> findByEstadoAndCumplimientoIsNull(EstadoServicio estado);
 
     long countByEstado(EstadoServicio estado);
     long countByCliente_IdClienteAndEstado(Integer idCliente, EstadoServicio estado);
@@ -27,6 +33,17 @@ public interface ServicioRepository extends JpaRepository<Servicio, Integer> {
 
     Page<Servicio> findByCliente_IdClienteAndEstadoOrderByFechaSolicitudDescHoraSolicitudDesc(
             Integer idCliente, EstadoServicio estado, Pageable pageable);
+
+    /** Conteos por estado de tiempo: leen lo que guardó SemaforoTiempoService, no calculan nada. */
+    long countByEstadoTiempo(com.polygraph.erp.shared.enums.EstadoTiempo estadoTiempo);
+
+    long countByCliente_IdClienteAndEstadoTiempo(Integer idCliente, com.polygraph.erp.shared.enums.EstadoTiempo estadoTiempo);
+
+    long countByCliente_IdGestorAndEstadoTiempo(Long idGestor, com.polygraph.erp.shared.enums.EstadoTiempo estadoTiempo);
+
+    /** Las solicitudes que aún pueden cambiar de estado de tiempo (todas menos las publicadas y canceladas). */
+    @Query("SELECT s.idServicio FROM Servicio s WHERE s.estado NOT IN :cerrados ORDER BY s.idServicio")
+    List<Integer> idsAbiertos(@Param("cerrados") List<EstadoServicio> cerrados);
 
     Page<Servicio> findByEstadoOrderByFechaSolicitudDescHoraSolicitudDesc(
             EstadoServicio estado, Pageable pageable);
@@ -51,62 +68,6 @@ public interface ServicioRepository extends JpaRepository<Servicio, Integer> {
 
     List<Servicio> findByCliente_IdGestorAndEstadoInOrderByFechaEntregaEstimadaAsc(
             Long idGestor, List<EstadoServicio> estados, Pageable pageable);
-
-    /** Semáforo de Solicitudes (gestor) para los 3 estados que SÍ se derivan de subprocesos
-     *  (PENDIENTE/EN_EJECUCION/FINALIZADO — ver AsignacionService.recalcularEstadoServicio): un
-     *  servicio entra al filtro si su estado agregado coincide, O si tiene al menos un subproceso
-     *  en el "bucket" de EstadoAsignacion correspondiente a ese estado — así un servicio con
-     *  subprocesos en estados distintos aparece en cada filtro que aplique, no solo en uno.
-     *  El `OR s.estado = :estado` es necesario para el caso sin subprocesos todavía (servicio
-     *  recién creado, estado PENDIENTE por defecto, cero filas en servicio_subprocesos): sin él,
-     *  desaparecería de todos los filtros hasta que se le genere el primer subproceso.
-     *  countQuery explícito porque Spring Data no siempre deriva bien el conteo de un `distinct`
-     *  combinado con `exists`. */
-    @Query(value = """
-            select distinct s from Servicio s
-            where s.cliente.idGestor = :idGestor
-              and (
-                s.estado = :estado
-                or exists (
-                  select 1 from ServicioSubproceso sp
-                  where sp.servicio = s and sp.estado in :estadosSubproceso
-                )
-              )
-            order by s.fechaSolicitud desc, s.horaSolicitud desc
-            """,
-           countQuery = """
-            select count(distinct s) from Servicio s
-            where s.cliente.idGestor = :idGestor
-              and (
-                s.estado = :estado
-                or exists (
-                  select 1 from ServicioSubproceso sp
-                  where sp.servicio = s and sp.estado in :estadosSubproceso
-                )
-              )
-            """)
-    Page<Servicio> findByCliente_IdGestorAndEstadoOSubprocesoEstadoIn(
-            @Param("idGestor") Long idGestor,
-            @Param("estado") EstadoServicio estado,
-            @Param("estadosSubproceso") List<EstadoAsignacion> estadosSubproceso,
-            Pageable pageable);
-
-    /** Mismo criterio que el método de arriba, para las tarjetas de conteo del semáforo. */
-    @Query("""
-            select count(distinct s) from Servicio s
-            where s.cliente.idGestor = :idGestor
-              and (
-                s.estado = :estado
-                or exists (
-                  select 1 from ServicioSubproceso sp
-                  where sp.servicio = s and sp.estado in :estadosSubproceso
-                )
-              )
-            """)
-    long countDistinctByCliente_IdGestorAndEstadoOSubprocesoEstadoIn(
-            @Param("idGestor") Long idGestor,
-            @Param("estado") EstadoServicio estado,
-            @Param("estadosSubproceso") List<EstadoAsignacion> estadosSubproceso);
 
     List<Servicio> findByCandidato_CedulaAndIdServicioNot(String cedula, Integer idServicio);
 
@@ -143,4 +104,28 @@ public interface ServicioRepository extends JpaRepository<Servicio, Integer> {
             order by s.fechaSolicitud desc
             """)
     List<Servicio> buscar(@Param("patron") String patron, @Param("idGestor") Long idGestor, Pageable pageable);
+
+    // ── Gráficas del tablero del gestor (conteos agrupados, sin traer los servicios) ──
+
+    /** [fechaSolicitud, cantidad] de los servicios de sus clientes desde una fecha. */
+    @Query("SELECT s.fechaSolicitud, COUNT(s) FROM Servicio s WHERE s.cliente.idGestor = :idGestor "
+            + "AND s.fechaSolicitud >= :desde GROUP BY s.fechaSolicitud")
+    List<Object[]> contarPorFechaSolicitud(@Param("idGestor") Long idGestor, @Param("desde") LocalDate desde);
+
+    /** [fechaEntregaEstimada, cantidad] de los servicios en los estados dados (null = sin fecha). */
+    @Query("SELECT s.fechaCompromisoAjustada, s.estadoTiempo, COUNT(s) FROM Servicio s WHERE s.cliente.idGestor = :idGestor "
+            + "AND s.estado IN :estados GROUP BY s.fechaCompromisoAjustada, s.estadoTiempo")
+    List<Object[]> contarPorFechaEntrega(@Param("idGestor") Long idGestor, @Param("estados") List<EstadoServicio> estados);
+
+    /** [idCliente, razonSocial, nombreComercial, nombre, apellido, cantidad] — más cargados primero. */
+    @Query("SELECT c.idCliente, c.razonSocial, c.nombreComercial, c.nombre, c.apellido, COUNT(s) FROM Servicio s "
+            + "JOIN s.cliente c WHERE c.idGestor = :idGestor AND s.estado IN :estados "
+            + "GROUP BY c.idCliente, c.razonSocial, c.nombreComercial, c.nombre, c.apellido ORDER BY COUNT(s) DESC")
+    List<Object[]> contarPorCliente(@Param("idGestor") Long idGestor, @Param("estados") List<EstadoServicio> estados, Pageable pageable);
+
+    /** [nombreProceso, cantidad] — más usados primero. */
+    @Query("SELECT p.nombreProceso, COUNT(s) FROM Servicio s JOIN s.proceso p "
+            + "WHERE s.cliente.idGestor = :idGestor AND s.estado IN :estados "
+            + "GROUP BY p.nombreProceso ORDER BY COUNT(s) DESC")
+    List<Object[]> contarPorProceso(@Param("idGestor") Long idGestor, @Param("estados") List<EstadoServicio> estados, Pageable pageable);
 }

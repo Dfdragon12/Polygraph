@@ -1,5 +1,5 @@
 import InternalLayout from './InternalLayout'
-import { IconoDashboard, IconoChincheta, IconoCheck, IconoDocumento } from './IconosNav'
+import { IconoDashboard, IconoChincheta, IconoCuenta, IconoCatalogo } from './IconosNav'
 
 const SECCIONES = [
   {
@@ -12,8 +12,18 @@ const SECCIONES = [
     titulo: 'Mi Trabajo',
     items: [
       { ruta: '/analista/asignaciones', etiqueta: 'Mis Asignaciones', icono: <IconoChincheta /> },
-      { ruta: '/analista/validaciones', etiqueta: 'Validaciones',     icono: <IconoCheck /> },
-      { ruta: '/analista/informes',     etiqueta: 'Informes',         icono: <IconoDocumento /> },
+    ],
+  },
+  {
+    titulo: 'Reportes',
+    items: [
+      { ruta: '/analista/productividad', etiqueta: 'Productividad', icono: <IconoCatalogo /> },
+    ],
+  },
+  {
+    titulo: 'Mi Perfil',
+    items: [
+      { ruta: '/analista/perfil', etiqueta: 'Mis datos', icono: <IconoCuenta /> },
     ],
   },
 ]

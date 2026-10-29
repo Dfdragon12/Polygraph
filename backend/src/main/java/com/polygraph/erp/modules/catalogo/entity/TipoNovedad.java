@@ -48,6 +48,23 @@ public class TipoNovedad {
     @Column(name = "activo", nullable = false)
     private Boolean activo = true;
 
+    /** El cliente ve las novedades de este tipo en el detalle de su solicitud (solo tipo, estado y
+     *  respuesta — nunca la descripción del ejecutor). V193. */
+    @Builder.Default
+    @Column(name = "visible_cliente", nullable = false)
+    private Boolean visibleCliente = false;
+
+    /** Al abrir una novedad de este tipo el reloj de la solicitud se detiene (la demora no es de Polygraph) hasta que se resuelva. */
+    @Builder.Default
+    @Column(name = "pausa_reloj", nullable = false)
+    private Boolean pausaReloj = false;
+
+    /** De quién es la causa: POLYGRAPH, CANDIDATO o CLIENTE. Si es del candidato o del cliente y pausa el reloj, no cuenta como retraso. */
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(name = "imputable_a", nullable = false, length = 10)
+    private com.polygraph.erp.shared.enums.ImputableA imputableA = com.polygraph.erp.shared.enums.ImputableA.POLYGRAPH;
+
     @Builder.Default
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "tipos_novedad_roles", joinColumns = @JoinColumn(name = "id_tipo_novedad"))

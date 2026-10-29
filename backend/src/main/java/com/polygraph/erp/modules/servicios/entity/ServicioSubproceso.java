@@ -2,7 +2,7 @@ package com.polygraph.erp.modules.servicios.entity;
 
 import com.polygraph.erp.modules.auth.entity.Usuario;
 import com.polygraph.erp.modules.catalogo.entity.TipoProgreso;
-import com.polygraph.erp.shared.enums.EstadoAsignacion;
+import com.polygraph.erp.shared.enums.EstadoSubproceso;
 import com.polygraph.erp.shared.enums.EstadoConfirmacionAsistencia;
 import jakarta.persistence.*;
 import lombok.*;
@@ -10,6 +10,7 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 @Entity
+@jakarta.persistence.EntityListeners(com.polygraph.erp.modules.tiemporeal.CambiosEntityListener.class)
 @Table(name = "servicio_subprocesos")
 @Data
 @Builder
@@ -45,7 +46,7 @@ public class ServicioSubproceso {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "estado", length = 20, nullable = false)
-    private EstadoAsignacion estado;
+    private EstadoSubproceso estado;
 
     @Column(name = "fecha_programada")
     private LocalDateTime fechaProgramada;
@@ -83,6 +84,11 @@ public class ServicioSubproceso {
     @Column(name = "notas_confirmacion", columnDefinition = "TEXT")
     private String notasConfirmacion;
 
+    /** Dónde es la cita (poligrafía/visita): dirección o "Virtual". Lo escribe el programador al
+     *  agendar; para visitas se prellena con la dirección del candidato. Lo ve el candidato. */
+    @Column(name = "lugar", length = 300)
+    private String lugar;
+
     /** Versión de TipoProgreso.versionPlantilla vigente cuando se creó este subproceso — se
      *  compara contra el valor actual de tipoProgreso.versionPlantilla para saber si la plantilla
      *  cambió (admin agregó/quitó campos) después de que este subproceso ya existía. */
@@ -115,4 +121,38 @@ public class ServicioSubproceso {
 
     @Column(name = "fecha_no_realizado")
     private LocalDateTime fechaNoRealizado;
+
+    /** El trabajo ya empezó (SE-02): el responsable guardó avance o adjunto, la cita se confirmó como realizada, o el
+     *  subproceso pasó a FINALIZADO/PUBLICADO. Un subproceso iniciado ya no se cancela. */
+    @Builder.Default
+    @Column(name = "iniciado", nullable = false)
+    private Boolean iniciado = false;
+
+    @Column(name = "fecha_iniciado")
+    private LocalDateTime fechaIniciado;
+
+    /** Cuándo el profesional avisó «El evaluado no ha llegado» (SE-07). Un solo aviso por cita. */
+    @Column(name = "aviso_no_llegado_en")
+    private LocalDateTime avisoNoLlegadoEn;
+
+    /** Cuándo se avisó que la cita quedó en «Por confirmar» (SE-07). Un solo aviso por cita. */
+    @Column(name = "aviso_por_confirmar_en")
+    private LocalDateTime avisoPorConfirmarEn;
+
+    /** Marca DEVUELTO: el gestor lo devolvió a corrección y sigue en ejecución. Se limpia al volver a enviarlo. */
+    @Builder.Default
+    @Column(name = "devuelto", nullable = false)
+    private Boolean devuelto = false;
+
+    /** Marca REPROGRAMADA (contador): cuántas veces se reprogramó la cita con el mismo profesional. */
+    @Builder.Default
+    @Column(name = "reprogramaciones", nullable = false)
+    private Integer reprogramaciones = 0;
+
+    /** Lo marca por primera vez; no pisa la fecha si ya estaba iniciado. */
+    public void marcarIniciado(LocalDateTime cuando) {
+        if (Boolean.TRUE.equals(iniciado)) return;
+        iniciado = true;
+        fechaIniciado = cuando;
+    }
 }

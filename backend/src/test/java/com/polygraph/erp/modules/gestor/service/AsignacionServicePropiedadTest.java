@@ -6,7 +6,7 @@ import com.polygraph.erp.modules.clientes.entity.Cliente;
 import com.polygraph.erp.modules.servicios.entity.Servicio;
 import com.polygraph.erp.modules.servicios.entity.ServicioSubproceso;
 import com.polygraph.erp.modules.servicios.repository.ServicioSubprocesoRepository;
-import com.polygraph.erp.shared.enums.EstadoAsignacion;
+import com.polygraph.erp.shared.enums.EstadoSubproceso;
 import com.polygraph.erp.shared.enums.Rol;
 import com.polygraph.erp.shared.exceptions.ApiException;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,7 +45,7 @@ class AsignacionServicePropiedadTest {
         otroPoligrafista = Usuario.builder().idUsuario(11L).rol(Rol.POLIGRAFISTA).nombre("Otro").build();
         TipoProgreso tipo = TipoProgreso.builder().idTipoProgreso(5).nombreProgreso("Poligrafía").rolResponsable(Rol.POLIGRAFISTA).build();
         subproceso = ServicioSubproceso.builder().id(500L).tipoProgreso(tipo)
-                .usuarioAsignado(poligrafistaAsignado).estado(EstadoAsignacion.ASIGNADO).build();
+                .usuarioAsignado(poligrafistaAsignado).estado(EstadoSubproceso.EN_EJECUCION).build();
         when(asignacionRepository.findById(500L)).thenReturn(Optional.of(subproceso));
     }
 
@@ -55,7 +55,7 @@ class AsignacionServicePropiedadTest {
         assertThatThrownBy(() -> service.completar(500L, otroPoligrafista, Set.of(Rol.POLIGRAFISTA)))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.FORBIDDEN));
-        assertThat(subproceso.getEstado()).isEqualTo(EstadoAsignacion.ASIGNADO);
+        assertThat(subproceso.getEstado()).isEqualTo(EstadoSubproceso.EN_EJECUCION);
     }
 
     @Test
@@ -77,18 +77,35 @@ class AsignacionServicePropiedadTest {
     @DisplayName("Un gestor no puede aprobar, devolver ni cancelar el subproceso de un cliente de otro gestor")
     void gestorDeOtroCliente_403() {
         subproceso.setServicio(Servicio.builder().idServicio(77).cliente(Cliente.builder().idGestor(1L).build()).build());
-        subproceso.setEstado(EstadoAsignacion.COMPLETADO);
+        subproceso.setEstado(EstadoSubproceso.FINALIZADO);
         Usuario otroGestor = Usuario.builder().idUsuario(2L).rol(Rol.GESTOR).nombre("Otro").build();
         Set<Rol> todos = Set.of(Rol.POLIGRAFISTA, Rol.ANALISTA_INTERNO);
 
         for (org.junit.jupiter.api.function.Executable accion : java.util.List.<org.junit.jupiter.api.function.Executable>of(
                 () -> service.aprobar(500L, otroGestor, todos),
-                () -> service.cancelar(500L, otroGestor, todos),
+                () -> service.cancelar(500L, new com.polygraph.erp.modules.gestor.dto.CancelarSubprocesoRequest(1, null), otroGestor, todos),
                 () -> service.historial(500L, otroGestor, todos))) {
             assertThatThrownBy(accion::execute)
                     .isInstanceOf(ApiException.class)
                     .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.FORBIDDEN));
         }
-        assertThat(subproceso.getEstado()).isEqualTo(EstadoAsignacion.COMPLETADO);
+        assertThat(subproceso.getEstado()).isEqualTo(EstadoSubproceso.FINALIZADO);
+    }
+
+    @Test
+    @DisplayName("Una cita ya agendada no se edita a mano: asignar y desasignar se rechazan; solo se reprograma o reasigna con motivo (SE-07)")
+    void citaAgendada_noSeEditaLibremente() {
+        Usuario programador = Usuario.builder().idUsuario(20L).rol(Rol.PROGRAMADOR).build();
+        Set<Rol> roles = Set.of(Rol.POLIGRAFISTA, Rol.VISITADOR);
+        assertThatThrownBy(() -> service.asignar(500L,
+                new com.polygraph.erp.modules.gestor.dto.AsignarRequest(11L, java.time.LocalDateTime.now().plusDays(1), null, null, null), programador, roles))
+                .isInstanceOf(ApiException.class).hasMessageContaining("no se edita")
+                .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.CONFLICT));
+        assertThatThrownBy(() -> service.desasignar(500L, programador, roles))
+                .isInstanceOf(ApiException.class).hasMessageContaining("no se edita")
+                .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.CONFLICT));
+        subproceso.setEstado(EstadoSubproceso.REPROGRAMADO);
+        assertThatThrownBy(() -> service.desasignar(500L, programador, roles)).isInstanceOf(ApiException.class).hasMessageContaining("no se edita");
+        assertThat(subproceso.getUsuarioAsignado()).isSameAs(poligrafistaAsignado);
     }
 }

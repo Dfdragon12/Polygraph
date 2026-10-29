@@ -86,11 +86,15 @@ public class PagoService {
         String referencia;
         LocalDateTime ahora = LocalDateTime.now();
         if (pagoExistente != null) {
-            referencia = pagoExistente.getReferencia();
+            // Se reusa el registro, no la referencia: Wompi rechaza una referencia que ya tuvo una transacción
+            // («la referencia ya ha sido usada») aunque haya sido rechazada o abandonada.
+            referencia = ReferenciaPago.nuevoIntento(pagoExistente.getReferencia());
+            pagoExistente.setReferencia(referencia);
+            pagoExistente.setTransaccionWompiId(null);
             pagoExistente.setMontoEnCentavos(montoRecalculado);
             pagoExistente.setFechaActualizacion(ahora);
             pagoWompiRepository.save(pagoExistente);
-            log.info("Pago Wompi reintentado — se reusa referencia existente: referencia={}, cliente={}",
+            log.info("Pago Wompi reintentado — mismo pago, referencia nueva: referencia={}, cliente={}",
                     referencia, cliente.getIdCliente());
         } else {
             referencia = generarReferencia();
@@ -141,6 +145,7 @@ public class PagoService {
         Usuario usuario = resolverUsuario(emailUsuario);
 
         PagoWompi pago = pagoWompiRepository.findByReferencia(referencia)
+                .or(() -> pagoWompiRepository.findFirstByReferenciaStartingWith(ReferenciaPago.base(referencia)))
                 .orElseThrow(() -> new ApiException("Pago no encontrado", HttpStatus.NOT_FOUND));
 
         verificarAccesoCliente(usuario, pago.getCliente().getIdCliente());

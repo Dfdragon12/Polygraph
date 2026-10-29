@@ -9,5 +9,10 @@ public record ConteoAsignacionesResponse(
         long completados,
         long publicados,
         long cancelados,
-        long total
+        long total,
+        // Solo "Por hacer" de quien ejecuta (0 en el resto): cuántas tienen cada indicador, para los filtros.
+        long conDocumentosPorRevisar,
+        long conDevoluciones,
+        long conNovedadesAbiertas,
+        long porVencer
 ) {}

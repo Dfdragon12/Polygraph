@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import api from '../services/api'
@@ -36,6 +36,7 @@ function IconoCandado({ className = 'absolute left-3.5 top-1/2 -translate-y-1/2 
 }
 
 export default function CambiarPassword() {
+  const idCampos = useId()
   const { usuario } = useAuth()
   const navigate = useNavigate()
 
@@ -162,12 +163,12 @@ export default function CambiarPassword() {
               )}
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label htmlFor={`${idCampos}-1`} className="block text-sm font-medium text-gray-700 mb-1.5">
                   Nueva contraseña
                 </label>
                 <div className="relative">
                   <IconoCandado />
-                  <input
+                  <input id={`${idCampos}-1`}
                     type={mostrarNueva ? 'text' : 'password'}
                     value={nueva}
                     onChange={e => setNueva(e.target.value)}
@@ -194,12 +195,12 @@ export default function CambiarPassword() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label htmlFor={`${idCampos}-2`} className="block text-sm font-medium text-gray-700 mb-1.5">
                   Confirmar contraseña
                 </label>
                 <div className="relative">
                   <IconoCandado />
-                  <input
+                  <input id={`${idCampos}-2`}
                     type={mostrarConfirmar ? 'text' : 'password'}
                     value={confirmar}
                     onChange={e => setConfirmar(e.target.value)}

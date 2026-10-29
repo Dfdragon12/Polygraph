@@ -24,3 +24,15 @@ export function rangoDelDia(diaStr) {
   const fin = new Date(y, m - 1, d, 23, 59, 59)
   return { desde: toLocalDateTimeString(inicio), hasta: toLocalDateTimeString(fin) }
 }
+
+// Convierte lo que manda el backend en un Date SIN correr el día. Una fecha sola ("2026-10-26", un LocalDate) la lee new Date()
+// como medianoche UTC, que en Colombia es el día anterior a las 7 p. m.: por eso el gestor veía la #39 el 25 y el cliente el 26.
+// Aquí una fecha sola se toma al mediodía de la zona del navegador. Fecha con hora (LocalDateTime) o con zona se deja como viene.
+export function parseFecha(valor) {
+  if (valor instanceof Date) return valor
+  if (typeof valor === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(valor.trim())) {
+    const [y, m, d] = valor.trim().split('-').map(Number)
+    return new Date(y, m - 1, d, 12, 0, 0)
+  }
+  return new Date(valor)
+}

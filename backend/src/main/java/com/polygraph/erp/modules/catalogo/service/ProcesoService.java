@@ -42,6 +42,7 @@ public class ProcesoService {
     private final DocumentoRequeridoProcesoRepository documentoRequeridoRepository;
     private final NotificacionService notificacionService;
     private final CalificacionProcesoService calificacionProcesoService;
+    private final com.polygraph.erp.modules.solicitudes.service.SolicitudExtraService solicitudExtraService;
 
     @Transactional(readOnly = true)
     public List<ProcesoResponse> listarTodos() {
@@ -65,7 +66,11 @@ public class ProcesoService {
                         listarTramos(p.getIdProceso()),
                         separarPuntosClave(p.getPuntosClave()),
                         p.getAplicaPrecioCiudad(),
-                        listarPreciosCiudad(p.getIdProceso())))
+                        listarPreciosCiudad(p.getIdProceso()),
+                        p.getFormatoSolicitud() != null ? p.getFormatoSolicitud().name() : null,
+                        solicitudExtraService.admitePreguntas(p),
+                        Boolean.TRUE.equals(p.getRequiereDireccion()),
+                        Boolean.TRUE.equals(p.getCiudadEsDePrueba())))
                 .toList();
     }
 
@@ -81,6 +86,9 @@ public class ProcesoService {
                 .valor(req.valor())
                 .diasHabilesEntrega(req.diasHabilesEntrega() != null ? req.diasHabilesEntrega() : 5)
                 .aplicaPrecioCiudad(Boolean.TRUE.equals(req.aplicaPrecioCiudad()))
+                .requiereHojaVida(req.requiereHojaVida() == null || req.requiereHojaVida())
+                .requiereDireccion(Boolean.TRUE.equals(req.requiereDireccion()))
+                .ciudadEsDePrueba(Boolean.TRUE.equals(req.ciudadEsDePrueba()))
                 .puntosClave(unirPuntosClave(req.puntosClave()))
                 .activo(true)
                 .build();
@@ -103,6 +111,9 @@ public class ProcesoService {
         proceso.setValor(req.valor());
         if (req.diasHabilesEntrega() != null) proceso.setDiasHabilesEntrega(req.diasHabilesEntrega());
         proceso.setAplicaPrecioCiudad(Boolean.TRUE.equals(req.aplicaPrecioCiudad()));
+        if (req.requiereHojaVida() != null) proceso.setRequiereHojaVida(req.requiereHojaVida());
+        if (req.requiereDireccion() != null) proceso.setRequiereDireccion(req.requiereDireccion());
+        if (req.ciudadEsDePrueba() != null) proceso.setCiudadEsDePrueba(req.ciudadEsDePrueba());
         proceso.setPuntosClave(unirPuntosClave(req.puntosClave()));
         log.info("Proceso actualizado: {}", proceso.getNombreProceso());
         notificacionService.crearParaAdmins("CATALOGO", "Proceso actualizado",
@@ -276,7 +287,8 @@ public class ProcesoService {
                 p.getIdProceso(), p.getNombreProceso(), p.getDescripcion(),
                 p.getActivo(), totalPasos, clsf, p.getValor(), valorCalculado,
                 p.getDiasHabilesEntrega(), listarTramos(p.getIdProceso()),
-                p.getAplicaPrecioCiudad(), listarPreciosCiudad(p.getIdProceso()),
+                p.getAplicaPrecioCiudad(), !Boolean.FALSE.equals(p.getRequiereHojaVida()),
+                Boolean.TRUE.equals(p.getRequiereDireccion()), Boolean.TRUE.equals(p.getCiudadEsDePrueba()), listarPreciosCiudad(p.getIdProceso()),
                 separarPuntosClave(p.getPuntosClave()),
                 pesos.suma(), pesos.califica(), pesos.motivo(),
                 p.getCriticidadDefecto().name(), p.getCoberturaMinima()

@@ -33,7 +33,7 @@ class FormularioPlantillaWordServiceValidacionTest {
     private final CandidatoInfoService candidatoInfoService =
             new CandidatoInfoService(Mockito.mock(CiudadRepository.class), hojaVidaEvaluadoRepository);
     private final FormularioPlantillaWordService service =
-            new FormularioPlantillaWordService(candidatoInfoService, null);
+            new FormularioPlantillaWordService(candidatoInfoService, null, null);
 
     @Test
     @DisplayName("Cada fila de la tabla fija lleva SU propio valor de validación, no el de otra fila")

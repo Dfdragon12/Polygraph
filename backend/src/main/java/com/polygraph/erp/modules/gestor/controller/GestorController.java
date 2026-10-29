@@ -37,6 +37,7 @@ public class GestorController {
 
     private final GestorService gestorService;
     private final SolicitudService solicitudService;
+    private final com.polygraph.erp.modules.solicitudes.service.CancelacionSolicitudService cancelacionSolicitudService;
     private final ReversionSolicitudService reversionSolicitudService;
     private final UsuarioRepository usuarioRepository;
     private final ClienteAdminService clienteAdminService;
@@ -46,12 +47,24 @@ public class GestorController {
         return ResponseEntity.ok(gestorService.obtenerDashboard(resolverIdGestor(auth)));
     }
 
+    /** Conteos agrupados para las gráficas del tablero (solicitudes por semana, entregas,
+     *  carga por cliente y por estudio) — solo de sus clientes. */
+    @GetMapping("/dashboard/graficas")
+    public ResponseEntity<com.polygraph.erp.modules.gestor.dto.GraficasGestorResponse> graficas(Authentication auth) {
+        return ResponseEntity.ok(gestorService.obtenerGraficas(resolverIdGestor(auth)));
+    }
+
     @GetMapping("/solicitudes")
     public ResponseEntity<Page<SolicitudGestorResponse>> listar(
             @RequestParam(required = false) String estado,
+            // Texto del buscador: busca en TODAS las solicitudes del gestor, no solo en la página
+            @RequestParam(required = false) String q,
+            // uno o varios, separados por coma (ej. ENTREGADA_A_TIEMPO,ENTREGADA_TARDE)
+            @RequestParam(required = false) java.util.List<com.polygraph.erp.shared.enums.EstadoTiempo> estadoTiempo,
+            @RequestParam(required = false) String orden,
             @PageableDefault(size = 20, sort = "fechaSolicitud") Pageable pageable,
             Authentication auth) {
-        return ResponseEntity.ok(gestorService.listarSolicitudes(resolverIdGestor(auth), estado, pageable));
+        return ResponseEntity.ok(gestorService.listarSolicitudes(resolverIdGestor(auth), estado, q, estadoTiempo, orden, pageable));
     }
 
     @GetMapping("/solicitudes/conteo")
@@ -75,15 +88,26 @@ public class GestorController {
             @PathVariable Integer id,
             @Valid @RequestBody CambioEstadoRequest request,
             Authentication auth) {
-        solicitudService.cambiarEstado(id, request, (UserDetails) auth.getPrincipal());
+        cancelacionSolicitudService.cambiarEstado(id, request, (UserDetails) auth.getPrincipal());
+        return ResponseEntity.noContent().build();
+    }
+
+    /** El candidato desistió: cancela lo que no ha iniciado y deja seguir lo iniciado (SE-02). */
+    @PostMapping("/solicitudes/{id}/desistimiento")
+    public ResponseEntity<Void> desistimiento(
+            @PathVariable Integer id,
+            @Valid @RequestBody com.polygraph.erp.modules.solicitudes.dto.DesistimientoRequest request,
+            Authentication auth) {
+        cancelacionSolicitudService.registrarDesistimiento(id, request, (UserDetails) auth.getPrincipal());
         return ResponseEntity.noContent().build();
     }
 
     @PatchMapping("/solicitudes/{id}/ciudad")
     public ResponseEntity<SolicitudDetalleResponse> corregirCiudad(
             @PathVariable Integer id,
-            @Valid @RequestBody CorregirCiudadRequest request) {
-        return ResponseEntity.ok(solicitudService.corregirCiudadCandidato(id, request.idCiudad()));
+            @Valid @RequestBody CorregirCiudadRequest request,
+            Authentication auth) {
+        return ResponseEntity.ok(solicitudService.corregirCiudadCandidato(id, request.idCiudad(), (UserDetails) auth.getPrincipal()));
     }
 
     @PostMapping("/solicitudes/{id}/solicitar-reversion")

@@ -64,6 +64,27 @@ class TipoNovedadServiceTest {
     }
 
     @Test
+    @DisplayName("Un tipo puede detener el reloj de la solicitud e indicar de quién es la causa; por defecto ni lo detiene ni es de nadie más que Polygraph")
+    void crearTipo_pausaRelojEImputable() {
+        CategoriaNovedad c = CategoriaNovedad.builder().idCategoriaNovedad(1).clave("OTRA").nombre("Otras").color("gray").build();
+        when(categoriaRepository.findById(1)).thenReturn(Optional.of(c));
+        when(tipoRepository.existsByClave(any())).thenReturn(false);
+        when(tipoRepository.findAll()).thenReturn(List.of());
+        when(tipoRepository.save(any(TipoNovedad.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        var conPausa = service.crearTipo(new TipoNovedadRequest(1, "Candidato pidió reprogramar", Set.of("POLIGRAFISTA"), null, null, null, true, "CANDIDATO"));
+        assertThat(conPausa.pausaReloj()).isTrue();
+        assertThat(conPausa.imputableA()).isEqualTo("CANDIDATO");
+
+        var porDefecto = service.crearTipo(new TipoNovedadRequest(1, "Otra", Set.of("POLIGRAFISTA"), null, null));
+        assertThat(porDefecto.pausaReloj()).isFalse();
+        assertThat(porDefecto.imputableA()).isEqualTo("POLYGRAPH");
+
+        assertThatThrownBy(() -> service.crearTipo(new TipoNovedadRequest(1, "Mala causa", Set.of("POLIGRAFISTA"), null, null, null, false, "VECINO")))
+                .isInstanceOf(ApiException.class);
+    }
+
+    @Test
     @DisplayName("Un rol que no ejecuta subprocesos (gestor) no se acepta")
     void crearTipo_rolNoEjecutor_400() {
         CategoriaNovedad c = CategoriaNovedad.builder().idCategoriaNovedad(1).clave("OTRA").nombre("Otras").color("gray").build();

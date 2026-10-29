@@ -1,16 +1,21 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useId, Fragment } from 'react'
+import { asociarEtiqueta } from '../../utils/asociarEtiqueta'
 import { Link, useLocation, useParams, useNavigate } from 'react-router-dom'
 import formulariosService from '../../services/formulariosService'
+import trabajoService, { esperarTrabajo, guardarBlob, mensajeDeError } from '../../services/trabajoService'
 import asignacionService from '../../services/asignacionService'
 import riesgoService from '../../services/riesgoService'
-import { ChipNivel } from '../../components/RiesgoServicio'
+import hallazgosService, { etiquetaHallazgo } from '../../services/hallazgosService'
+import { ChipNivel, SinCalificar } from '../../components/RiesgoServicio'
 import Toast from '../../components/Toast'
 import TablaHojaVidaEditable from '../../components/TablaHojaVidaEditable'
 import NovedadesSubproceso from '../../components/NovedadesSubproceso'
+import SoportesInforme from '../../components/SoportesInforme'
 import FichaCandidato from '../../components/FichaCandidato'
 import { ConfirmModal } from '../../components/ui/Modal'
 import CiudadSelect from '../../components/CiudadSelect'
 import BarrioSelect from '../../components/BarrioSelect'
+import SelectorMotivo, { motivoIncompleto, MOTIVO_VACIO } from '../../components/SelectorMotivo'
 
 // Compartida entre analista, poligrafista y visitador — mismo formulario universal para
 // cualquier subproceso, solo cambia el texto/ruta de "volver" según en cuál portal se abrió (cada
@@ -49,25 +54,28 @@ const inputCls = "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm foc
 // igual en los dos lados (quien arma la plantilla y quien la llena).
 const ICONO_TIPO_DATO = { TEXTO: 'Aa', NUMERO: '#', FECHA: '📅', BOOLEANO: '✓', LISTA: '▾', ARCHIVO: '📎', CIUDAD: '📍', BARRIO: '🏘' }
 
-function Campo({ label, tipoDato, automatico, children }) {
+function Campo({ label, tipoDato, automatico, calculado, obligatorio, children }) {
+  const id = useId()
   return (
     <div>
       {label && label.trim() && (
-        <label className="flex items-center gap-1.5 text-xs font-medium text-gray-600 mb-1 print:font-semibold">
+        <label htmlFor={id} className="flex items-start gap-1.5 text-xs font-medium text-gray-600 mb-1 print:font-semibold">
           {tipoDato && (
-            <span className="flex-shrink-0 w-4 h-4 rounded bg-gray-100 text-gray-400 text-[9px] flex items-center justify-center print:hidden">
+            <span className="flex-shrink-0 mt-px w-4 h-4 rounded bg-gray-100 text-gray-400 text-[9px] flex items-center justify-center print:hidden">
               {ICONO_TIPO_DATO[tipoDato] ?? ''}
             </span>
           )}
-          <span className="truncate">{label}</span>
+          <span className="min-w-0 break-words leading-snug">{label}</span>
+          {obligatorio && <span className="text-red-500" title="Obligatorio">*</span>}
           {automatico && (
-            <span className="flex-shrink-0 text-[9px] font-semibold px-1 py-0.5 rounded bg-primary-50 text-primary-500 print:hidden">
-              auto
+            <span className="flex-shrink-0 text-[9px] font-semibold px-1 py-0.5 rounded bg-primary-50 text-primary-500 print:hidden"
+              title={calculado ? 'Lo calcula el sistema' : 'Dato que se llena solo'}>
+              {calculado ? 'calculado' : 'auto'}
             </span>
           )}
         </label>
       )}
-      {children}
+      {asociarEtiqueta(children, { id })}
     </div>
   )
 }
@@ -188,7 +196,61 @@ function CampoArchivo({ idServicioSubproceso, value, onChange, onError, disabled
   )
 }
 
-function InputPorTipo({ tipoDato, value, opciones, onChange, idServicioSubproceso, onError, disabled }) {
+// Texto que crece solo con lo escrito (sin barra de desplazamiento), con la ortografía del
+// navegador en español y el contador "Llevas 250 de 500 caracteres" contra el máximo del campo (V209).
+// Se vuelve a medir cuando aparece en pantalla (el formulario muestra una sección a la vez y,
+// medido escondido, quedaba sin altura) y cada vez que se escribe.
+function TextoAjustable({ value, onChange, disabled, maxLength }) {
+  const ref = useRef(null)
+  const texto = value ?? ''
+  const ajustar = () => {
+    const el = ref.current
+    if (!el || el.offsetParent === null) return // escondido: se mide al aparecer
+    el.style.height = 'auto'
+    el.style.height = `${Math.max(el.scrollHeight + 2, 40)}px`
+  }
+  useEffect(ajustar, [texto])
+  useEffect(() => {
+    const el = ref.current
+    if (!el || typeof ResizeObserver === 'undefined') return undefined
+    let ancho = 0
+    // Solo cuando cambia el ancho (al aparecer la sección o al cambiar la ventana): medir cambia la
+    // altura y no debe volver a disparar la medición.
+    const obs = new ResizeObserver(([e]) => {
+      const nuevo = Math.round(e.contentRect.width)
+      if (nuevo !== ancho) { ancho = nuevo; requestAnimationFrame(ajustar) }
+    })
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [])
+  const total = texto.length
+  const pct = maxLength ? Math.min(100, Math.round((total / maxLength) * 100)) : 0
+  const tono = !maxLength ? 'text-gray-400' : pct >= 100 ? 'text-red-600' : pct >= 90 ? 'text-amber-600' : 'text-gray-400'
+  const barra = pct >= 100 ? 'bg-red-500' : pct >= 90 ? 'bg-amber-500' : 'bg-primary-500'
+  return (
+    <div>
+      <textarea ref={ref} rows={1} value={texto} onChange={e => onChange(e.target.value)} onFocus={ajustar} disabled={disabled}
+        maxLength={maxLength || undefined} spellCheck lang="es" autoCorrect="on"
+        style={{ minHeight: 40 }}
+        className={`${inputCls} block resize-none overflow-hidden leading-relaxed`} />
+      {!disabled && (
+        <div className="mt-1 flex items-center justify-end gap-2 print:hidden">
+          {maxLength && (
+            <span className="h-1 w-16 overflow-hidden rounded-full bg-gray-100">
+              <span className={`block h-full rounded-full transition-all ${barra}`} style={{ width: `${pct}%` }} />
+            </span>
+          )}
+          <span className={`text-[11px] tabular-nums ${tono}`}>
+            Llevas <b className="font-semibold">{total.toLocaleString('es-CO')}</b>
+            {maxLength ? <> de {maxLength.toLocaleString('es-CO')}</> : null} caracteres
+          </span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function InputPorTipo({ tipoDato, value, opciones, onChange, idServicioSubproceso, onError, disabled, etiquetas, maxLength }) {
   if (tipoDato === 'ARCHIVO') {
     return <CampoArchivo idServicioSubproceso={idServicioSubproceso} value={value} onChange={onChange} onError={onError} disabled={disabled} />
   }
@@ -204,11 +266,17 @@ function InputPorTipo({ tipoDato, value, opciones, onChange, idServicioSubproces
     return <BarrioSelect valueType="nombre" value={value} onChange={onChange} className={inputCls} disabled={disabled} />
   }
   if (tipoDato === 'LISTA') {
+    const elegida = value ? (etiquetas?.[value] ?? value) : ''
     return (
-      <select value={value ?? ''} onChange={e => onChange(e.target.value)} disabled={disabled} className={inputCls}>
-        <option value="">—</option>
-        {(opciones ?? []).map(o => <option key={o} value={o}>{o}</option>)}
-      </select>
+      <>
+        <select value={value ?? ''} onChange={e => onChange(e.target.value)} disabled={disabled} className={inputCls} title={elegida || undefined}>
+          <option value="">—</option>
+          {(opciones ?? []).filter(o => !(etiquetas && o === '—')).map(o => <option key={o} value={o}>{etiquetas?.[o] ?? o}</option>)}
+        </select>
+        {elegida.length > 40 && (
+          <p className="mt-1 px-1 text-xs leading-snug text-gray-600 break-words print:hidden">{elegida}</p>
+        )}
+      </>
     )
   }
   if (tipoDato === 'BOOLEANO') {
@@ -226,7 +294,7 @@ function InputPorTipo({ tipoDato, value, opciones, onChange, idServicioSubproces
   if (tipoDato === 'NUMERO') {
     return <input type="number" value={value ?? ''} onChange={e => onChange(e.target.value)} disabled={disabled} className={inputCls} />
   }
-  return <input type="text" value={value ?? ''} onChange={e => onChange(e.target.value)} disabled={disabled} className={inputCls} />
+  return <TextoAjustable value={value} onChange={onChange} disabled={disabled} maxLength={maxLength} />
 }
 
 // Aparece debajo de una respuesta CRÍTICA (ver ColumnaResponse.opcionesCriticas): quien diligencia
@@ -239,7 +307,7 @@ function JustificacionCritica({ valor, onChange, disabled }) {
       <p className={`text-[11px] font-medium mb-1 ${vacia ? 'text-red-700' : 'text-amber-800'}`}>
         Esta respuesta es determinante: explica en qué te basas{vacia ? ' (obligatorio para enviar)' : ''}.
       </p>
-      <textarea value={valor ?? ''} onChange={e => onChange(e.target.value)} disabled={disabled} rows={2} maxLength={2000}
+      <textarea aria-label="Motivo de la novedad" value={valor ?? ''} onChange={e => onChange(e.target.value)} disabled={disabled} rows={2} maxLength={2000} spellCheck lang="es"
         placeholder="Ej: El certificado no tiene firma ni sello del empleador; la empresa no reconoce al candidato."
         className="w-full border border-gray-200 bg-white rounded-md px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-amber-400 disabled:bg-gray-50" />
     </div>
@@ -359,6 +427,32 @@ function IconoBandera() {
 }
 
 // Anillo de avance del encabezado — porcentaje por secciones (ver porcentajeTotal).
+/** Solo en secciones que el administrador dejó como OPCIONALES (V212). */
+function BotonQuitarSeccion({ onClick }) {
+  return (
+    <button type="button" onClick={onClick} title="Esta sección no aplica para este caso"
+      className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-500 hover:border-red-200 hover:bg-red-50 hover:text-red-600 transition-colors">
+      <IconoPapelera /> Quitar sección
+    </button>
+  )
+}
+
+/** Lo que se ve en el paso de una sección que quien diligencia quitó. */
+function SeccionQuitada({ nombre, onAgregar, disabled }) {
+  return (
+    <section className="rounded-2xl border border-dashed border-gray-300 bg-gray-50/60 p-6 text-center">
+      <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 line-through">{nombre}</p>
+      <p className="mt-2 text-sm text-gray-600">Quitaste esta sección: no se diligencia y no saldrá en el informe.</p>
+      {!disabled && (
+        <button type="button" onClick={onAgregar}
+          className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-primary-200 bg-white px-3 py-1.5 text-xs font-semibold text-primary-700 hover:bg-primary-50">
+          <IconoMas /> Volver a agregarla
+        </button>
+      )}
+    </section>
+  )
+}
+
 function AnilloAvance({ porcentaje }) {
   const radio = 26
   const circunferencia = 2 * Math.PI * radio
@@ -379,8 +473,10 @@ function AnilloAvance({ porcentaje }) {
 // Estado del subproceso en palabras de quien lo ve (pill de la franja del encabezado).
 const ESTADO_SUBPROCESO = {
   PENDIENTE:  { etiqueta: 'Pendiente',          punto: 'bg-gray-400' },
-  ASIGNADO:   { etiqueta: 'En curso',           punto: 'bg-primary-500' },
-  COMPLETADO: { etiqueta: 'Enviado a revisión', punto: 'bg-amber-500' },
+  PROGRAMANDO: { etiqueta: 'Programando', punto: 'bg-sky-500' },
+  REPROGRAMADO: { etiqueta: 'Reprogramado', punto: 'bg-orange-500' },
+  EN_EJECUCION:   { etiqueta: 'En curso',           punto: 'bg-primary-500' },
+  FINALIZADO: { etiqueta: 'Enviado a revisión', punto: 'bg-amber-500' },
   PUBLICADO:  { etiqueta: 'Aprobado',           punto: 'bg-green-500' },
   CANCELADO:  { etiqueta: 'Cancelado',          punto: 'bg-red-500' },
 }
@@ -510,6 +606,12 @@ function FranjaRiesgo({ riesgo, tablas }) {
           <p className="text-xs text-gray-400">Su plantilla no suma puntos</p>
         ) : riesgo.estado === 'NO_REALIZADO' ? (
           <p className="text-sm font-medium text-gray-500">No realizado</p>
+        ) : riesgo.calculado === false || !riesgo.nivel ? (
+          // Sin puntaje calculado: nunca «BAJO 0»
+          <div className="mt-0.5">
+            <SinCalificar motivo={riesgo.motivoSinCalcular} />
+            {riesgo.motivoSinCalcular && <p className="text-[11px] text-gray-500 mt-1">{riesgo.motivoSinCalcular}</p>}
+          </div>
         ) : (
           <div className="flex flex-wrap items-center gap-2 mt-0.5">
             <ChipNivel nivel={riesgo.nivel} />
@@ -629,16 +731,16 @@ function TiempoEjecucion({ meta }) {
   }, [])
 
   const inicioIso = meta?.fechaProgramada ?? meta?.fechaAsignacion
-  if (!inicioIso || !['ASIGNADO', 'COMPLETADO', 'PUBLICADO'].includes(meta?.estado)) return null
+  if (!inicioIso || !['EN_EJECUCION', 'FINALIZADO', 'PUBLICADO'].includes(meta?.estado)) return null
   const inicio = new Date(inicioIso).getTime()
   const estimado = meta?.duracionEstimadaMinutos ?? null
   const desdeTexto = meta?.fechaProgramada ? 'programado' : 'asignado'
   const fechaInicioTexto = new Date(inicioIso).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })
 
   let chip
-  if (meta.estado === 'ASIGNADO' && ahora < inicio) {
+  if (meta.estado === 'EN_EJECUCION' && ahora < inicio) {
     chip = { clase: 'bg-gray-100 text-gray-600', texto: `Inicia en ${formatoDuracion((inicio - ahora) / 60000)}` }
-  } else if (meta.estado === 'ASIGNADO') {
+  } else if (meta.estado === 'EN_EJECUCION') {
     const transcurrido = (ahora - inicio) / 60000
     if (estimado && transcurrido > estimado) {
       chip = { clase: 'bg-red-50 text-red-700 ring-1 ring-red-200',
@@ -660,7 +762,7 @@ function TiempoEjecucion({ meta }) {
     const [y, m, d] = meta.fechaEntregaEstimada.split('-').map(Number)
     const finEntrega = new Date(y, m - 1, d, 23, 59, 59).getTime()
     const texto = new Date(y, m - 1, d).toLocaleDateString('es-CO', { day: '2-digit', month: 'short' })
-    const vencida = meta.estado === 'ASIGNADO' && ahora > finEntrega
+    const vencida = meta.estado === 'EN_EJECUCION' && ahora > finEntrega
     entrega = vencida
       ? { clase: 'text-red-600 font-medium', texto: `Entrega al cliente vencida (${texto})` }
       : { clase: 'text-gray-500', texto: `Entrega al cliente: ${texto}` }
@@ -696,15 +798,30 @@ export default function Formulario() {
   const [completando, setCompletando] = useState(false)
   const [aprobando, setAprobando] = useState(false)
   const [devolviendo, setDevolviendo] = useState(false)
-  const [observacionDevolver, setObservacionDevolver] = useState('')
+  const [motivoDevolver, setMotivoDevolver] = useState(MOTIVO_VACIO)
   const [enviandoDevolver, setEnviandoDevolver] = useState(false)
   const [toast, setToast] = useState(null)
   const [meta, setMeta] = useState(null)
   const [riesgo, setRiesgo] = useState(null)
   const [secciones, setSecciones] = useState([])
+  // Secciones OPCIONALES que quien diligencia quitó (V212): no se llenan ni salen en el informe.
+  const [omitidas, setOmitidas] = useState(() => new Set())
+  const [quitando, setQuitando] = useState(null) // { idSeccion, nombre } mientras se confirma
+  // Nombre y puntos de cada hallazgo, para las listas de los campos de hallazgo.
+  const [etiquetasHallazgo, setEtiquetasHallazgo] = useState({})
+  useEffect(() => {
+    hallazgosService.listar().then(l => setEtiquetasHallazgo(Object.fromEntries(l.map(h => [h.codigo, etiquetaHallazgo(h)]))))
+      .catch(() => setEtiquetasHallazgo({}))
+  }, [])
+  const etiquetasDe = (c) => (c.calificacion?.uso === 'HALLAZGO' ? etiquetasHallazgo : undefined)
+  // Inicio del contenido del paso: al cambiar de sección se lleva la vista aquí (la página se
+  // desplaza dentro del panel, no en la ventana, así que window.scrollTo no servía).
+  const inicioContenido = useRef(null)
   const [hojaVidaCandidato, setHojaVidaCandidato] = useState(null)
   const [paso, setPaso] = useState(0)
   const [generandoPdf, setGenerandoPdf] = useState(false)
+  const abortoPdfRef = useRef(null)
+  useEffect(() => () => abortoPdfRef.current?.abort(), [])
   // Cambios hechos por el usuario que todavía no se guardaron — controla tanto el resaltado del
   // botón "Guardar" como el disparador del guardado automático (ver autoguardadoActivo abajo).
   const [sucio, setSucio] = useState(false)
@@ -778,12 +895,18 @@ export default function Formulario() {
           fechaCompletado: r.fechaCompletado,
           duracionEstimadaMinutos: r.duracionEstimadaMinutos,
           fechaEntregaEstimada: r.fechaEntregaEstimada,
+          avisoCalculo: r.avisoCalculo ?? null,
+          avisosFormulario: r.avisosFormulario ?? [],
+          criticidadDeSolicitud: r.criticidadDeSolicitud ?? false,
         })
         const seccionesEditables = (r.secciones ?? []).map(s => ({
           idSeccion: s.idSeccion,
           nombre: s.nombre,
           tipo: s.tipo,
           orden: s.orden,
+          calculada: !!s.calculada,
+          opcional: !!s.opcional,
+          grupo: s.grupo ?? null,
           columnas: s.columnas,
           valores: { ...s.valores },
           justificaciones: { ...(s.justificaciones ?? {}) },
@@ -811,6 +934,7 @@ export default function Formulario() {
             }),
           }))
         setSecciones([...seccionesEditables, ...seccionesValidacionFija])
+        setOmitidas(new Set([...(r.secciones ?? []), ...(r.tablasFijas ?? [])].filter(s => s.omitida).map(s => s.idSeccion)))
         // Las tablas de hoja de vida (referencias, educación...) se editan directo contra el
         // registro real del candidato — se cargan aparte, con los id reales de cada fila, para
         // que TablaHojaVidaEditable pueda guardarlas.
@@ -851,8 +975,9 @@ export default function Formulario() {
 
   const progresoSeccion = (s) => {
     if (s.tipo !== 'CAMPOS') return null
-    const total = s.columnas.length
-    const llenos = s.columnas.filter(c => tieneValor(s.valores[c.idColumna])).length
+    const manuales = s.columnas.filter(c => !c.automatico)
+    const total = manuales.length
+    const llenos = manuales.filter(c => tieneValor(s.valores[c.idColumna])).length
     return { llenos, total }
   }
 
@@ -866,12 +991,17 @@ export default function Formulario() {
     ...(meta?.tablasFijas ?? []).map(t => ({ tipo: 'fija', orden: t.orden ?? 0, key: `t-${t.idSeccion}`, data: t })),
   ].sort((a, b) => a.orden - b.orden)
 
+  // Grupo con el que el administrador clasificó la sección (null = sin grupo).
+  const grupoDe = (bloque) => bloque?.data?.grupo ?? null
+
   const nombreDe = (bloque) => bloque?.tipo === 'fija' ? bloque.data.nombre : bloque?.data.nombre ?? ''
 
   // Estado de cada paso para el índice lateral: 'completo' | 'parcial' | 'vacio', con un texto
   // corto de detalle. CAMPOS = cuántos campos tienen valor; TABLA/hoja de vida = cuántos
   // registros tiene. Solo es una señal visual, no bloquea la navegación.
   const estadoBloque = (bloque) => {
+    // Quitada por quien diligencia: no es trabajo pendiente ni cuenta en el avance.
+    if (omitidas.has(bloque.data.idSeccion)) return { estado: 'completo', fraccion: null, detalle: 'Quitada' }
     if (bloque.tipo === 'fija') {
       const tabla = (hojaVidaCandidato?.tablas ?? []).find(t => t.clave === bloque.data.clave)
       const n = (tabla?.filas ?? []).length
@@ -887,6 +1017,8 @@ export default function Formulario() {
         detalle: `${p.llenos}/${p.total} campos`,
       }
     }
+    // Tabla que arma el sistema (ej. hallazgos): no es trabajo pendiente de quien diligencia.
+    if (s.calculada) return { estado: 'completo', fraccion: null, detalle: 'La arma el sistema' }
     const n = s.filas.length
     return { estado: n > 0 ? 'completo' : 'vacio', fraccion: n > 0 ? 1 : 0, detalle: n > 0 ? `${n} fila${n === 1 ? '' : 's'}` : 'Sin filas' }
   }
@@ -905,6 +1037,8 @@ export default function Formulario() {
   // 3..N+2 = secciones de la plantilla (bloque idx -> paso idx + PRIMER_BLOQUE) y, solo para quien
   // diligencia, un último paso "Revisión y envío" donde se revisa qué falta y se completa.
   const esEjecutor = ['analista', 'poligrafista', 'visitador'].includes(prefijo)
+  // NS-07: la criticidad del cargo la eligió el cliente al solicitar; solo el gestor (o el admin) la cambia.
+  const criticidadBloqueada = (c) => c.calificacion?.uso === 'CRITICIDAD' && !!meta?.criticidadDeSolicitud && !['gestor', 'admin'].includes(prefijo)
   const PASO_NOVEDADES = 0
   const PASO_CANDIDATO = 1
   const PASO_SOPORTES = 2
@@ -912,8 +1046,12 @@ export default function Formulario() {
   const enCandidato = paso === PASO_CANDIDATO
   const enSoportes = paso === PASO_SOPORTES
   const tienePasoEnvio = esEjecutor && bloques.length > 0
-  const pasoEnvio = tienePasoEnvio ? bloques.length + PRIMER_BLOQUE : null
-  const ultimoPaso = tienePasoEnvio ? pasoEnvio : bloques.length + PRIMER_BLOQUE - 1
+  // "Soportes del informe": qué archivos adjuntos saldrán en el informe (todos los roles, después de las secciones).
+  const tienePasoAnexos = bloques.length > 0
+  const pasoAnexos = tienePasoAnexos ? bloques.length + PRIMER_BLOQUE : null
+  const enAnexos = pasoAnexos !== null && paso === pasoAnexos
+  const pasoEnvio = tienePasoEnvio ? bloques.length + PRIMER_BLOQUE + 1 : null
+  const ultimoPaso = tienePasoEnvio ? pasoEnvio : tienePasoAnexos ? pasoAnexos : PRIMER_BLOQUE - 1
   const enNovedades = paso === PASO_NOVEDADES
   const enEnvio = pasoEnvio !== null && paso === pasoEnvio
   const pendientes = bloques.map((b, idx) => ({ b, idx, ...estadoBloque(b) })).filter(x => x.estado !== 'completo')
@@ -925,7 +1063,7 @@ export default function Formulario() {
       : (b.tipo === 'editable' && b.data.idSeccion === sec.idSeccion))
     return idx >= 0 ? idx + PRIMER_BLOQUE : null
   }
-  const criticasSinExplicar = secciones.flatMap(sec => {
+  const criticasSinExplicar = secciones.filter(sec => !omitidas.has(sec.idSeccion)).flatMap(sec => {
     const nombreSeccion = sec.nombre || 'Sección'
     const faltan = []
     if (sec.tipo === 'CAMPOS') {
@@ -944,9 +1082,39 @@ export default function Formulario() {
     return faltan
   })
 
+  // Campos obligatorios vacíos — el servidor tampoco deja completar con alguno (camposObligatoriosVacios).
+  const obligatoriosVacios = secciones.filter(sec => !omitidas.has(sec.idSeccion)).flatMap(sec => {
+    const nombreSeccion = sec.nombre || 'Sección'
+    const obligatorias = sec.columnas.filter(c => c.obligatorio && !c.automatico)
+    if (sec.tipo === 'CAMPOS') {
+      return obligatorias.filter(c => !tieneValor(sec.valores[c.idColumna]))
+        .map(c => ({ clave: `o-${sec.idSeccion}-${c.idColumna}`, texto: `${nombreSeccion} › ${c.nombre || c.clave}`, paso: pasoDeSeccion(sec) }))
+    }
+    return obligatorias.filter(c => sec.filas.some(f => !tieneValor(f.valores[c.idColumna])))
+      .map(c => ({ clave: `o-${sec.idSeccion}-${c.idColumna}`, texto: `${nombreSeccion} › ${c.nombre || c.clave}`, paso: pasoDeSeccion(sec) }))
+  })
+
   const irAPaso = (idx) => {
     setPaso(idx)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    requestAnimationFrame(() => {
+      const el = inicioContenido.current
+      if (!el) return
+      // Solo si el inicio quedó fuera de la vista (arriba): así no salta si ya se ve.
+      if (el.getBoundingClientRect().top < 0 || el.getBoundingClientRect().top > window.innerHeight * 0.6) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+    })
+  }
+
+  const quitarSeccion = (idSeccion) => {
+    setOmitidas(prev => new Set([...prev, idSeccion]))
+    setQuitando(null)
+    marcarSucio()
+  }
+
+  const volverAAgregar = (idSeccion) => {
+    setOmitidas(prev => { const n = new Set(prev); n.delete(idSeccion); return n })
+    marcarSucio()
   }
 
   const editarValorCampo = (idSeccion, idColumna, valor) => {
@@ -984,7 +1152,9 @@ export default function Formulario() {
   const agregarFila = (idSeccion) => {
     marcarSucio()
     setSecciones(prev => prev.map(s => s.idSeccion === idSeccion
-      ? { ...s, filas: [...s.filas, { localId: idLocal(), idFila: null, etiqueta: '', valores: {}, justificaciones: {} }] } : s))
+      ? { ...s, filas: [...s.filas, { localId: idLocal(), idFila: null, etiqueta: '',
+          valores: Object.fromEntries(s.columnas.filter(c => c.valorDefecto != null).map(c => [c.idColumna, c.valorDefecto])),
+          justificaciones: {} }] } : s))
   }
 
   const quitarFila = (idSeccion, filaLocalId) => {
@@ -1016,23 +1186,56 @@ export default function Formulario() {
   // partir de la plantilla Word a PDF (ver DocumentoPdfConverter), así que requiere lo mismo:
   // que el formulario esté guardado y que admin/catálogo → Plantilla tenga un .docx con
   // marcadores subido para este tipo de proceso.
+  // 202 + polling: el PDF se genera en la cola del backend (o sale de caché al instante si el
+  // servicio ya está publicado). Se corta el polling si el usuario sale del formulario.
   const descargarPdf = async () => {
     setGenerandoPdf(true)
+    abortoPdfRef.current?.abort()
+    const aborto = new AbortController()
+    abortoPdfRef.current = aborto
     try {
-      const blob = await formulariosService.descargarDocumentoPdf(idServicioSubproceso)
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `formulario-${idServicioSubproceso}.pdf`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      window.URL.revokeObjectURL(url)
+      const inicial = await formulariosService.solicitarDocumentoPdf(idServicioSubproceso)
+      const listo = await esperarTrabajo(inicial, { signal: aborto.signal })
+      const r = await trabajoService.descargarResultado(listo.id)
+      guardarBlob(r, listo.nombreArchivo ?? `formulario-${idServicioSubproceso}.pdf`)
     } catch (err) {
-      mostrarToast(err.response?.data?.mensaje ?? 'No se pudo generar el PDF. Guarda el formulario primero.', 'error')
+      if (err.cancelado) return
+      mostrarToast(mensajeDeError(err, 'No se pudo generar el PDF. Guarda el formulario primero.'), 'error')
     } finally {
-      setGenerandoPdf(false)
+      if (!aborto.signal.aborted) setGenerandoPdf(false)
     }
+  }
+
+  // Después de guardar, el servidor devuelve lo calculado con lo recién guardado (puntaje,
+  // fórmula, semáforo, notas, numeración, tabla de hallazgos — docs/antecedentes, Prompt 4). Solo
+  // se reemplazan las columnas/tablas calculadas: lo que la persona siga escribiendo no se toca.
+  const aplicarCalculados = (r) => {
+    const porId = new Map((r.secciones ?? []).map(s => [s.idSeccion, s]))
+    setSecciones(prev => prev.map(s => {
+      const nueva = porId.get(s.idSeccion)
+      if (!nueva || s.origenFijoClave) return s
+      if (s.calculada) {
+        return { ...s, filas: (nueva.filas ?? []).map(f => ({ localId: idLocal(), idFila: null, etiqueta: f.etiqueta, valores: { ...f.valores }, justificaciones: {} })) }
+      }
+      const calculadas = s.columnas.filter(c => c.calculado).map(c => c.idColumna)
+      if (calculadas.length === 0) return s
+      if (s.tipo === 'CAMPOS') {
+        const valores = { ...s.valores }
+        calculadas.forEach(id => { valores[id] = nueva.valores?.[id] ?? '' })
+        return { ...s, valores }
+      }
+      return {
+        ...s,
+        filas: s.filas.map((f, i) => {
+          const filaNueva = nueva.filas?.[i]
+          if (!filaNueva) return f
+          const valores = { ...f.valores }
+          calculadas.forEach(id => { valores[id] = filaNueva.valores?.[id] ?? '' })
+          return { ...f, valores }
+        }),
+      }
+    }))
+    setMeta(prev => (prev ? { ...prev, avisoCalculo: r.avisoCalculo ?? null, avisosFormulario: r.avisosFormulario ?? [], criticidadDeSolicitud: r.criticidadDeSolicitud ?? false } : prev))
   }
 
   // silencioso = true para el autoguardado (ver más abajo): guarda sin toast de éxito, para no
@@ -1042,17 +1245,18 @@ export default function Formulario() {
     setGuardando(true)
     setError(null)
     try {
-      const payload = secciones.map(s => ({
+      const payload = secciones.filter(s => !omitidas.has(s.idSeccion)).map(s => ({
         idSeccion: s.idSeccion,
         valores: s.tipo === 'CAMPOS' ? s.valores : null,
         justificaciones: s.tipo === 'CAMPOS' ? (s.justificaciones ?? {}) : null,
         filas: s.tipo === 'TABLA' ? s.filas.map(f => ({ etiqueta: f.etiqueta, valores: f.valores, idOrigenFijo: f.idOrigenFijo ?? null, justificaciones: f.justificaciones ?? {} })) : null,
       }))
-      const r = await formulariosService.guardarFormulario(idServicioSubproceso, payload)
+      const r = await formulariosService.guardarFormulario(idServicioSubproceso, payload, [...omitidas])
       // La primera vez que se guarda, el backend recién crea el Formulario (antes idFormulario
       // era null) — sin esto, "Descargar PDF"/"Descargar (.docx)" seguían mostrando "Guarda el
       // formulario primero" después de guardar, hasta recargar la página a mano.
       setMeta(prev => (prev ? { ...prev, idFormulario: r.idFormulario } : prev))
+      aplicarCalculados(r)
       // Si el usuario editó algo MIENTRAS este guardado estaba en camino, ese cambio no viajó en
       // este payload (se armó antes) — se deja "sucio" para que el autoguardado lo recoja en la
       // siguiente vuelta, en vez de marcarlo como guardado sin estarlo.
@@ -1104,16 +1308,17 @@ export default function Formulario() {
   }
 
   const confirmarDevolver = async () => {
-    if (!observacionDevolver.trim()) {
-      mostrarToast('Escribe qué hay que corregir antes de devolverlo.', 'error')
+    const falta = motivoIncompleto(motivoDevolver)
+    if (falta) {
+      mostrarToast(falta, 'error')
       return
     }
     setEnviandoDevolver(true)
     try {
-      await asignacionService.devolver(idServicioSubproceso, observacionDevolver.trim())
+      await asignacionService.devolver(idServicioSubproceso, { idMotivo: motivoDevolver.idMotivo, observacion: motivoDevolver.texto.trim() || null })
       mostrarToast('Subproceso devuelto — ya le llegó la notificación.')
       setDevolviendo(false)
-      setObservacionDevolver('')
+      setMotivoDevolver(MOTIVO_VACIO)
       setTimeout(() => navigate(volver.ruta), 900)
     } catch (err) {
       mostrarToast(err.response?.data?.mensaje ?? 'No se pudo devolver el subproceso.', 'error')
@@ -1301,10 +1506,10 @@ export default function Formulario() {
             </button>
           )}
           {/* Aprobar o devolver revisando de verdad lo diligenciado, aquí mismo. Solo mientras
-              sigue COMPLETADO: una vez PUBLICADO ya no hay nada más que hacer. */}
-          {['gestor', 'programador'].includes(prefijo) && meta?.estado === 'COMPLETADO' && (
+              sigue FINALIZADO: una vez PUBLICADO ya no hay nada más que hacer. */}
+          {['gestor', 'programador'].includes(prefijo) && meta?.estado === 'FINALIZADO' && (
             <>
-              <button type="button" onClick={() => { setDevolviendo(true); setObservacionDevolver('') }}
+              <button type="button" onClick={() => { setDevolviendo(true); setMotivoDevolver(MOTIVO_VACIO) }}
                 className="inline-flex items-center gap-1.5 border border-primary-100 bg-white text-gray-700 hover:bg-primary-50 text-sm font-medium px-3.5 py-2 rounded-lg transition-colors">
                 <IconoDevolver /> Devolver
               </button>
@@ -1319,10 +1524,32 @@ export default function Formulario() {
 
       {/* Lo último que dejó quien coordina: indicaciones al asignar, o el motivo si lo devolvió
           para corrección — antes solo llegaba en la notificación y se perdía de vista. */}
-      {meta?.observacionesAsignacion && meta?.estado === 'ASIGNADO' && (
+      {meta?.observacionesAsignacion && meta?.estado === 'EN_EJECUCION' && (
         <div className="mb-5 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 print:hidden">
           <p className="text-xs font-semibold text-amber-800 mb-0.5">Observación de quien coordina este servicio</p>
           <p className="text-sm text-amber-900 whitespace-pre-line">{meta.observacionesAsignacion}</p>
+        </div>
+      )}
+
+      {meta?.avisoCalculo && !meta?.soloLectura && (
+        <div className="mb-5 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 print:hidden">
+          <p className="text-xs font-semibold text-amber-800 mb-0.5">Todavía no se puede calcular el puntaje</p>
+          <p className="text-sm text-amber-900">{meta.avisoCalculo} El puntaje, el semáforo y la tabla de hallazgos aparecen cuando lo completes.</p>
+        </div>
+      )}
+
+      {(meta?.avisosFormulario ?? []).length > 0 && !meta?.soloLectura && (
+        <div className="mb-5 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 print:hidden">
+          <p className="text-xs font-semibold text-amber-800 mb-1">
+            Revisa {meta.avisosFormulario.length === 1 ? 'esto' : `estos ${meta.avisosFormulario.length} puntos`} antes de enviar (no impide guardar)
+          </p>
+          <ul className="space-y-1">
+            {meta.avisosFormulario.map((a, i) => (
+              <li key={i} className="text-sm text-amber-900">
+                {a.texto} {a.lugar && <span className="text-xs text-amber-700">— {a.lugar}</span>}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
@@ -1350,7 +1577,7 @@ export default function Formulario() {
       <div className="lg:grid lg:grid-cols-[260px_minmax(0,1fr)] lg:gap-6 lg:items-start">
         {/* Índice de pasos — en pantallas pequeñas pasa a una fila horizontal desplazable. */}
         <aside className="mb-4 lg:mb-0 lg:sticky lg:top-4 print:hidden">
-          <nav className="bg-white border border-gray-200 rounded-2xl shadow-sm p-3">
+          <nav className="bg-white border border-gray-200 rounded-2xl shadow-sm p-3 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto overscroll-contain">
             <ol className="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-visible -mx-1 px-1 pb-1 lg:pb-0">
               {/* 1) Novedades — siempre primero */}
               <li className="flex-shrink-0 lg:flex-shrink">
@@ -1411,8 +1638,16 @@ export default function Formulario() {
               {bloques.map((bloque, idx) => {
                 const { estado, detalle } = estadoBloque(bloque)
                 const activo = paso === idx + PRIMER_BLOQUE
+                const grupo = grupoDe(bloque)
+                const grupoNuevo = grupo && grupo !== grupoDe(bloques[idx - 1])
                 return (
-                  <li key={bloque.key} className="flex-shrink-0 lg:flex-shrink">
+                  <Fragment key={bloque.key}>
+                  {grupoNuevo && (
+                    <li aria-hidden="true" className="hidden lg:block px-2.5 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                      {grupo}
+                    </li>
+                  )}
+                  <li className="flex-shrink-0 lg:flex-shrink">
                     <button type="button" onClick={() => irAPaso(idx + PRIMER_BLOQUE)}
                       className={`w-full flex items-center gap-2.5 text-left rounded-xl px-2.5 py-2 transition-colors ${
                         activo ? 'bg-primary-50 ring-1 ring-primary-200' : 'hover:bg-gray-50'}`}>
@@ -1424,17 +1659,36 @@ export default function Formulario() {
                         {estado === 'completo' && !activo ? <IconoCheck /> : idx + 1}
                       </span>
                       <span className="min-w-0">
-                        <span className={`block text-xs font-medium truncate max-w-[160px] lg:max-w-none ${activo ? 'text-primary-700' : 'text-gray-700'}`}>
+                        <span className={`block text-xs font-medium truncate max-w-[160px] lg:max-w-none lg:whitespace-normal lg:break-words lg:leading-snug ${activo ? 'text-primary-700' : 'text-gray-700'} ${omitidas.has(bloque.data.idSeccion) ? 'line-through decoration-gray-400' : ''}`}>
                           {nombreDe(bloque)}
                         </span>
                         <span className="block text-[10px] text-gray-400">{detalle}</span>
                       </span>
                     </button>
                   </li>
+                  </Fragment>
                 )
               })}
 
-              {/* 4) Revisión y envío — solo quien diligencia */}
+              {/* 4) Soportes del informe — qué adjuntos saldrán en el informe */}
+              {tienePasoAnexos && (
+                <li className="flex-shrink-0 lg:flex-shrink lg:mt-1 lg:pt-1 lg:border-t lg:border-gray-100">
+                  <button type="button" onClick={() => irAPaso(pasoAnexos)}
+                    className={`w-full flex items-center gap-2.5 text-left rounded-xl px-2.5 py-2 transition-colors ${
+                      enAnexos ? 'bg-sky-50 ring-1 ring-sky-200' : 'hover:bg-gray-50'}`}>
+                    <span className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center border-2 ${
+                      enAnexos ? 'bg-sky-500 border-sky-500 text-white' : 'bg-white border-sky-300 text-sky-500'}`}>
+                      <IconoClip />
+                    </span>
+                    <span className="min-w-0">
+                      <span className={`block text-xs font-medium ${enAnexos ? 'text-sky-800' : 'text-gray-700'}`}>Soportes del informe</span>
+                      <span className="block text-[10px] text-gray-400">Qué adjuntos salen en el informe</span>
+                    </span>
+                  </button>
+                </li>
+              )}
+
+              {/* 5) Revisión y envío — solo quien diligencia */}
               {esEjecutor && bloques.length > 0 && (
                 <li className="flex-shrink-0 lg:flex-shrink lg:mt-1 lg:pt-1 lg:border-t lg:border-gray-100">
                   <button type="button" onClick={() => irAPaso(pasoEnvio)}
@@ -1457,7 +1711,7 @@ export default function Formulario() {
           </nav>
         </aside>
 
-      <div className="space-y-4 min-w-0">
+      <div ref={inicioContenido} className="space-y-4 min-w-0 scroll-mt-4">
         {/* Pasos fijos (novedades, candidato, soportes) — no se imprimen: el documento impreso es
             solo el formulario. */}
         <div className={`${enNovedades ? 'block' : 'hidden'} print:hidden`}>
@@ -1488,8 +1742,20 @@ export default function Formulario() {
             // vez de bloque.data (la foto estática de cuando se abrió la página), así una fila
             // agregada recién también muestra su etiqueta correcta, no solo las que ya existían.
             const primeraColumnaFija = tabla.columnas?.[0]?.clave
+            if (omitidas.has(bloque.data.idSeccion)) {
+              return (
+                <div key={bloque.key} className={`${visible ? 'block' : 'hidden'} print:hidden`}>
+                  <SeccionQuitada nombre={bloque.data.nombre} disabled={meta?.soloLectura} onAgregar={() => volverAAgregar(bloque.data.idSeccion)} />
+                </div>
+              )
+            }
             return (
               <div key={bloque.key} className={visible ? 'block' : 'hidden print:block'}>
+                {bloque.data.opcional && !meta?.soloLectura && (
+                  <div className="mb-2 flex justify-end print:hidden">
+                    <BotonQuitarSeccion onClick={() => setQuitando({ idSeccion: bloque.data.idSeccion, nombre: bloque.data.nombre })} />
+                  </div>
+                )}
                 <TablaHojaVidaEditable idCandidato={meta.idCandidato} tabla={tabla}
                   onGuardado={actualizado => setHojaVidaCandidato(prev => ({
                     ...prev, tablas: prev.tablas.map(t => t.clave === actualizado.clave ? actualizado : t),
@@ -1519,7 +1785,7 @@ export default function Formulario() {
                               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-3">
                                 {seccionValidacion.columnas.map(c => (
                                   <Campo key={c.idColumna} label={c.nombre} tipoDato={c.tipoDato}>
-                                    <InputPorTipo tipoDato={c.tipoDato} value={f.valores[c.idColumna]} opciones={c.opciones}
+                                    <InputPorTipo tipoDato={c.tipoDato} value={f.valores[c.idColumna]} opciones={c.opciones} etiquetas={etiquetasDe(c)} maxLength={c.longitudMaxima}
                                       onChange={v => editarValorFila(seccionValidacion.idSeccion, f.localId, c.idColumna, v)}
                                       idServicioSubproceso={idServicioSubproceso} onError={m => mostrarToast(m, 'error')}
                                       disabled={meta?.soloLectura} />
@@ -1543,6 +1809,13 @@ export default function Formulario() {
           }
           const s = bloque.data
           const p = progresoSeccion(s)
+          if (omitidas.has(s.idSeccion)) {
+            return (
+              <div key={s.idSeccion} className={`${visible ? 'block' : 'hidden'} print:hidden`}>
+                <SeccionQuitada nombre={s.nombre} disabled={meta?.soloLectura} onAgregar={() => volverAAgregar(s.idSeccion)} />
+              </div>
+            )
+          }
           return (
           <section key={s.idSeccion}
             className={`${visible ? 'block' : 'hidden print:block'} bg-white border border-gray-200 border-l-4 ${ACENTO_TIPO[s.tipo] ?? 'border-l-gray-300'} rounded-2xl shadow-sm p-4
@@ -1555,11 +1828,16 @@ export default function Formulario() {
               <span className={`hidden sm:inline text-[9px] font-semibold px-1.5 py-0.5 rounded-full print:hidden ${CHIP_TIPO[s.tipo] ?? 'bg-gray-100 text-gray-500'}`}>
                 {ETIQUETA_TIPO[s.tipo] ?? s.tipo}
               </span>
-              {p && (
+              {p && p.total > 0 && (
                 <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full print:hidden ${
                   p.llenos === p.total ? 'bg-green-100 text-green-700' : p.llenos > 0 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-400'
                 }`}>
                   {p.llenos}/{p.total}
+                </span>
+              )}
+              {s.opcional && !meta?.soloLectura && (
+                <span className="ml-auto print:hidden">
+                  <BotonQuitarSeccion onClick={() => setQuitando({ idSeccion: s.idSeccion, nombre: s.nombre })} />
                 </span>
               )}
             </div>
@@ -1567,11 +1845,12 @@ export default function Formulario() {
             {s.tipo === 'CAMPOS' ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {s.columnas.map(c => (
-                  <Campo key={c.idColumna} label={c.nombre} tipoDato={c.tipoDato} automatico={!!c.campoCandidato || !!c.campoCliente}>
-                    <InputPorTipo tipoDato={c.tipoDato} value={s.valores[c.idColumna]} opciones={c.opciones}
+                  <Campo key={c.idColumna} label={c.nombre} tipoDato={c.tipoDato} automatico={c.automatico}
+                    calculado={c.calculado} obligatorio={c.obligatorio}>
+                    <InputPorTipo tipoDato={c.tipoDato} value={s.valores[c.idColumna]} opciones={c.opciones} etiquetas={etiquetasDe(c)} maxLength={c.longitudMaxima}
                       onChange={v => editarValorCampo(s.idSeccion, c.idColumna, v)}
                       idServicioSubproceso={idServicioSubproceso} onError={m => mostrarToast(m, 'error')}
-                      disabled={meta?.soloLectura || !!c.campoCandidato || !!c.campoCliente} />
+                      disabled={meta?.soloLectura || c.automatico || criticidadBloqueada(c)} />
                     {esCritica(c, s.valores[c.idColumna]) && (
                       <JustificacionCritica valor={s.justificaciones?.[c.idColumna]} disabled={meta?.soloLectura}
                         onChange={t => editarJustificacionCampo(s.idSeccion, c.idColumna, t)} />
@@ -1582,18 +1861,20 @@ export default function Formulario() {
             ) : (
               <div>
                 {s.filas.length === 0 ? (
-                  <p className="text-xs text-gray-400 bg-gray-50 rounded-xl px-4 py-6 text-center">Todavía no hay filas.</p>
+                  <p className="text-xs text-gray-400 bg-gray-50 rounded-xl px-4 py-6 text-center">
+                    {s.calculada ? 'El sistema arma esta tabla con lo que registres en las demás secciones.' : 'Todavía no hay filas.'}
+                  </p>
                 ) : (
                   <div className="space-y-3">
                     {s.filas.map(f => (
                       <div key={f.localId} className="relative bg-gray-50/70 border border-gray-100 rounded-xl p-4 print:bg-transparent print:border-gray-300">
                         <div className="flex items-center gap-2 mb-3">
-                          <input type="text" value={f.etiqueta}
+                          <input aria-label="Nombre de la fila" type="text" value={f.etiqueta}
                             onChange={e => editarEtiquetaFila(s.idSeccion, f.localId, e.target.value)}
-                            disabled={meta?.soloLectura} placeholder="Nombre de la fila"
+                            disabled={meta?.soloLectura || s.calculada} placeholder="Nombre de la fila"
                             className="flex-1 min-w-0 bg-transparent border-0 border-b border-dashed border-gray-300 focus:border-primary-400 text-sm font-semibold text-gray-700 focus:outline-none px-0 py-1 disabled:border-transparent print:border-none" />
                           <PuntosFila columnas={s.columnas} valores={f.valores} />
-                          {!meta?.soloLectura && puedeEliminar && (
+                          {!meta?.soloLectura && puedeEliminar && !s.calculada && (
                             <button type="button" onClick={() => quitarFila(s.idSeccion, f.localId)} title="Quitar esta fila"
                               className="flex-shrink-0 p-1 rounded-lg text-gray-300 hover:bg-red-50 hover:text-red-500 transition-colors print:hidden">
                               <IconoPapelera />
@@ -1602,11 +1883,12 @@ export default function Formulario() {
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-3">
                           {s.columnas.map(c => (
-                            <Campo key={c.idColumna} label={c.nombre} tipoDato={c.tipoDato} automatico={!!c.campoCandidato || !!c.campoCliente}>
-                              <InputPorTipo tipoDato={c.tipoDato} value={f.valores[c.idColumna]} opciones={c.opciones}
+                            <Campo key={c.idColumna} label={c.nombre} tipoDato={c.tipoDato} automatico={c.automatico}
+                              calculado={c.calculado} obligatorio={c.obligatorio}>
+                              <InputPorTipo tipoDato={c.tipoDato} value={f.valores[c.idColumna]} opciones={c.opciones} etiquetas={etiquetasDe(c)} maxLength={c.longitudMaxima}
                                 onChange={v => editarValorFila(s.idSeccion, f.localId, c.idColumna, v)}
                                 idServicioSubproceso={idServicioSubproceso} onError={m => mostrarToast(m, 'error')}
-                                disabled={meta?.soloLectura || !!c.campoCandidato || !!c.campoCliente} />
+                                disabled={meta?.soloLectura || c.automatico || s.calculada} />
                               {esCritica(c, f.valores[c.idColumna]) && (
                                 <JustificacionCritica valor={f.justificaciones?.[c.idColumna]} disabled={meta?.soloLectura}
                                   onChange={t => editarJustificacionFila(s.idSeccion, f.localId, c.idColumna, t)} />
@@ -1619,7 +1901,7 @@ export default function Formulario() {
                   </div>
                 )}
                 <TotalPuntosTabla columnas={s.columnas} filas={s.filas} />
-                {!meta?.soloLectura && (
+                {!meta?.soloLectura && !s.calculada && (
                   <button type="button" onClick={() => agregarFila(s.idSeccion)}
                     className="w-full mt-3 inline-flex items-center justify-center gap-1.5 text-xs text-violet-600 hover:text-violet-800 font-medium py-2.5 border border-dashed border-violet-200 rounded-xl hover:bg-violet-50/40 transition-colors print:hidden">
                     <IconoMas /> Agregar fila
@@ -1629,6 +1911,13 @@ export default function Formulario() {
             )}
           </section>
         )})}
+
+        {/* Soportes del informe: qué adjuntos saldrán, para todos los roles. */}
+        {tienePasoAnexos && (
+          <div className={`${enAnexos ? 'block' : 'hidden'} print:hidden`}>
+            <SoportesInforme idServicioSubproceso={idServicioSubproceso} secciones={secciones} omitidas={omitidas} />
+          </div>
+        )}
 
         {/* Último paso (solo quien diligencia): revisión de lo que falta + envío. */}
         {esEjecutor && bloques.length > 0 && (
@@ -1650,7 +1939,7 @@ export default function Formulario() {
                     <ul className="divide-y divide-gray-100 border border-gray-100 rounded-xl overflow-hidden">
                       {pendientes.map(({ b, idx, detalle }) => (
                         <li key={b.key} className="flex items-center justify-between gap-3 px-3 py-2 bg-gray-50/50">
-                          <span className="text-sm text-gray-700 min-w-0 truncate">
+                          <span className="text-sm text-gray-700 min-w-0 break-words">
                             <span className="text-gray-400 mr-1.5">{idx + 1}.</span>{nombreDe(b)}
                             <span className="text-[11px] text-gray-400 ml-2">{detalle}</span>
                           </span>
@@ -1666,6 +1955,25 @@ export default function Formulario() {
                     </p>
                   </div>
                 )}
+                {obligatoriosVacios.length > 0 && (
+                  <div className="mt-4 rounded-xl border border-red-200 bg-red-50/60 px-3.5 py-3">
+                    <p className="text-sm font-medium text-red-700">
+                      {obligatoriosVacios.length === 1 ? 'Falta 1 campo obligatorio' : `Faltan ${obligatoriosVacios.length} campos obligatorios`} — no se puede enviar todavía:
+                    </p>
+                    <ul className="mt-2 space-y-1">
+                      {obligatoriosVacios.map(x => (
+                        <li key={x.clave} className="flex items-center justify-between gap-3 text-sm text-red-800">
+                          <span className="min-w-0 break-words">{x.texto}</span>
+                          {x.paso != null && (
+                            <button type="button" onClick={() => irAPaso(x.paso)} className="flex-shrink-0 text-xs font-medium text-red-700 hover:text-red-900 underline">
+                              Ir a llenarlo
+                            </button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 {criticasSinExplicar.length > 0 && (
                   <div className="mt-4 rounded-xl border border-red-200 bg-red-50/60 px-3.5 py-3">
                     <p className="text-sm font-medium text-red-700">
@@ -1675,7 +1983,7 @@ export default function Formulario() {
                     <ul className="mt-2 space-y-1">
                       {criticasSinExplicar.map(x => (
                         <li key={x.clave} className="flex items-center justify-between gap-3 text-sm text-red-800">
-                          <span className="min-w-0 truncate">{x.texto}</span>
+                          <span className="min-w-0 break-words">{x.texto}</span>
                           {x.paso != null && (
                             <button type="button" onClick={() => irAPaso(x.paso)} className="flex-shrink-0 text-xs font-medium text-red-700 hover:text-red-900 underline">
                               Ir a explicarla
@@ -1690,7 +1998,7 @@ export default function Formulario() {
                   <p className="text-[11px] text-gray-400 mr-auto">
                     Al enviarlo se le avisa a quien coordina para que lo apruebe o te lo devuelva.
                   </p>
-                  <button type="button" onClick={completarSubproceso} disabled={completando || !meta?.idFormulario || criticasSinExplicar.length > 0}
+                  <button type="button" onClick={completarSubproceso} disabled={completando || !meta?.idFormulario || criticasSinExplicar.length > 0 || obligatoriosVacios.length > 0}
                     title={!meta?.idFormulario ? 'Guarda el formulario primero' : undefined}
                     className="inline-flex items-center gap-1.5 disabled:opacity-60 text-white text-sm font-medium px-5 py-2 rounded-lg transition-colors shadow-sm bg-green-600 hover:bg-green-700 shadow-green-200">
                     <IconoCheckCompletar /> {completando ? 'Enviando…' : 'Marcar como completado'}
@@ -1709,18 +2017,34 @@ export default function Formulario() {
           {paso < ultimoPaso && (
             <button type="button" onClick={() => irAPaso(paso + 1)}
               className={`inline-flex items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-lg transition-colors shadow-sm ${
-                paso === pasoEnvio - 1
+                pasoEnvio !== null && paso === pasoEnvio - 1
                   ? 'bg-green-600 hover:bg-green-700 text-white'
                   : 'bg-primary-600 hover:bg-primary-700 text-white'}`}>
               {paso === PASO_NOVEDADES ? 'Candidato'
                 : paso === PASO_CANDIDATO ? 'Soportes'
                 : paso === PASO_SOPORTES ? 'Ir al formulario'
-                : paso === pasoEnvio - 1 ? 'Revisión y envío' : 'Siguiente'} <IconoFlechaDer />
+                : paso === pasoAnexos - 1 ? 'Soportes del informe'
+                : pasoEnvio !== null && paso === pasoEnvio - 1 ? 'Revisión y envío' : 'Siguiente'} <IconoFlechaDer />
             </button>
           )}
         </div>
       </div>
       </div>
+      {quitando && (
+        <ConfirmModal
+          titulo={`Quitar "${quitando.nombre}"`}
+          danger
+          confirmLabel="Quitar sección"
+          onConfirmar={() => quitarSeccion(quitando.idSeccion)}
+          onCancelar={() => setQuitando(null)}
+          onClose={() => setQuitando(null)}>
+          <p className="text-sm text-gray-500">
+            Esta sección no aplica para este caso: no la diligencias y no saldrá en el informe. Lo que hayas escrito en
+            ella se borra al guardar. Puedes volver a agregarla mientras no hayas enviado el formulario.
+          </p>
+        </ConfirmModal>
+      )}
+
       {devolviendo && (
         <ConfirmModal
           titulo="Devolver este subproceso"
@@ -1731,11 +2055,10 @@ export default function Formulario() {
           onCancelar={() => setDevolviendo(false)}
           onClose={() => setDevolviendo(false)}>
           <p className="text-sm text-gray-500 mb-3">
-            Vuelve a "Asignado" para la misma persona, con esta observación — le llega una notificación.
+            Vuelve a «En ejecución» para la misma persona, con la marca «Devuelto» y este motivo — le llega una notificación.
           </p>
-          <textarea value={observacionDevolver} onChange={e => setObservacionDevolver(e.target.value)}
-            rows={3} autoFocus placeholder="¿Qué hay que corregir?"
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+          <SelectorMotivo tipo="DEVOLUCION" valor={motivoDevolver} onChange={setMotivoDevolver} etiqueta="Motivo de la devolución"
+            detalle detalleEtiqueta="¿Qué hay que corregir?" autoFocus />
         </ConfirmModal>
       )}
 

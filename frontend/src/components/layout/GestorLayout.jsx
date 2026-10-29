@@ -1,5 +1,5 @@
 import InternalLayout from './InternalLayout'
-import { IconoDashboard, IconoCatalogo, IconoReversion, IconoAgenda } from './IconosNav'
+import { IconoDashboard, IconoCatalogo, IconoReversion, IconoAgenda, IconoCuenta } from './IconosNav'
 
 const SECCIONES = [
   {
@@ -19,6 +19,18 @@ const SECCIONES = [
     titulo: 'Análisis',
     items: [
       { ruta: '/gestor/agenda',        etiqueta: 'Agenda',        icono: <IconoAgenda /> },
+    ],
+  },
+  {
+    titulo: 'Reportes',
+    items: [
+      { ruta: '/gestor/productividad', etiqueta: 'Productividad', icono: <IconoCatalogo /> },
+    ],
+  },
+  {
+    titulo: 'Mi Perfil',
+    items: [
+      { ruta: '/gestor/perfil', etiqueta: 'Mis datos', icono: <IconoCuenta /> },
     ],
   },
 ]

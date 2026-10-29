@@ -15,7 +15,21 @@ public record ColumnaResponse(Integer idColumna, String nombre, String tipoDato,
                                // respuestas se pide una justificación.
                                boolean calificaRiesgo,
                                List<PuntajeOpcion> puntajes,
-                               List<String> opcionesCriticas) {
+                               List<String> opcionesCriticas,
+                               // Ver FormularioColumna: dato del estudio, calculado por el código,
+                               // valor por defecto y obligatorio. automatico = nadie lo diligencia
+                               // (candidato, cliente, estudio o calculado): se muestra de solo lectura.
+                               String campoServicio,
+                               boolean calculado,
+                               String valorDefecto,
+                               boolean obligatorio,
+                               boolean automatico,
+                               // Calificación por hallazgos (V205).
+                               CalificacionColumnaDto calificacion,
+                               // Máximo de caracteres (solo texto): el que se aplica y el que puso el admin
+                               // (null = el de por defecto).
+                               Integer longitudMaxima,
+                               Integer longitudMaximaConfigurada) {
 
     public record PuntajeOpcion(String opcion, java.math.BigDecimal puntos, boolean esCritico) {}
 
@@ -30,6 +44,9 @@ public record ColumnaResponse(Integer idColumna, String nombre, String tipoDato,
                 ? c.getPuntajes().stream().filter(p -> Boolean.TRUE.equals(p.getEsCritico())).map(p -> p.getOpcion()).toList()
                 : List.of();
         return new ColumnaResponse(c.getIdColumna(), c.getNombre(), c.getTipoDato().name(), c.getOrden(),
-                c.getCampoCandidato(), c.getCampoCliente(), c.getClave(), opciones, califica, puntajes, criticas);
+                c.getCampoCandidato(), c.getCampoCliente(), c.getClave(), opciones, califica, puntajes, criticas,
+                c.getCampoServicio(), Boolean.TRUE.equals(c.getCalculado()), c.getValorDefecto(),
+                Boolean.TRUE.equals(c.getObligatorio()), c.esAutomatica(), CalificacionColumnaDto.de(c),
+                c.longitudMaximaEfectiva(), c.getLongitudMaxima());
     }
 }

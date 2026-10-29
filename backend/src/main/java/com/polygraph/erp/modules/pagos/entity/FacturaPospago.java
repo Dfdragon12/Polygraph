@@ -17,6 +17,7 @@ import java.time.LocalDateTime;
  * que PagoWompi (ver {@code TipoConceptoPago.FACTURA_POSPAGO}).
  */
 @Entity
+@jakarta.persistence.EntityListeners(com.polygraph.erp.modules.tiemporeal.CambiosEntityListener.class)
 @Table(name = "facturas_pospago")
 @Data
 @Builder

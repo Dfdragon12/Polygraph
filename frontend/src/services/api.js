@@ -51,9 +51,11 @@ function renovarSesion() {
           return data.token
         })
     }
+    // El .catch evita un "Uncaught (in promise)" en consola: esta promesa derivada nadie la espera,
+    // y el fallo ya lo maneja quien llamó a renovarSesion().
     renovacionEnCurso.finally(() => {
       renovacionEnCurso = null
-    })
+    }).catch(() => {})
   }
   return renovacionEnCurso
 }
@@ -83,7 +85,10 @@ api.interceptors.response.use(
 
     // 401 = sesión inválida/expirada (ver JwtAuthenticationEntryPoint en backend).
     // Se intenta renovar una sola vez por request antes de rendirse.
-    if (response?.status === 401 && config && !config._reintentadoTrasRefresh) {
+    // Un 401 de /auth/login o /auth/refresh es "credenciales incorrectas", no una sesión vencida:
+    // no hay nada que renovar, el formulario muestra el mensaje.
+    const esRutaDeAuth = /\/auth\/(login|refresh|google|forgot-password|reset-password)/.test(config?.url ?? '')
+    if (response?.status === 401 && config && !esRutaDeAuth && !config._reintentadoTrasRefresh) {
       config._reintentadoTrasRefresh = true
       try {
         const nuevoToken = await renovarSesion()

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useId, useEffect, useRef, useState } from 'react'
 import { useCarrito } from '../hooks/useCarrito'
 import pagosService from '../services/pagosService'
 import catalogoService from '../services/catalogoService'
@@ -115,6 +115,7 @@ function SugerenciasAlPagar({ idsEnCarrito, onAgregar }) {
 }
 
 function ModalConfirmarCompra({ onClose, onConfirmar, procesando, codigoCupon, onCambiarCupon, recargosPendientes }) {
+  const idCampos = useId()
   const { items, total, precioUnitario, agregarItem, quitarItem } = useCarrito()
   const [cupon, setCupon] = useState({ estado: 'idle', mensaje: null, montoDescuento: 0, totalConDescuento: null })
   const [verDetalleRecargos, setVerDetalleRecargos] = useState(false)
@@ -240,14 +241,14 @@ function ModalConfirmarCompra({ onClose, onConfirmar, procesando, codigoCupon, o
         )}
 
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1.5">Código de descuento</label>
+          <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1.5">Código de descuento</label>
           <div className="relative">
             <span className={`absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none ${
               cupon.estado === 'valido' ? 'text-green-500' : cupon.estado === 'invalido' ? 'text-red-400' : 'text-gray-300'
             }`}>
               <IconoEtiqueta className="h-4 w-4" />
             </span>
-            <input value={codigoCupon} onChange={(e) => onCambiarCupon(e.target.value.toUpperCase())}
+            <input id={`${idCampos}-1`} value={codigoCupon} onChange={(e) => onCambiarCupon(e.target.value.toUpperCase())}
               placeholder="Ingresa tu código (opcional)"
               className={`w-full border rounded-lg pl-9 pr-9 py-2.5 text-sm font-mono uppercase tracking-wide transition-colors focus:outline-none focus:ring-2 focus:ring-offset-0 ${
                 cupon.estado === 'valido' ? 'border-green-300 bg-green-50/40 focus:ring-green-500'

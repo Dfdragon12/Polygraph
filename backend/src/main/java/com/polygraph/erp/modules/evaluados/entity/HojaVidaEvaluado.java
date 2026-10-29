@@ -9,12 +9,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
+@jakarta.persistence.EntityListeners(com.polygraph.erp.modules.tiemporeal.CambiosEntityListener.class)
 @Table(name = "hoja_vida_evaluado")
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@ToString(exclude = {"candidato", "educacion", "experienciaLaboral", "inactividades", "referencias", "documentos"})
+@ToString(exclude = {"candidato", "educacion", "experienciaLaboral", "inactividades", "referencias", "documentos", "respuestas"})
 public class HojaVidaEvaluado {
 
     @Id
@@ -94,8 +95,27 @@ public class HojaVidaEvaluado {
     @Column(name = "eps", length = 100)
     private String eps;
 
+    /** Teléfono fijo y/o número de WhatsApp (con código de país: +57 300 123 4567). */
     @Column(name = "telefono_fijo", length = 20)
     private String telefonoFijo;
+
+    /** Complemento de la dirección: número de casa, apartamento, torre... */
+    @Column(name = "direccion_adicional", length = 150)
+    private String direccionAdicional;
+
+    /** null = aún no responde. El número (`visa`/`pasaporte`) solo se guarda si respondió Sí. */
+    @Column(name = "tiene_visa")
+    private Boolean tieneVisa;
+
+    @Column(name = "visa_pais", length = 100)
+    private String visaPais;
+
+    @Column(name = "tiene_pasaporte")
+    private Boolean tienePasaporte;
+
+    /** El candidato marcó "No tengo estudios para registrar": la lista de educación va vacía. */
+    @Column(name = "sin_estudios")
+    private Boolean sinEstudios;
 
     @OneToMany(mappedBy = "hojaVidaEvaluado", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
@@ -116,4 +136,10 @@ public class HojaVidaEvaluado {
     @OneToMany(mappedBy = "hojaVidaEvaluado", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<DocumentoEvaluado> documentos = new ArrayList<>();
+
+    /** Declaraciones: respuestas a las preguntas que administra el admin (ItemHojaVida PREGUNTA). */
+    @OneToMany(mappedBy = "hojaVidaEvaluado", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("id")
+    @Builder.Default
+    private List<RespuestaHojaVida> respuestas = new ArrayList<>();
 }

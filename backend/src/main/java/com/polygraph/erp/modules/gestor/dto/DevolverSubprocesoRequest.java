@@ -1,8 +1,9 @@
 package com.polygraph.erp.modules.gestor.dto;
 
-import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 
-/** Gestor/programador devuelve un subproceso COMPLETADO a quien lo diligenció (vuelve a
- *  ASIGNADO) — la observación es obligatoria: sin ella, quien lo recibe de vuelta no sabe qué
- *  corregir. */
-public record DevolverSubprocesoRequest(@NotBlank(message = "Explica qué hay que corregir.") String observacion) {}
+/** Gestor/programador devuelve un subproceso FINALIZADO a quien lo diligenció (vuelve a EN_EJECUCION con la marca
+ *  DEVUELTO). El motivo sale de la lista de devolución (admin); «Otro» exige explicar cuál. La observación aclara qué corregir. */
+public record DevolverSubprocesoRequest(
+        @NotNull(message = "Elige el motivo de la devolución.") Integer idMotivo,
+        String observacion) {}

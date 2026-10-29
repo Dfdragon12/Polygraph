@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -6,6 +6,7 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import BrandShowcase from '../components/BrandShowcase'
 import HeartbeatMonitor from '../components/HeartbeatMonitor'
+import PieLegal from '../components/legal/PieLegal'
 
 const esquema = z.object({
   email: z.string().min(1, 'El email es requerido').email('Email inválido'),
@@ -24,6 +25,7 @@ const RUTA_POR_ROL = {
 }
 
 export default function Login() {
+  const idCampos = useId()
   const { login } = useAuth()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -126,7 +128,7 @@ export default function Login() {
             <h2 className="text-xl font-bold text-gray-900">Bienvenido de nuevo</h2>
             <p className="text-sm text-gray-500 mt-1 mb-7">Ingresa tus credenciales para continuar</p>
 
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" noValidate>
+            <form id="contenido" tabIndex={-1} onSubmit={handleSubmit(onSubmit)} className="space-y-5 focus:outline-none" noValidate>
               {cerradaPorInactividad && !error && (
                 <div className="flex items-start gap-2.5 bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded-lg text-sm slide-up">
                   Tu sesión se cerró por inactividad. Vuelve a iniciar sesión para continuar.
@@ -144,14 +146,14 @@ export default function Login() {
               )}
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label htmlFor={`${idCampos}-1`} className="block text-sm font-medium text-gray-700 mb-1.5">
                   Correo electrónico
                 </label>
                 <div className="relative">
                   <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                   </svg>
-                  <input
+                  <input id={`${idCampos}-1`}
                     type="email"
                     autoComplete="email"
                     {...register('email')}
@@ -168,7 +170,7 @@ export default function Login() {
 
               <div>
                 <div className="flex justify-between items-center mb-1.5">
-                  <label className="block text-sm font-medium text-gray-700">Contraseña</label>
+                  <label htmlFor="login-password" className="block text-sm font-medium text-gray-700">Contraseña</label>
                   <Link to="/recuperar-password" className="text-xs text-gray-500 font-medium hover:text-primary-600 transition-colors">
                     ¿Olvidaste tu contraseña?
                   </Link>
@@ -177,7 +179,7 @@ export default function Login() {
                   <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                   </svg>
-                  <input
+                  <input id="login-password"
                     type={mostrarPassword ? 'text' : 'password'}
                     autoComplete="current-password"
                     {...register('password')}
@@ -233,6 +235,7 @@ export default function Login() {
                 Regístrate aquí
               </Link>
             </p>
+            <PieLegal className="mt-4" />
           </div>
         </div>
       </div>

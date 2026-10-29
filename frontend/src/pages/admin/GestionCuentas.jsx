@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useId, useEffect, useRef, useState } from 'react'
 import gestionCuentasService from '../../services/gestionCuentasService'
 import pospagoService from '../../services/pospagoService'
 import Toast from '../../components/Toast'
@@ -6,7 +6,7 @@ import Paginacion from '../../components/ui/Paginacion'
 import { Modal } from '../../components/ui/Modal'
 import MenuAcciones from '../../components/ui/MenuAcciones'
 
-const POR_PAGINA = 20
+const POR_PAGINA = 10
 
 function formatearPrecio(valor) {
   if (valor == null) return '—'
@@ -77,7 +77,7 @@ function ModalDetallePrepago({ idCliente, nombreCliente, onClose }) {
           <p className="text-sm text-gray-400 text-center py-8">Este cliente no tiene saldo comprado todavía.</p>
         ) : (
           <div className="border border-gray-100 rounded-lg overflow-hidden">
-            <table className="w-full text-xs">
+            <table className="table-stack w-full text-xs">
               <thead className="bg-gray-50 text-gray-500 uppercase">
                 <tr>
                   <th className="px-3 py-2 text-left">Proceso</th>
@@ -109,6 +109,7 @@ function ModalDetallePrepago({ idCliente, nombreCliente, onClose }) {
  * ya tenía el backend: creditoDisponible nunca se edita a mano, solo limiteCredito — el disponible
  * se ajusta solo por el delta para no borrar el consumo que ya llevaba registrado. */
 function ModalDetallePospago({ idCliente, nombreCliente, onClose, onCambio, onToast }) {
+  const idCampos = useId()
   const [detalle, setDetalle] = useState(null)
   const [error, setError] = useState(null)
   const [limiteCredito, setLimiteCredito] = useState('')
@@ -177,16 +178,16 @@ function ModalDetallePospago({ idCliente, nombreCliente, onClose, onCambio, onTo
           {errorForm && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{errorForm}</div>}
 
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Límite de crédito</label>
-            <input type="number" min="0" step="1000" value={limiteCredito} onChange={(e) => setLimiteCredito(e.target.value)}
+            <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">Límite de crédito</label>
+            <input id={`${idCampos}-1`} type="number" min="0" step="1000" value={limiteCredito} onChange={(e) => setLimiteCredito(e.target.value)}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
             <p className="text-[11px] text-gray-400 mt-1">El crédito disponible se ajusta solo, por la diferencia — no borra el consumo ya registrado.</p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Estado de mora</label>
-              <select value={estadoMora} onChange={(e) => setEstadoMora(e.target.value)}
+              <label htmlFor={`${idCampos}-2`} className="block text-xs font-medium text-gray-600 mb-1">Estado de mora</label>
+              <select id={`${idCampos}-2`} value={estadoMora} onChange={(e) => setEstadoMora(e.target.value)}
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
                 <option value="NORMAL">Al día</option>
                 <option value="EN_MORA">En mora</option>
@@ -267,7 +268,7 @@ export default function GestionCuentas() {
             </button>
           ))}
         </div>
-        <input type="search" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder="Buscar por cliente o NIT..."
+        <input aria-label="Buscar por cliente o NIT..." type="search" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder="Buscar por cliente o NIT..."
           className="flex-1 min-w-[220px] max-w-xs border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
       </div>
 
@@ -283,7 +284,7 @@ export default function GestionCuentas() {
             Mostrando {desde}-{hasta} de {total} resultado{total !== 1 ? 's' : ''}
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="table-stack w-full text-sm">
               <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
                 <tr>
                   <th className="px-4 py-3 text-left">Cliente</th>

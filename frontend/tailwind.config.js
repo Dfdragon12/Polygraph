@@ -10,11 +10,17 @@ export default {
       // San Francisco en Mac, Segoe UI en Windows) por Arial en toda la aplicación. Como nada más
       // en el código fija un font-family propio, esto solo hace que html/body (que ya usan
       // font-sans vía el preflight de Tailwind) hereden Arial en cada elemento.
+      // font-mono apunta a la MISMA fuente a propósito: los códigos (cupones, DANE, tokens,
+      // marcadores) usaban la monoespaciada del sistema y se veían con otra letra que el resto.
+      // También cubre <code>/<pre>/<kbd>, que el preflight de Tailwind pinta con font-mono.
       fontFamily: {
         sans: ['Arial', 'Helvetica', 'sans-serif'],
+        mono: ['Arial', 'Helvetica', 'sans-serif'],
       },
       colors: {
-        // Paleta de marca — coral suave anclado en #CD575D (oklch(0.61 0.15 20)) como peso 600.
+        // Paleta de marca — coral suave, mismo tono (hue 20) y croma. El peso 600 era #CD575D (L 0.61) y
+        // daba 4,08:1 con texto blanco; se bajó a L 0.56 (#BC484F) para cumplir WCAG AA (5,0:1 sobre
+        // blanco y 4,6:1 sobre primary-50).
         // Reemplaza al rojo saturado anterior (hue 26, mismo esquema de claridad, menos croma) por
         // pedido explícito: mismo tono cálido, pero que no se lea como alerta/error.
         primary: {
@@ -24,7 +30,7 @@ export default {
           300: 'oklch(0.80 0.08 20)',
           400: 'oklch(0.70 0.12 20)',
           500: 'oklch(0.65 0.14 20)',
-          600: 'oklch(0.61 0.15 20)',
+          600: 'oklch(0.56 0.15 20)',
           700: 'oklch(0.53 0.14 20)',
           800: 'oklch(0.45 0.11 20)',
           900: 'oklch(0.38 0.09 20)',

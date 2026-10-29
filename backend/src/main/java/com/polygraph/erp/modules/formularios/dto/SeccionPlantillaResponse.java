@@ -13,5 +13,10 @@ public record SeccionPlantillaResponse(
         String origenFijo,
         List<String> columnasOcultas,
         List<ColumnaResponse> columnas,
-        List<FilaSugeridaResponse> filasSugeridas
+        List<FilaSugeridaResponse> filasSugeridas,
+        boolean calculada,
+        /** Quien diligencia puede quitarla de su formulario (V212). */
+        boolean opcional,
+        /** Grupo con el que se clasifica la sección (V217); null = sin grupo. */
+        String grupo
 ) {}

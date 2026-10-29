@@ -16,7 +16,8 @@ import com.polygraph.erp.modules.gestor.dto.AsignarProgramadorRequest;
 import com.polygraph.erp.modules.gestor.dto.ProgramadorOpcionResponse;
 import com.polygraph.erp.modules.gestor.dto.SubprocesoOpcionResponse;
 import com.polygraph.erp.modules.gestor.service.AsignacionService;
-import com.polygraph.erp.shared.enums.EstadoAsignacion;
+import com.polygraph.erp.modules.gestor.service.CitaCandidatoGestorService;
+import com.polygraph.erp.shared.enums.EstadoSubproceso;
 import com.polygraph.erp.shared.enums.Rol;
 import com.polygraph.erp.shared.exceptions.ApiException;
 import jakarta.validation.Valid;
@@ -60,16 +61,20 @@ public class AsignacionController {
     private static final Set<Rol> ROLES_AUTOGESTION = Set.of(Rol.ANALISTA_INTERNO, Rol.POLIGRAFISTA, Rol.VISITADOR);
 
     private final AsignacionService asignacionService;
+    private final CitaCandidatoGestorService citaCandidatoGestorService;
     private final UsuarioRepository usuarioRepository;
 
     @GetMapping
     public ResponseEntity<Page<AsignacionResponse>> listar(
-            @RequestParam(required = false) EstadoAsignacion estado,
+            @RequestParam(required = false) EstadoSubproceso estado,
             @RequestParam(required = false) Integer idTipoProgreso,
             @RequestParam(required = false) Long idUsuarioAsignado,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime desde,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime hasta,
             @RequestParam(required = false) Integer idServicio,
+            @RequestParam(required = false) String buscar,
+            // Filtro de "Por hacer" de quien ejecuta: revisar | devueltos | novedades | urgentes
+            @RequestParam(required = false) String indicador,
             @PageableDefault(size = 20) Pageable pageable,
             Authentication auth) {
         Usuario actor = resolverUsuario(auth);
@@ -83,7 +88,8 @@ public class AsignacionController {
         Set<Rol> roles = verSinRestriccionDeRol ? null : rolesPermitidos(actor);
         return ResponseEntity.ok(asignacionService.listar(
                 estado, idTipoProgreso, idUsuarioAsignadoForzado(actor, idUsuarioAsignado), desde, hasta, idServicio,
-                idGestor(actor), roles, pageable, idProgramadorResponsableForzado(actor)));
+                idGestor(actor), roles, pageable, idProgramadorResponsableForzado(actor), buscar, indicador,
+                ROLES_AUTOGESTION.contains(actor.getRol()) ? actor : null));
     }
 
     @GetMapping("/calendario")
@@ -134,6 +140,23 @@ public class AsignacionController {
                 idUsuarioAsignado, fecha, idTipoProgreso, duracionMinutos, idExcluir, rolesPermitidos(resolverUsuario(auth))));
     }
 
+    /** Al abrir "agendar" una poligrafía/visita: dirección del candidato (prellena el lugar) y la
+     *  sugerencia de horario que mandó desde su portal, si hay una pendiente. */
+    @GetMapping("/{id}/cita-candidato")
+    @PreAuthorize("hasAnyRole('GESTOR', 'PROGRAMADOR')")
+    public ResponseEntity<CitaCandidatoGestorService.CitaCandidatoGestorResponse> citaCandidato(
+            @PathVariable Long id, Authentication auth) {
+        return ResponseEntity.ok(citaCandidatoGestorService.obtener(id, resolverUsuario(auth)));
+    }
+
+    /** Ids de subprocesos con una sugerencia de horario del candidato sin atender — para marcarlos
+     *  en la agenda. */
+    @GetMapping("/sugerencias-pendientes")
+    @PreAuthorize("hasAnyRole('GESTOR', 'PROGRAMADOR')")
+    public ResponseEntity<List<Long>> sugerenciasPendientes(Authentication auth) {
+        return ResponseEntity.ok(citaCandidatoGestorService.idsConSugerenciaPendiente(resolverUsuario(auth)));
+    }
+
     @PatchMapping("/{id}/asignar")
     @PreAuthorize("hasAnyRole('GESTOR', 'PROGRAMADOR')")
     public ResponseEntity<AsignacionResponse> asignar(
@@ -180,9 +203,10 @@ public class AsignacionController {
 
     @PatchMapping("/{id}/cancelar")
     @PreAuthorize("hasAnyRole('GESTOR', 'PROGRAMADOR')")
-    public ResponseEntity<AsignacionResponse> cancelar(@PathVariable Long id, Authentication auth) {
+    public ResponseEntity<AsignacionResponse> cancelar(
+            @PathVariable Long id, @Valid @RequestBody com.polygraph.erp.modules.gestor.dto.CancelarSubprocesoRequest request, Authentication auth) {
         Usuario actor = resolverUsuario(auth);
-        return ResponseEntity.ok(asignacionService.cancelar(id, actor, rolesPermitidos(actor)));
+        return ResponseEntity.ok(asignacionService.cancelar(id, request, actor, rolesPermitidos(actor)));
     }
 
     @PatchMapping("/{id}/confirmacion")

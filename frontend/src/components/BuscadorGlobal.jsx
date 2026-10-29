@@ -140,6 +140,7 @@ export default function BuscadorGlobal({ secciones, busquedaEntidades = false })
             <div className="flex items-center gap-3 px-4 py-3.5 border-b border-gray-100">
               <IconoBuscar className="h-5 w-5 text-gray-400 flex-shrink-0" />
               <input
+                aria-label="Buscar en la plataforma"
                 ref={inputRef}
                 value={query}
                 onChange={e => setQuery(e.target.value)}

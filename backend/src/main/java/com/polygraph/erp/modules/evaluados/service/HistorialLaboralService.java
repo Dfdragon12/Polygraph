@@ -78,6 +78,18 @@ public class HistorialLaboralService {
         return inactividades;
     }
 
+    /** Clave estable de un tiempo sin empleo, para casar su justificación entre el portal y el
+     *  servidor: "desde_hasta" con las fechas de los empleos que lo rodean. Los dos extremos que
+     *  cambian cada día no llevan fecha — "INICIO" (comienzo de la ventana de 4 años) y "HOY". */
+    public static String clave(InactividadLaboralEvaluado inactividad, List<ExperienciaLaboralEvaluado> experiencias) {
+        boolean trasUnEmpleo = experiencias.stream()
+                .anyMatch(e -> inactividad.getFechaInicio().equals(e.getFechaFin()));
+        boolean antesDeUnEmpleo = experiencias.stream()
+                .anyMatch(e -> inactividad.getFechaFin().plusDays(1).equals(e.getFechaInicio()));
+        return (trasUnEmpleo ? inactividad.getFechaInicio().toString() : "INICIO")
+                + "_" + (antesDeUnEmpleo ? inactividad.getFechaFin().toString() : "HOY");
+    }
+
     private LocalDate obtenerFechaFin(ExperienciaLaboralEvaluado exp) {
         if (Boolean.TRUE.equals(exp.getLaboraActualmente()) || exp.getFechaFin() == null) {
             return LocalDate.now();

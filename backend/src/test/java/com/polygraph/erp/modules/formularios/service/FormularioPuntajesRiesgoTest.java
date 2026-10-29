@@ -52,6 +52,9 @@ class FormularioPuntajesRiesgoTest {
     @Autowired private jakarta.persistence.EntityManager em;
     @MockBean private NotificacionService notificacionService;
     @MockBean private AlmacenamientoDocumentosService almacenamientoService;
+    // Cálculo propio de subservicios (docs/antecedentes): estas plantillas no tienen grupo, así que
+    // el simulado devuelve vacío, igual que en producción.
+    @MockBean private com.polygraph.erp.modules.riesgo.codigos.CalculoSubservicioService calculoSubservicioService;
     @MockBean private FormularioDocumentoService documentoService;
     @MockBean private FormularioPlantillaWordService plantillaWordService;
 
@@ -75,7 +78,7 @@ class FormularioPuntajesRiesgoTest {
         Servicio servicio = persistir(Servicio.builder().cliente(cliente).candidato(candidato).proceso(proceso).usuarioSolicita(solicitante)
                 .fechaSolicitud(LocalDate.now()).estado(EstadoServicio.PENDIENTE).build());
         subproceso = persistir(ServicioSubproceso.builder().servicio(servicio).tipoProgreso(tipoProgreso).usuarioAsignado(analista)
-                .estado(EstadoAsignacion.ASIGNADO).fechaCreacion(java.time.LocalDateTime.now()).build());
+                .estado(EstadoSubproceso.EN_EJECUCION).fechaCreacion(java.time.LocalDateTime.now()).build());
         em.flush();
         em.clear();
     }
@@ -182,7 +185,7 @@ class FormularioPuntajesRiesgoTest {
                 new SeccionRequest(idSeccion, "Verificación", "CAMPOS", "verificacion", null, null, List.of(resultado), null))));
         em.flush(); em.clear();
         ServicioSubproceso sp = em.find(ServicioSubproceso.class, subproceso.getId());
-        sp.setEstado(EstadoAsignacion.COMPLETADO);
+        sp.setEstado(EstadoSubproceso.FINALIZADO);
         sp.setVersionPlantilla(em.find(TipoProgreso.class, tipoProgreso.getIdTipoProgreso()).getVersionPlantilla());
         em.flush(); em.clear();
 

@@ -1,12 +1,26 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import solicitudService from '../../services/solicitudService'
+import { esperarTrabajo, mensajeDeError } from '../../services/trabajoService'
+
+function textoTrabajo(trabajo) {
+  if (!trabajo) return 'Subiendo archivo...'
+  if (trabajo.estado === 'EN_COLA') {
+    return trabajo.posicionEnCola > 1 ? `En fila — hay ${trabajo.posicionEnCola - 1} carga(s) antes` : 'En fila, empieza en un momento...'
+  }
+  return `Procesando filas... ${trabajo.progreso ?? 0}%`
+}
 
 function BulkUpload() {
   const [archivo, setArchivo] = useState(null)
   const [arrastrando, setArrastrando] = useState(false)
   const [procesando, setProcesando] = useState(false)
+  const [trabajo, setTrabajo] = useState(null)
   const [resultado, setResultado] = useState(null)
   const inputRef = useRef(null)
+  const abortoRef = useRef(null)
+
+  // Al salir de la página se deja de consultar (la carga sigue en el servidor igual).
+  useEffect(() => () => abortoRef.current?.abort(), [])
 
   const manejarArchivo = (file) => {
     if (!file) return
@@ -27,13 +41,22 @@ function BulkUpload() {
   const enviar = async () => {
     if (!archivo) return
     setProcesando(true)
+    setTrabajo(null)
+    const aborto = new AbortController()
+    abortoRef.current = aborto
     try {
-      const resp = await solicitudService.cargaMasiva(archivo)
-      setResultado(resp.data)
+      // 202: el servidor solo guarda el archivo y lo pone en la cola; aquí se sigue el avance.
+      const inicial = await solicitudService.cargaMasiva(archivo)
+      const terminado = await esperarTrabajo(inicial, { signal: aborto.signal, onActualizacion: setTrabajo })
+      setResultado(terminado.resultado)
     } catch (e) {
-      setResultado({ error: e.response?.data?.mensaje || 'Error al procesar el archivo' })
+      if (e.cancelado) return
+      setResultado({ error: mensajeDeError(e, 'Error al procesar el archivo') })
     } finally {
-      setProcesando(false)
+      if (!aborto.signal.aborted) {
+        setProcesando(false)
+        setTrabajo(null)
+      }
     }
   }
 
@@ -56,8 +79,12 @@ function BulkUpload() {
         </button>
       </div>
 
-      <p className="text-sm text-gray-500 mb-4">
-        Columnas requeridas: <code className="bg-gray-100 px-1 rounded">nit, razon_social, cedula, nombre, apellido, telefono, ciudad, cargo, tipo_servicio</code>
+      <p className="text-sm text-gray-600 mb-2">
+        Columnas: <code className="bg-gray-100 px-1 rounded">cedula, nombres, apellidos, cargo, criticidad_cargo, celular, email, ciudad, direccion, servicio</code>
+      </p>
+      <p className="text-sm text-gray-600 mb-4">
+        Todo el archivo se revisa antes de crear nada: con una sola fila mal, o si pides más de lo que tienes en tu bolsa o cupo, <strong>no se crea ninguna solicitud</strong> y
+        te decimos qué corregir en cada fila. La dirección solo se pide en servicios con visita. Descarga la plantilla actualizada: la anterior (con NIT y razón social) ya no sirve.
       </p>
 
       {/* Zona de drop */}
@@ -86,13 +113,27 @@ function BulkUpload() {
       {archivo && !resultado && (
         <button onClick={enviar} disabled={procesando}
           className="mt-4 w-full py-2.5 text-sm font-medium text-white bg-primary-600 rounded-lg disabled:opacity-50 hover:bg-primary-700">
-          {procesando ? 'Procesando...' : 'Cargar solicitudes'}
+          {procesando ? textoTrabajo(trabajo) : 'Cargar solicitudes'}
         </button>
+      )}
+
+      {procesando && trabajo?.estado === 'PROCESANDO' && (
+        <div className="mt-3">
+          <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+            <div className="h-full bg-primary-500 transition-all duration-500" style={{ width: `${trabajo.progreso ?? 0}%` }} />
+          </div>
+          <p className="text-xs text-gray-400 mt-1.5">Si sales de esta página la carga continúa en el servidor y las solicitudes se crean igual, pero no verás este resumen.</p>
+        </div>
       )}
 
       {/* Resultado */}
       {resultado && !resultado.error && (
         <div className="mt-6 space-y-4">
+          {resultado.mensaje && (
+            <p role="status" className={`rounded-lg border px-4 py-3 text-sm font-medium ${resultado.errores?.length ? 'border-red-200 bg-red-50 text-red-800' : 'border-green-200 bg-green-50 text-green-800'}`}>
+              {resultado.mensaje}
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
               <p className="text-3xl font-bold text-green-700">{resultado.filasExitosas}</p>
@@ -108,7 +149,7 @@ function BulkUpload() {
             <div>
               <h3 className="text-sm font-semibold text-gray-700 mb-2">Detalle de errores</h3>
               <div className="border border-gray-200 rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
+                <table className="table-stack w-full text-sm">
                   <thead className="bg-gray-50 text-gray-600">
                     <tr>
                       <th className="text-left px-4 py-2 font-medium">Fila</th>
@@ -119,7 +160,7 @@ function BulkUpload() {
                   <tbody>
                     {resultado.errores.map((e, i) => (
                       <tr key={i} className="border-t border-gray-100">
-                        <td className="px-4 py-2 text-gray-500">{e.fila}</td>
+                        <td className="px-4 py-2 text-gray-500">{e.fila > 0 ? e.fila : 'Todo el archivo'}</td>
                         <td className="px-4 py-2">{e.cedula}</td>
                         <td className="px-4 py-2 text-red-600">{e.error}</td>
                       </tr>
