@@ -41,7 +41,7 @@ public class TiempoServicioService {
                     : compromisoAjustado != null && compromisoAjustado.equals(hoy.plusDays(1)) ? "Vence mañana" : "Vence el próximo día hábil";
             case VENCIDA -> retraso == 0 ? "Vencida" : "Vencida · " + dias(retraso);
             case EN_PAUSA -> pausa == OrigenPausa.CLIENTE ? "En pausa · esperando al cliente"
-                    : pausa == OrigenPausa.REPROGRAMACION ? "En pausa · cita reprogramada" : "En pausa · esperando al candidato";
+                    : pausa == OrigenPausa.REPROGRAMACION ? "En pausa · cita por reprogramar" : "En pausa · esperando al candidato";
             case ENTREGADA_A_TIEMPO -> "Entregada a tiempo";
             case ENTREGADA_TARDE -> "Entregada con " + dias(Math.max(retraso, 1)) + " de retraso";
         };

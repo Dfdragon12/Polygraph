@@ -57,7 +57,7 @@ class TiempoServicioServiceTest {
                 .isEqualTo("Vence el próximo día hábil");   // viernes con compromiso el lunes
         assertThat(TiempoServicioService.etiqueta(EstadoTiempo.EN_PAUSA, 3, 0, lunes, OrigenPausa.CANDIDATO, lunes)).isEqualTo("En pausa · esperando al candidato");
         assertThat(TiempoServicioService.etiqueta(EstadoTiempo.EN_PAUSA, 3, 0, lunes, OrigenPausa.CLIENTE, lunes)).isEqualTo("En pausa · esperando al cliente");
-        assertThat(TiempoServicioService.etiqueta(EstadoTiempo.EN_PAUSA, 3, 0, lunes, OrigenPausa.REPROGRAMACION, lunes)).isEqualTo("En pausa · cita reprogramada");
+        assertThat(TiempoServicioService.etiqueta(EstadoTiempo.EN_PAUSA, 3, 0, lunes, OrigenPausa.REPROGRAMACION, lunes)).isEqualTo("En pausa · cita por reprogramar");
         assertThat(TiempoServicioService.etiqueta(EstadoTiempo.ENTREGADA_A_TIEMPO, 0, 0, lunes, null, lunes)).isEqualTo("Entregada a tiempo");
         assertThat(TiempoServicioService.etiqueta(EstadoTiempo.ENTREGADA_TARDE, 0, 12, lunes, null, lunes)).isEqualTo("Entregada con 12 días hábiles de retraso");
         assertThat(TiempoServicioService.etiqueta(EstadoTiempo.ENTREGADA_TARDE, 0, 1, lunes, null, lunes)).isEqualTo("Entregada con 1 día hábil de retraso");

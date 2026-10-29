@@ -177,7 +177,8 @@ public class GestorService {
                 .and(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.conSubprocesoEn(
                         com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.estadoDeFiltro(estado)))
                 .and(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.conTiempo(tiempo))
-                .and(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.buscar(q));
+                .and(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.buscar(q))
+                .and(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.ordenadoPorRetraso(orden));
         Page<Servicio> pagina = servicioRepository.findAll(filtro, PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(),
                 com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.orden(orden)));
 

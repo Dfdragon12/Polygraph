@@ -4,6 +4,7 @@ import solicitudService from '../../services/solicitudService'
 import { useCambios } from '../../hooks/useCambios'
 import Paginacion from '../../components/ui/Paginacion'
 import EstadoTiempo, { FiltroTiempo, Reprogramada } from '../../components/EstadoTiempo'
+import { textoCompromiso, NotaCompromiso } from '../../components/CompromisoFecha'
 import SemaforoEstados from '../../components/semaforo/SemaforoEstados'
 import AlertasAparte from '../../components/semaforo/AlertasAparte'
 import EtiquetaEstado from '../../components/semaforo/EtiquetaEstado'
@@ -167,11 +168,12 @@ export default function Solicitudes() {
                       <span className="block" title={s.proceso ?? undefined}>{s.proceso || '—'}</span>
                     </td>
                     <td data-label="Solicitada" className="px-3 py-3 text-gray-600 whitespace-nowrap">{fechaCorta(s.fechaSolicitud)}</td>
-                    <td data-label="Compromiso" className="px-3 py-3 whitespace-nowrap">
+                    <td data-label="Compromiso" className={`px-3 py-3 ${s.tiempo?.estadoTiempo === 'EN_PAUSA' ? '' : 'whitespace-nowrap'}`}>
                       <span className={s.estado === 'PUBLICADO' || s.estado === 'CANCELADO' ? 'text-gray-500' : 'font-medium text-gray-800'}>
-                        {fechaCorta(s.fechaEntregaEstimada)}
+                        {textoCompromiso(s.tiempo, fechaCorta(s.fechaEntregaEstimada))}
                       </span>
-                      <Reprogramada tiempo={s.tiempo} className="block" />
+                      <NotaCompromiso tiempo={s.tiempo} />
+                      {s.tiempo?.estadoTiempo !== 'EN_PAUSA' && <Reprogramada tiempo={s.tiempo} className="block" />}
                     </td>
                     <td data-label="Tiempo" className="px-3 py-3">
                       {s.tiempo ? <EstadoTiempo tiempo={s.tiempo} /> : <span className="text-xs text-gray-500">—</span>}

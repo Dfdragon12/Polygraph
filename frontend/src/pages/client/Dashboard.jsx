@@ -7,6 +7,7 @@ import EtiquetaEstado from '../../components/semaforo/EtiquetaEstado'
 import { useCambios } from '../../hooks/useCambios'
 import { EncabezadoPagina, EsqueletoPagina, botonPrimario, botonSecundario } from '../../components/admin/PaginaAdmin'
 import EstadoTiempo, { Reprogramada } from '../../components/EstadoTiempo'
+import { textoCompromiso, NotaCompromiso } from '../../components/CompromisoFecha'
 import { TarjetaEnCurso, TarjetaCumplimiento, AvisoVencidas } from '../../components/TarjetasTiempo'
 import tiempoService from '../../services/tiempoService'
 import SemaforoEstados from '../../components/semaforo/SemaforoEstados'
@@ -48,8 +49,9 @@ function Entrega({ s }) {
   return (
     <div className="text-right">
       <EstadoTiempo tiempo={s.tiempo} className="!text-[11px]" />
-      <p className="mt-0.5 text-[11px] tabular-nums text-gray-600">Compromiso {fechaCorta(s.fechaEntregaEstimada)}</p>
-      <Reprogramada tiempo={s.tiempo} className="block" />
+      <p className="mt-0.5 text-[11px] tabular-nums text-gray-600">Compromiso: {textoCompromiso(s.tiempo, fechaCorta(s.fechaEntregaEstimada))}</p>
+      <NotaCompromiso tiempo={s.tiempo} />
+      {s.tiempo.estadoTiempo !== 'EN_PAUSA' && <Reprogramada tiempo={s.tiempo} className="block" />}
     </div>
   )
 }

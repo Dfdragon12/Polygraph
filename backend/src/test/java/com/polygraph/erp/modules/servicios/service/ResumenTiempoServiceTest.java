@@ -50,6 +50,7 @@ class ResumenTiempoServiceTest {
     @Autowired private ResumenTiempoService service;
     @Autowired private DashboardAdminService dashboardAdmin;
     @Autowired private EntityManager em;
+    @Autowired private com.polygraph.erp.modules.servicios.repository.ServicioRepository servicioRepository;
 
     private Usuario admin, gestor1, gestor2, analista, usuarioClienteA, usuarioClienteB;
     private Cliente clienteA, clienteB;
@@ -318,5 +319,22 @@ class ResumenTiempoServiceTest {
     private <T> T persistir(T entidad) {
         em.persist(entidad);
         return entidad;
+    }
+
+    // ───────────────────────── AJ-04 ─────────────────────────
+
+    @Test
+    @DisplayName("«Más atrasadas primero»: vencidas (la de más retraso antes), luego por vencer, a tiempo, en pausa y al final las entregadas")
+    void ordenPorRetrasoDejaLasEnPausaDespuesDeLasVencidasYPorVencer() {
+        var filtro = org.springframework.data.jpa.domain.Specification
+                .where(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.delCliente(clienteA.getIdCliente()))
+                .and(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.ordenadoPorRetraso("retraso"));
+        var pagina = servicioRepository.findAll(filtro, org.springframework.data.domain.PageRequest.of(0, 20,
+                com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.orden("retraso")));
+        var tiempos = pagina.getContent().stream().map(Servicio::getEstadoTiempo).filter(java.util.Objects::nonNull).toList();
+        assertThat(tiempos).containsExactly(EstadoTiempo.VENCIDA, EstadoTiempo.VENCIDA, EstadoTiempo.VENCIDA, EstadoTiempo.POR_VENCER,
+                EstadoTiempo.A_TIEMPO, EstadoTiempo.EN_PAUSA, EstadoTiempo.ENTREGADA_TARDE, EstadoTiempo.ENTREGADA_A_TIEMPO, EstadoTiempo.ENTREGADA_A_TIEMPO);
+        assertThat(pagina.getContent().stream().filter(x -> x.getEstadoTiempo() == EstadoTiempo.VENCIDA).map(Servicio::getDiasRetrasoHabiles))
+                .containsExactly(9, 3, 1);
     }
 }

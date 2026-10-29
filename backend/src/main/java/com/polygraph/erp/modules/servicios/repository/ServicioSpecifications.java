@@ -34,12 +34,32 @@ public final class ServicioSpecifications {
 
     /** Orden de las listas: por defecto lo más reciente primero; "retraso" pone primero lo más atrasado (más días hábiles de retraso). */
     public static org.springframework.data.domain.Sort orden(String orden) {
-        if ("retraso".equalsIgnoreCase(orden)) {
-            return org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Order.desc("diasRetrasoHabiles").nullsLast(),
-                    org.springframework.data.domain.Sort.Order.asc("fechaCompromisoAjustada").nullsLast(),
-                    org.springframework.data.domain.Sort.Order.desc("fechaSolicitud"));
-        }
+        // "retraso" lo ordena ordenadoPorRetraso (necesita un CASE por estado de tiempo, que un Sort por propiedad no sabe expresar).
+        if ("retraso".equalsIgnoreCase(orden)) return org.springframework.data.domain.Sort.unsorted();
         return org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "fechaSolicitud", "horaSolicitud");
+    }
+
+    /**
+     * «Más atrasadas primero» (AJ-04): vencidas (la de más días hábiles de retraso primero), luego por vencer, a tiempo, EN PAUSA y al final las ya entregadas.
+     * Una solicitud en pausa no tiene fecha real todavía, así que nunca va por delante de una que sí corre. Va junto con {@link #orden(String)}, que en
+     * este caso no ordena nada. No filtra: solo fija el ORDER BY de la consulta de datos (no el de la de conteo).
+     */
+    public static Specification<Servicio> ordenadoPorRetraso(String orden) {
+        if (!"retraso".equalsIgnoreCase(orden)) return null;
+        return (root, query, cb) -> {
+            if (query.getResultType() != Long.class && query.getResultType() != long.class) {
+                var estado = root.get("estadoTiempo");
+                var rango = cb.<Integer>selectCase()
+                        .when(cb.equal(estado, com.polygraph.erp.shared.enums.EstadoTiempo.VENCIDA), 0)
+                        .when(cb.equal(estado, com.polygraph.erp.shared.enums.EstadoTiempo.POR_VENCER), 1)
+                        .when(cb.equal(estado, com.polygraph.erp.shared.enums.EstadoTiempo.A_TIEMPO), 2)
+                        .when(cb.equal(estado, com.polygraph.erp.shared.enums.EstadoTiempo.EN_PAUSA), 3)
+                        .otherwise(4);
+                query.orderBy(cb.asc(rango), cb.desc(root.get("diasRetrasoHabiles")), cb.asc(root.get("fechaCompromisoAjustada")),
+                        cb.desc(root.get("fechaSolicitud")));
+            }
+            return null;
+        };
     }
 
     /**

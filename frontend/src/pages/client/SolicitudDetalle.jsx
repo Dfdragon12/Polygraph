@@ -3,6 +3,7 @@ import EstadoTiempo from '../../components/EstadoTiempo'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import solicitudService from '../../services/solicitudService'
 import { useCambios } from '../../hooks/useCambios'
+import { compromisoPorDefinir } from '../../components/CompromisoFecha'
 import EtiquetaEstado from '../../components/semaforo/EtiquetaEstado'
 import { useAuth } from '../../hooks/useAuth'
 import { colorNovedad } from '../../utils/paletaNovedades'
@@ -184,7 +185,9 @@ function LineaDeTiempo({ tiempo }) {
       <ol className="relative flex flex-col gap-4 sm:flex-row sm:gap-6 sm:border-t-2 sm:border-gray-200">
         <Hito titulo="Recibida" valor={fechaLarga(tiempo.fechaRecepcionEfectiva) || '—'} nota="El día de recepción no cuenta en el plazo" />
         <Hito titulo="Plazo" valor={tiempo.plazoDiasHabiles ? diasHabiles(tiempo.plazoDiasHabiles) : '—'} nota="Sin fines de semana ni festivos" tono="azul" />
-        <Hito titulo="Fecha de compromiso" valor={fechaLarga(tiempo.fechaCompromisoAjustada ?? tiempo.fechaCompromiso) || '—'} nota={notasCompromiso} tono={tonoCompromiso} />
+        {compromisoPorDefinir(tiempo)
+          ? <Hito titulo="Fecha de compromiso" valor="Por definir" nota={compromisoPorDefinir(tiempo).nota} tono={tonoCompromiso} />
+          : <Hito titulo="Fecha de compromiso" valor={fechaLarga(tiempo.fechaCompromisoAjustada ?? tiempo.fechaCompromiso) || '—'} nota={notasCompromiso} tono={tonoCompromiso} />}
         {entregada
           ? <Hito titulo="Entregada" valor={fechaLarga(tiempo.fechaEntregaReal) || '—'} tono={tonoCompromiso}
               nota={tiempo.estadoTiempo === 'ENTREGADA_A_TIEMPO' ? 'Resultado: a tiempo' : `Resultado: con ${diasHabiles(tiempo.diasRetrasoHabiles)} de retraso`} />
@@ -849,7 +852,7 @@ export default function SolicitudDetalle() {
     ? { valor: '—', tono: 'gris', detalle: 'Sin fecha de entrega' }
     : tiempo.estadoTiempo === 'EN_PAUSA'
       // Mientras espera la hoja de vida del candidato la fecha es provisional: se recalcula cuando la envía.
-      ? { valor: 'En pausa', tono: 'gris', detalle: 'Se fija cuando el candidato envíe su hoja de vida' }
+      ? { valor: 'En pausa', tono: 'gris', detalle: compromisoPorDefinir(tiempo).nota }
       : tiempo.estadoTiempo === 'ENTREGADA_A_TIEMPO'
         ? { valor: 'Entregada', tono: 'verde', detalle: `a tiempo · ${fechaLarga(detalle.fechaEntregaEstimada)}` }
         : tiempo.estadoTiempo === 'ENTREGADA_TARDE'
