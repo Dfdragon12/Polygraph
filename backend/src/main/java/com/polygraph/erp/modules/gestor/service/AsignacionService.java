@@ -114,8 +114,7 @@ public class AsignacionService {
 
     /** Poligrafía o visita: las agenda el programador. VerifEye se suma aquí cuando pase al programador. */
     static boolean esCita(ServicioSubproceso sp) {
-        Rol r = sp.getTipoProgreso().getRolResponsable();
-        return r == Rol.POLIGRAFISTA || r == Rol.VISITADOR;
+        return sp.getTipoProgreso().llevaCita();
     }
 
     /** Lo que la máquina necesita saber de este subproceso y de quien actúa. */
@@ -1164,9 +1163,8 @@ public class AsignacionService {
     public AsignacionResponse asignarProgramador(Long id, Long idProgramador, Usuario actor) {
         ServicioSubproceso subproceso = obtenerOFallar(id);
         TipoProgreso tipo = subproceso.getTipoProgreso();
-        Rol rolResponsable = tipo.getRolResponsable();
-        if (rolResponsable != Rol.POLIGRAFISTA && rolResponsable != Rol.VISITADOR) {
-            throw new ApiException("Este subproceso no requiere un programador.", HttpStatus.BAD_REQUEST);
+        if (!tipo.llevaCita()) {
+            throw new ApiException("Este servicio no lleva cita: no pasa por Programando, se asigna directamente al analista.", HttpStatus.BAD_REQUEST);
         }
 
         Servicio servicio = subproceso.getServicio();

@@ -15,11 +15,9 @@ import com.polygraph.erp.modules.evaluados.repository.DocumentoEvaluadoRepositor
 import com.polygraph.erp.modules.evaluados.repository.HojaVidaEvaluadoRepository;
 import com.polygraph.erp.modules.pagos.service.RecargoPendienteService;
 import com.polygraph.erp.modules.servicios.entity.EstadoLink;
-import com.polygraph.erp.modules.servicios.entity.HistorialEstadoServicio;
 import com.polygraph.erp.shared.enums.EstadoRevisionDocumento;
 import com.polygraph.erp.modules.servicios.entity.LinkCandidato;
 import com.polygraph.erp.modules.servicios.entity.Servicio;
-import com.polygraph.erp.modules.servicios.repository.HistorialEstadoServicioRepository;
 import com.polygraph.erp.modules.servicios.repository.LinkCandidatoRepository;
 import com.polygraph.erp.shared.entity.Notificacion;
 import com.polygraph.erp.shared.enums.EstadoServicio;
@@ -56,7 +54,6 @@ public class EvaluadoService {
     private final DocumentoRequeridoProcesoRepository documentoRequeridoProcesoRepository;
     private final AlmacenamientoDocumentosService almacenamientoService;
     private final RecargoPendienteService recargoPendienteService;
-    private final HistorialEstadoServicioRepository historialEstadoServicioRepository;
     private final com.polygraph.erp.modules.servicios.service.SemaforoTiempoService semaforoTiempoService;
     private final ValidadorArchivoCandidato validadorArchivo;
     private final ItemHojaVidaRepository itemHojaVidaRepository;
@@ -292,7 +289,6 @@ public class EvaluadoService {
         if (primerEnvio) {
             // El candidato ya entregó su parte: el reloj de la solicitud arranca (la espera cuenta como pausa y corre la fecha de compromiso).
             semaforoTiempoService.cerrarPausas(servicio, com.polygraph.erp.modules.servicios.service.SemaforoTiempoService.MOTIVO_HOJA_DE_VIDA);
-            avanzarAProgramandoSiPendiente(servicio);
             notificarFormularioCompletado(servicio);
         }
     }
@@ -377,43 +373,6 @@ public class EvaluadoService {
                 throw new ApiException("Explique su respuesta en cada pregunta que respondió Sí.", HttpStatus.BAD_REQUEST);
             }
         }
-    }
-
-    /** Si el candidato termina de diligenciar su hoja de vida mientras el servicio sigue
-     *  PENDIENTE, pasa automáticamente a PROGRAMANDO — el gestor ya no tiene que hacerlo a mano
-     *  apenas hay información con la que empezar a programar. Se registra en el historial de
-     *  estados igual que un cambio manual (mismo mecanismo que SolicitudService.cambiarEstado),
-     *  atribuido al gestor asignado al cliente porque el esquema no tiene un usuario "sistema".
-     *  La espera del candidato ya no se "descuenta" recalculando la fecha: queda como una pausa del reloj (SemaforoTiempoService). */
-    private void avanzarAProgramandoSiPendiente(Servicio servicio) {
-        if (servicio.getEstado() != EstadoServicio.PENDIENTE) return;
-
-        Cliente cliente = servicio.getCliente();
-        Long idGestor = cliente != null ? cliente.getIdGestor() : null;
-        Usuario gestor = idGestor != null ? usuarioRepository.findById(idGestor).orElse(null) : null;
-        if (gestor == null) {
-            log.warn("Servicio {} completó hoja de vida pero no tiene gestor asignado — no se puede " +
-                    "registrar el cambio automático a PROGRAMANDO (queda en PENDIENTE).", servicio.getIdServicio());
-            return;
-        }
-
-        EstadoServicio anterior = servicio.getEstado();
-        servicio.setEstado(EstadoServicio.PROGRAMANDO);
-
-        semaforoTiempoService.recalcular(servicio);
-
-        historialEstadoServicioRepository.save(HistorialEstadoServicio.builder()
-                .servicio(servicio)
-                .estadoAnterior(anterior)
-                .estadoNuevo(EstadoServicio.PROGRAMANDO)
-                .usuario(gestor)
-                .fechaCambio(LocalDateTime.now())
-                .observacion("Cambio automático: el candidato completó su hoja de vida. La espera quedó como pausa del reloj "
-                        + "(fecha de compromiso: " + servicio.fechaParaMostrar() + ").")
-                .build());
-
-        log.info("Servicio {} pasó automáticamente de PENDIENTE a PROGRAMANDO (candidato completó hoja de vida) — compromiso: {}",
-                servicio.getIdServicio(), servicio.fechaParaMostrar());
     }
 
     private void notificarFormularioCompletado(Servicio servicio) {

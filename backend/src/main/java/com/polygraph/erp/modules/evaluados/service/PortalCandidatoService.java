@@ -158,8 +158,7 @@ public class PortalCandidatoService {
 
     /** Solo lo presencial con el candidato es una "cita": poligrafía y visita. */
     public static boolean esCita(ServicioSubproceso sp) {
-        Rol rol = sp.getTipoProgreso() != null ? sp.getTipoProgreso().getRolResponsable() : null;
-        return rol == Rol.POLIGRAFISTA || rol == Rol.VISITADOR;
+        return sp.getTipoProgreso() != null && sp.getTipoProgreso().llevaCita();
     }
 
     static String estadoCita(ServicioSubproceso sp) {

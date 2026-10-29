@@ -3,7 +3,7 @@ import EstadoTiempo from '../../components/EstadoTiempo'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import solicitudService from '../../services/solicitudService'
 import { useCambios } from '../../hooks/useCambios'
-import ServiceStatusBadge from '../../components/ServiceStatusBadge'
+import EtiquetaEstado from '../../components/semaforo/EtiquetaEstado'
 import { useAuth } from '../../hooks/useAuth'
 import { colorNovedad } from '../../utils/paletaNovedades'
 import mensajeService from '../../services/mensajeService'
@@ -884,7 +884,8 @@ export default function SolicitudDetalle() {
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-semibold text-gray-600 bg-gray-100 px-2 py-1 rounded-md">Solicitud #{detalle.idServicio}</span>
-              <ServiceStatusBadge status={detalle.estado} />
+              {/* El estado que ve el cliente es el de cada subproceso (el mismo de Mis solicitudes), no uno propio de la solicitud */}
+              {[...new Set((detalle.subprocesos ?? []).map(sp => sp.estado))].map(e => <EtiquetaEstado key={e} estado={e} />)}
               <EstadoTiempo tiempo={detalle.tiempo} />
             </div>
             <h1 className="mt-2.5 text-2xl font-bold text-gray-900 tracking-tight truncate">

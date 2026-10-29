@@ -60,4 +60,10 @@ public class TipoProgreso {
      *  "ANTECEDENTES", ver V202). null = califica con los puntos por opción del constructor. */
     @Column(name = "grupo_calificacion", length = 30)
     private String grupoCalificacion;
+
+    /** AJ-03: «lleva cita» = poligrafía o visita (las agenda el programador). Es la ÚNICA regla: solo estos pasan por PROGRAMANDO;
+     *  antecedentes, validaciones, análisis financiero y psicotécnicas van PENDIENTE → EN_EJECUCION. VerifEye (rol analista) se suma aquí cuando pase al programador. */
+    public boolean llevaCita() {
+        return rolResponsable == Rol.POLIGRAFISTA || rolResponsable == Rol.VISITADOR;
+    }
 }
