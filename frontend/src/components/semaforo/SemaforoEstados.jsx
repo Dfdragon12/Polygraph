@@ -8,13 +8,14 @@ import { useCambios } from '../../hooks/useCambios'
 //   filtros: { tiempo, idCliente, idResponsable, rol, idTipoProgreso } (opcionales, los mismos del servidor)
 //   interno: muestra además cuántos subprocesos hay en cada estado (el cliente no)
 //   textoCliente: usa la descripción pensada para el cliente bajo cada número
-export default function SemaforoEstados({ seleccionado = '', onSeleccionar, filtros, interno = true, textoCliente = false, titulo = 'Estado de los servicios', refrescar = 0 }) {
+//   onDatos: avisa con la respuesta del servidor (así el Dashboard toma de aquí el total, sin pedirlo dos veces)
+export default function SemaforoEstados({ seleccionado = '', onSeleccionar, filtros, interno = true, textoCliente = false, titulo = 'Estado de los servicios', refrescar = 0, onDatos }) {
   const [datos, setDatos] = useState(null)
   const [error, setError] = useState(false)
   const clave = JSON.stringify(filtros ?? {})
 
   const cargar = useCallback(() => {
-    semaforoService.resumen(filtros ?? {}).then(d => { setDatos(d); setError(false) }).catch(() => setError(true))
+    semaforoService.resumen(filtros ?? {}).then(d => { setDatos(d); setError(false); onDatos?.(d) }).catch(() => setError(true))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clave])
 

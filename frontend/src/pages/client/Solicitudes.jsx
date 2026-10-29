@@ -38,8 +38,8 @@ export default function Solicitudes() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const { nombre } = useEstadosSubproceso()
-  // Desde el dashboard: /cliente/solicitudes?filtro=vencidas abre la lista ya filtrada.
-  const [filtroEstado, setFiltroEstado] = useState(searchParams.get('filtro') === 'vencidas' ? 'VENCIDAS' : '')
+  // Desde el dashboard: ?filtro=vencidas o ?estado=PROGRAMANDO abren la lista ya filtrada.
+  const [filtroEstado, setFiltroEstado] = useState(searchParams.get('filtro') === 'vencidas' ? 'VENCIDAS' : (searchParams.get('estado') ?? ''))
   const [filtroTiempo, setFiltroTiempo] = useState(searchParams.get('tiempo') ?? '')
   const [ordenRetraso, setOrdenRetraso] = useState(false)
   const [pagina, setPagina] = useState(0)

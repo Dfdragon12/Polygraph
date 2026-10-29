@@ -3,14 +3,14 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import dashboardService from '../../services/dashboardService'
 import pospagoService from '../../services/pospagoService'
-import solicitudService from '../../services/solicitudService'
 import ServiceStatusBadge from '../../components/ServiceStatusBadge'
 import { useCambios } from '../../hooks/useCambios'
 import { EncabezadoPagina, EsqueletoPagina, botonPrimario, botonSecundario } from '../../components/admin/PaginaAdmin'
 import EstadoTiempo, { Reprogramada } from '../../components/EstadoTiempo'
 import { TarjetaEnCurso, TarjetaCumplimiento, AvisoVencidas } from '../../components/TarjetasTiempo'
 import tiempoService from '../../services/tiempoService'
-import { Atencion, Grafica, Enlace, Icono, BarraEstados, Dona, C, saludo, fechaLarga } from '../../components/tablero/Tablero'
+import SemaforoEstados from '../../components/semaforo/SemaforoEstados'
+import { Atencion, Grafica, Enlace, Icono, Dona, C, saludo, fechaLarga } from '../../components/tablero/Tablero'
 
 // Tablero del cliente (ADMIN_CLIENTE y ANALISTA_CLIENTE): cómo van sus solicitudes (indicadores y
 // barra por estado), lo último que pidió con su fecha de entrega, su bolsa prepago o cupo de
@@ -22,16 +22,6 @@ const formatearCOP = (valor) =>
   new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(valor ?? 0)
 
 const fechaCorta = (f) => f ? new Date(`${String(f).slice(0, 10)}T12:00:00`).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' }).replace('.', '') : '—'
-
-const ESTADOS = [
-  { clave: 'pendientes',    estado: 'PENDIENTE',    label: 'Pendiente',    color: C.ambar },
-  { clave: 'programando',   estado: 'PROGRAMANDO',  label: 'Programando',  color: C.cielo },
-  { clave: 'enEjecucion',   estado: 'EN_EJECUCION', label: 'En ejecución', color: C.indigo },
-  { clave: 'reprogramados', estado: 'REPROGRAMADO', label: 'Reprogramado', color: C.naranja },
-  { clave: 'finalizados',   estado: 'FINALIZADO',   label: 'Finalizado',   color: C.verde },
-  { clave: 'publicados',    estado: 'PUBLICADO',    label: 'Entregado',    color: C.teal },
-  { clave: 'cancelados',    estado: 'CANCELADO',    label: 'Cancelado',    color: C.gris },
-]
 
 const svg = (d, c = 'h-5 w-5') => (
   <svg className={c} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -68,7 +58,7 @@ export default function Dashboard() {
   const { usuario } = useAuth()
   const navigate = useNavigate()
   const [datos, setDatos] = useState(null)
-  const [conteo, setConteo] = useState(null)
+  const [totalServicios, setTotalServicios] = useState(null)   // servicios distintos, del mismo resumen del semáforo
   const [resumen, setResumen] = useState(null)
   const [cumplimiento, setCumplimiento] = useState(null)
   const [bolsa, setBolsa] = useState(null)
@@ -89,7 +79,6 @@ export default function Dashboard() {
 
   // Carga el tablero; también se llama sola cuando cambia una solicitud del cliente (tiempo real).
   const cargarDatos = useCallback(() => {
-    solicitudService.conteo().then(setConteo).catch(() => setConteo(null))
     // El resumen ÚNICO de tiempos (el mismo que usan los demás tableros): el cliente solo recibe sus propias solicitudes.
     tiempoService.resumen({ top: 1 }).then(setResumen).catch(() => setResumen(null))
     const desde = new Date(); desde.setDate(desde.getDate() - (DIAS_CUMPLIMIENTO - 1))
@@ -119,9 +108,6 @@ export default function Dashboard() {
   const irA = (ruta) => navigate(ruta)
 
   /* ── Series ── */
-  const estados = ESTADOS.map(e => ({ name: e.label, value: conteo?.[e.clave] ?? 0, color: e.color, clave: e.estado }))
-  const enCurso = (conteo?.pendientes ?? 0) + (conteo?.programando ?? 0) + (conteo?.enEjecucion ?? 0) + (conteo?.reprogramados ?? 0)
-
   const totalComprado = (bolsa ?? []).reduce((a, b) => a + (b.cantidadComprada ?? 0), 0)
   const disponibles = datos?.serviciosDisponibles ?? 0
   const bolsaDona = [
@@ -175,14 +161,13 @@ export default function Dashboard() {
               icono={I.reloj('h-4 w-4')} tono="ambar" onClick={() => irA('/cliente/solicitudes')} />
             <Atencion titulo="Entregados este mes" valor={datos?.serviciosFinalizadosMes ?? 0} detalle="Resultados listos" vacio="Aún ninguno este mes"
               icono={I.check('h-4 w-4')} tono="primario" onClick={() => irA('/cliente/solicitudes')} />
-            <Atencion titulo="Solicitudes en total" valor={conteo?.total ?? 0} detalle="Desde que empezaste" vacio="Aún no hay solicitudes"
+            <Atencion titulo="Solicitudes en total" valor={totalServicios ?? 0} detalle="Desde que empezaste" vacio="Aún no hay solicitudes"
               icono={I.carpeta('h-4 w-4')} tono="primario" onClick={() => irA('/cliente/solicitudes')} />
           </div>
 
           {/* ── Estado de sus solicitudes ── */}
-          <BarraEstados titulo="Estado de mis solicitudes" descripcion="Todas tus solicitudes por etapa · clic para verlas"
-            estados={estados} destacado={{ valor: enCurso, etiqueta: 'en curso' }}
-            onClick={() => irA('/cliente/solicitudes')} />
+          <SemaforoEstados interno={false} textoCliente titulo="Estado de mis solicitudes" onDatos={(d) => setTotalServicios(d.total)}
+            onSeleccionar={(estado) => irA(estado ? `/cliente/solicitudes?estado=${estado}` : '/cliente/solicitudes')} />
 
           <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
             {/* ── Actividad reciente ── */}
