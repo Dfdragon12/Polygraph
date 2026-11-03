@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { InputPorTipo } from '../shared/Formulario'
 import { tituloLimpio } from './revisionFormato'
@@ -93,20 +93,47 @@ export function CampoHoja({ c, value, onChange, disabled, idServicioSubproceso, 
   )
 }
 
-// Panel derecho: lo que pidió el cliente, la nota de quien coordina y lo que el candidato dijo en su link.
-export function PanelContexto({ ficha, nota }) {
+// true cuando la pantalla es más angosta que `px` (tableta vertical o celular).
+export function useMasAngostoQue(px) {
+  const consulta = `(max-width: ${px - 1}px)`
+  const [si, setSi] = useState(() => typeof window !== 'undefined' && window.matchMedia(consulta).matches)
+  useEffect(() => {
+    const m = window.matchMedia(consulta)
+    const alCambiar = (e) => setSi(e.matches)
+    m.addEventListener('change', alCambiar)
+    return () => m.removeEventListener('change', alCambiar)
+  }, [consulta])
+  return si
+}
+
+// FA-03 · Tarjeta plegable del panel del caso. `abierta` = cómo empieza; sin ella, abierta salvo que no tenga datos. Sin datos su título lo dice.
+export function Tarjeta({ titulo, vacia, abierta, tono = 'blanco', children }) {
+  const [visible, setVisible] = useState(abierta ?? !vacia)
+  const color = tono === 'nota' ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-200'
+  return (
+    <section className={`border rounded-xl ${color}`}>
+      <button type="button" onClick={() => setVisible(v => !v)} aria-expanded={visible}
+        className="w-full min-h-11 flex items-center justify-between gap-2 px-3 py-2 text-left">
+        <span className={`text-[11px] font-semibold uppercase tracking-wider ${vacia ? 'text-gray-500' : 'text-gray-700'}`}>{titulo}{vacia ? ' · sin datos' : ''}</span>
+        <span aria-hidden="true" className="text-gray-600 text-xs">{visible ? '▲' : '▼'}</span>
+      </button>
+      {visible && <div className="px-3 pb-3 text-sm">{children}</div>}
+    </section>
+  )
+}
+
+// FA-03 · Panel del caso, en la columna izquierda debajo de los temas: lo que pidió el cliente, la nota de quien coordina y lo que el candidato
+// dijo en su link. `abrirHojaDeVida` = en este tema se compara con el candidato, así que esa tarjeta empieza abierta.
+export function PanelContexto({ ficha, nota, abrirHojaDeVida = false }) {
   const temas = ficha?.solicitudCliente?.temas ?? []
   const datos = ficha?.solicitudCliente?.datos ?? []
   const decl = ficha?.declaraciones ?? []
-  const Titulo = ({ children }) => <h3 className="text-[11px] font-semibold uppercase tracking-wider text-gray-600 mb-1.5">{children}</h3>
   return (
-    <aside aria-label="Contexto del servicio" className="space-y-4 text-sm">
-      <section className="bg-white border border-gray-200 rounded-xl p-3">
-        <Titulo>Lo que pidió el cliente</Titulo>
-        {temas.length === 0 && datos.length === 0 && <p className="text-xs text-gray-600">Sin temas ni observaciones.</p>}
+    <div aria-label="Información del caso" className="space-y-3">
+      <Tarjeta key={`cliente-${temas.length + datos.length > 0}`} titulo="Lo que pidió el cliente" vacia={temas.length === 0 && datos.length === 0}>
         {temas.length > 0 && (
           <ul className="list-disc pl-4 space-y-0.5 text-gray-800">
-            {temas.map((t, i) => <li key={i}>{t.nombre}{t.detalle ? `: ${t.detalle}` : ''}</li>)}
+            {temas.map((t, i) => <li key={i} className="break-words">{t.nombre}{t.detalle ? `: ${t.detalle}` : ''}</li>)}
           </ul>
         )}
         {datos.length > 0 && (
@@ -114,26 +141,20 @@ export function PanelContexto({ ficha, nota }) {
             {datos.map((d, i) => <div key={i}><dt className="text-xs text-gray-600">{d.etiqueta}</dt><dd className="text-gray-900 break-words">{d.valor}</dd></div>)}
           </dl>
         )}
-      </section>
-      {nota && (
-        <section className="bg-amber-50 border border-amber-200 rounded-xl p-3">
-          <Titulo>Nota del gestor</Titulo>
-          <p className="text-gray-900 whitespace-pre-line break-words">{nota}</p>
-        </section>
-      )}
-      <section className="bg-white border border-gray-200 rounded-xl p-3">
-        <Titulo>Su hoja de vida dice</Titulo>
-        {decl.length === 0 ? <p className="text-xs text-gray-600">Sin respuestas registradas.</p> : (
-          <ul className="space-y-2">
-            {decl.map((d, i) => (
-              <li key={i}>
-                <p className="text-xs text-gray-600">{d.pregunta}</p>
-                <p className="text-gray-900"><b>{d.respuesta}</b>{d.detalle ? ` — ${d.detalle}` : ''}</p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-    </aside>
+      </Tarjeta>
+      <Tarjeta key={`nota-${!!nota}`} titulo="Nota del gestor" vacia={!nota} tono="nota">
+        <p className="text-gray-900 whitespace-pre-line break-words">{nota}</p>
+      </Tarjeta>
+      <Tarjeta key={`hv-${abrirHojaDeVida}-${decl.length > 0}`} titulo="Su hoja de vida dice" vacia={decl.length === 0} abierta={decl.length > 0 && abrirHojaDeVida}>
+        <ul className="space-y-2">
+          {decl.map((d, i) => (
+            <li key={i}>
+              <p className="text-xs text-gray-600 break-words">{d.pregunta}</p>
+              <p className="text-gray-900 break-words"><b>{d.respuesta}</b>{d.detalle ? ` — ${d.detalle}` : ''}</p>
+            </li>
+          ))}
+        </ul>
+      </Tarjeta>
+    </div>
   )
 }

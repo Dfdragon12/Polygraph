@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import formulariosService from '../../services/formulariosService'
 import Formulario from '../shared/Formulario'
-import { CampoHoja, PanelContexto, FUENTE_DOCUMENTO } from './componentesHoja'
+import { CampoHoja, PanelContexto, FUENTE_DOCUMENTO, useMasAngostoQue } from './componentesHoja'
 import { PreguntaSiNo, AdmisionesManuales, ComparacionModulo } from './BloquesEntrevista'
 import { PREGUNTA_POR_COLUMNA, OBSERVACIONES_VACIAS, COMPARACION_POR_COLUMNA, COMPARACIONES, declaradoPorComparacion, textoDeclarado, hayConflicto } from './preguntasEntrevista'
 import { leer, poner } from './logicaPregunta'
@@ -30,6 +30,9 @@ function useCelular() {
 // PF-01 · Formato de poligrafía pre empleo en 4 fases, en el orden de la sesión. Usa el mismo backend
 // y el mismo guardado que el formulario genérico (Formulario.jsx): los datos son los mismos, solo cambia
 // cómo y en qué orden se capturan. Otro subservicio del poligrafista sigue usando el formulario genérico.
+
+// Temas donde lo que el candidato respondió se compara con lo que dice en la entrevista: ahí «Su hoja de vida dice» empieza abierta.
+const TEMAS_CON_COMPARACION = ['financiera', 'antecedentes']
 
 let contador = 0
 const idLocal = () => `pf-${++contador}`
@@ -91,6 +94,8 @@ export function FormatoPoligrafia({ inicial, idServicioSubproceso, proveedor = n
   const navigate = useNavigate()
   const celular = useCelular()
   const modoUna = !!proveedor && celular
+  const angosto = useMasAngostoQue(900)
+  const [verCaso, setVerCaso] = useState(false)
   const [secciones, setSecciones] = useState(() => armarSecciones(inicial))
   const [meta, setMeta] = useState({ idFormulario: inicial.idFormulario })
   const [omitidas] = useState(() => new Set([...(inicial.secciones ?? []), ...(inicial.tablasFijas ?? [])].filter(s => s.omitida).map(s => s.idSeccion)))
@@ -433,9 +438,25 @@ export function FormatoPoligrafia({ inicial, idServicioSubproceso, proveedor = n
         })}
       </nav>
 
-      <div className="grid grid-cols-1 md:grid-cols-[13rem_minmax(0,1fr)] xl:grid-cols-[13rem_minmax(0,1fr)_18rem] gap-5">
-        {/* Temas de la fase actual */}
-        <aside aria-label={`Temas de la fase ${fase.id}`} className="md:self-start md:sticky md:top-0">
+      <div className={angosto ? 'space-y-4' : 'grid grid-cols-[15rem_minmax(0,1fr)] gap-5'}>
+        {/* FA-03 · Menos de 900 px: los temas son un selector y el panel del caso se abre con un botón */}
+        {angosto && (
+          <div className="space-y-3">
+            <div>
+              <label htmlFor="selector-tema" className="block text-xs font-semibold text-gray-700 mb-1">Tema de la fase {fase.id}</label>
+              <select id="selector-tema" value={temaId} onChange={e => irA(e.target.value)} className="w-full min-h-11 border border-gray-300 rounded-lg px-3 text-sm bg-white">
+                {temasDeFase.map(t => <option key={t.id} value={t.id}>{avances[t.id] === 'completo' && !t.informe ? '✓ ' : ''}{t.titulo}</option>)}
+              </select>
+            </div>
+            <button type="button" onClick={() => setVerCaso(v => !v)} aria-expanded={verCaso}
+              className="w-full min-h-11 px-4 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-800">
+              {verCaso ? 'Ocultar la información del caso' : 'Información del caso'}
+            </button>
+            {verCaso && <PanelContexto ficha={ficha} nota={inicial.observacionesAsignacion} abrirHojaDeVida={TEMAS_CON_COMPARACION.includes(temaId)} />}
+          </div>
+        )}
+        {/* Temas de la fase actual y, debajo, el panel del caso: la columna acompaña el desplazamiento */}
+        {!angosto && <aside aria-label={`Temas de la fase ${fase.id}`} className="self-start sticky top-0 space-y-3 overflow-y-auto pr-1" style={{ maxHeight: 'calc(100vh - 6rem)' }}>
           <ul className="space-y-1">
             {temasDeFase.map(t => {
               const activo = t.id === temaId
@@ -451,7 +472,9 @@ export function FormatoPoligrafia({ inicial, idServicioSubproceso, proveedor = n
               )
             })}
           </ul>
-        </aside>
+          <hr className="border-gray-200" />
+          <PanelContexto ficha={ficha} nota={inicial.observacionesAsignacion} abrirHojaDeVida={TEMAS_CON_COMPARACION.includes(temaId)} />
+        </aside>}
 
         {/* La hoja */}
         <div className="min-w-0 bg-gray-100 rounded-xl p-2 sm:p-6">
@@ -504,10 +527,6 @@ export function FormatoPoligrafia({ inicial, idServicioSubproceso, proveedor = n
           </section>
         </div>
 
-        {/* Contexto: en pantallas anchas va a la derecha, fijo; en las demás, debajo de la hoja */}
-        <div className="md:col-start-2 xl:col-start-3 xl:self-start xl:sticky xl:top-0">
-          <PanelContexto ficha={ficha} nota={inicial.observacionesAsignacion} />
-        </div>
       </div>
 
       {/* Barra inferior: dentro del área de trabajo (no tapa el menú lateral) */}

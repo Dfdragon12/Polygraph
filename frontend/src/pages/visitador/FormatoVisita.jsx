@@ -8,7 +8,7 @@ import FichaCandidato from '../../components/FichaCandidato'
 import NovedadesSubproceso from '../../components/NovedadesSubproceso'
 import SoportesInforme from '../../components/SoportesInforme'
 import RevisionEnvio from '../poligrafista/RevisionEnvio'
-import { FUENTE_DOCUMENTO } from '../poligrafista/componentesHoja'
+import { FUENTE_DOCUMENTO, Tarjeta, useMasAngostoQue } from '../poligrafista/componentesHoja'
 import { Parte, armarSecciones } from '../poligrafista/FormatoPoligrafia'
 import { FASES, TODOS_LOS_TEMAS, esFormatoVisita, partesDelTema, avanceDelTema, faltantesDeVisita } from './fasesVisita'
 
@@ -19,19 +19,6 @@ import { FASES, TODOS_LOS_TEMAS, esFormatoVisita, partesDelTema, avanceDelTema, 
 const tieneValor = (v) => v !== undefined && v !== null && String(v).trim() !== ''
 const NOOP = () => {}
 const SIN_CONFIRMAR = new Set()
-
-// true cuando la pantalla es más angosta que `px` (tableta vertical o celular).
-function useMasAngostoQue(px) {
-  const consulta = `(max-width: ${px - 1}px)`
-  const [si, setSi] = useState(() => typeof window !== 'undefined' && window.matchMedia(consulta).matches)
-  useEffect(() => {
-    const m = window.matchMedia(consulta)
-    const alCambiar = (e) => setSi(e.matches)
-    m.addEventListener('change', alCambiar)
-    return () => m.removeEventListener('change', alCambiar)
-  }, [consulta])
-  return si
-}
 
 // Un solo GET: si el servicio no es la visita domiciliaria, se deja el formulario de siempre.
 export default function FormularioVisitador() {
@@ -52,22 +39,6 @@ export default function FormularioVisitador() {
   return <FormatoVisita key={idServicioSubproceso} inicial={datos} idServicioSubproceso={idServicioSubproceso} />
 }
 
-// Tarjeta plegable de la columna izquierda. Sin datos empieza plegada y su título lo dice.
-function Tarjeta({ titulo, vacia, tono = 'blanco', children }) {
-  const [abierta, setAbierta] = useState(!vacia)
-  const color = tono === 'nota' ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-200'
-  return (
-    <section className={`border rounded-xl ${color}`}>
-      <button type="button" onClick={() => setAbierta(a => !a)} aria-expanded={abierta}
-        className="w-full min-h-11 flex items-center justify-between gap-2 px-3 py-2 text-left">
-        <span className={`text-[11px] font-semibold uppercase tracking-wider ${vacia ? 'text-gray-500' : 'text-gray-700'}`}>{titulo}{vacia ? ' · sin datos' : ''}</span>
-        <span aria-hidden="true" className="text-gray-600 text-xs">{abierta ? '▲' : '▼'}</span>
-      </button>
-      {abierta && <div className="px-3 pb-3 text-sm">{children}</div>}
-    </section>
-  )
-}
-
 // Lo que el visitador necesita tener a la vista durante toda la visita.
 function PanelCaso({ ficha, nota }) {
   const temas = ficha?.solicitudCliente?.temas ?? []
@@ -75,7 +46,7 @@ function PanelCaso({ ficha, nota }) {
   const decl = ficha?.declaraciones ?? []
   return (
     <div className="space-y-3">
-      <Tarjeta titulo="Lo que registró el evaluado" vacia={decl.length === 0}>
+      <Tarjeta key={`ev-${decl.length > 0}`} titulo="Lo que registró el evaluado" vacia={decl.length === 0}>
         <ul className="space-y-2">
           {decl.map((d, i) => (
             <li key={i}>
@@ -85,10 +56,10 @@ function PanelCaso({ ficha, nota }) {
           ))}
         </ul>
       </Tarjeta>
-      <Tarjeta titulo="Nota del gestor" vacia={!nota} tono="nota">
+      <Tarjeta key={`nota-${!!nota}`} titulo="Nota del gestor" vacia={!nota} tono="nota">
         <p className="text-gray-900 whitespace-pre-line break-words">{nota}</p>
       </Tarjeta>
-      <Tarjeta titulo="Lo que pidió el cliente" vacia={temas.length === 0 && datos.length === 0}>
+      <Tarjeta key={`cliente-${temas.length + datos.length > 0}`} titulo="Lo que pidió el cliente" vacia={temas.length === 0 && datos.length === 0}>
         {temas.length > 0 && (
           <ul className="list-disc pl-4 space-y-0.5 text-gray-800">
             {temas.map((t, i) => <li key={i} className="break-words">{t.nombre}{t.detalle ? `: ${t.detalle}` : ''}</li>)}
