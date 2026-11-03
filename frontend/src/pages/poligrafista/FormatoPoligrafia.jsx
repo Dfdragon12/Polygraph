@@ -54,7 +54,7 @@ export default function FormularioPoligrafista() {
   return <FormatoPoligrafia key={idServicioSubproceso} inicial={datos} idServicioSubproceso={idServicioSubproceso} />
 }
 
-function armarSecciones(r) {
+export function armarSecciones(r) {
   const editables = (r.secciones ?? []).map(s => ({
     idSeccion: s.idSeccion, clave: s.clave, nombre: s.nombre, tipo: s.tipo, orden: s.orden, calculada: !!s.calculada,
     columnas: s.columnas, valores: { ...s.valores }, justificaciones: { ...(s.justificaciones ?? {}) },
@@ -582,7 +582,7 @@ function UnaPorPantalla({ unidades }) {
 }
 
 // Una parte de un tema: campos sueltos, una tabla editable, una tabla de la hoja de vida o una calculada.
-function Parte({ parte, tema, soloLectura, idServicioSubproceso, secciones, frases, temasCliente, declarado, aplicar, onCampo, onCelda, onAgregar, onError, confirmados, onConfirmar, rutaCorregir }) {
+export function Parte({ parte, tema, soloLectura, idServicioSubproceso, secciones, frases, temasCliente, declarado, aplicar, onCampo, onCelda, onAgregar, onError, confirmados, onConfirmar, rutaCorregir }) {
   if (parte.fija) return <TablaHojaVida fija={parte.fija} validacion={parte.validacion} soloLectura={soloLectura} idServicioSubproceso={idServicioSubproceso} onCelda={onCelda} onError={onError} />
   const { seccion, columnas } = parte
   const bloqueada = soloLectura || tema.soloLectura || seccion.calculada
