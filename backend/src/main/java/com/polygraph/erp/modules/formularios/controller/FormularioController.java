@@ -13,6 +13,7 @@ import com.polygraph.erp.modules.trabajos.dto.TrabajoResponse;
 import com.polygraph.erp.modules.formularios.service.FichaCandidatoService;
 import com.polygraph.erp.modules.formularios.service.FormularioDocumentoService;
 import com.polygraph.erp.modules.formularios.service.FormularioService;
+import com.polygraph.erp.modules.formularios.service.HistorialPreguntasService;
 import com.polygraph.erp.shared.exceptions.ApiException;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -51,6 +52,12 @@ public class FormularioController {
     public ResponseEntity<FormularioResponse> obtener(
             @PathVariable Long idServicioSubproceso, Authentication auth) {
         return ResponseEntity.ok(service.obtener(idServicioSubproceso, resolverUsuario(auth)));
+    }
+
+    @GetMapping("/subproceso/{idServicioSubproceso}/preguntas-historial")
+    public ResponseEntity<java.util.List<HistorialPreguntasService.Cambio>> historialPreguntas(
+            @PathVariable Long idServicioSubproceso, Authentication auth) {
+        return ResponseEntity.ok(service.historialDePreguntas(idServicioSubproceso, resolverUsuario(auth)));
     }
 
     @PutMapping("/subproceso/{idServicioSubproceso}")

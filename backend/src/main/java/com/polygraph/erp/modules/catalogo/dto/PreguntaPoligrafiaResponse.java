@@ -6,10 +6,11 @@ public record PreguntaPoligrafiaResponse(
         Integer id,
         String nombre,
         Boolean requiereDetalle,
+        String grupo,
         Integer orden,
         Boolean activo
 ) {
     public static PreguntaPoligrafiaResponse de(PreguntaPoligrafia p) {
-        return new PreguntaPoligrafiaResponse(p.getId(), p.getNombre(), p.getRequiereDetalle(), p.getOrden(), p.getActivo());
+        return new PreguntaPoligrafiaResponse(p.getId(), p.getNombre(), p.getRequiereDetalle(), p.getGrupo(), p.getOrden(), p.getActivo());
     }
 }

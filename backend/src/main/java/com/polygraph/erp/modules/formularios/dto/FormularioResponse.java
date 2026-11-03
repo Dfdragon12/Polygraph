@@ -77,7 +77,9 @@ public record FormularioResponse(
             boolean opcional,
             boolean omitida,
             // V217: grupo con el que se clasifica la sección en el índice (null = sin grupo).
-            String grupo) {}
+            String grupo,
+            // Clave estable de la sección (la misma de los marcadores del Word); null si no tiene.
+            String clave) {}
 
     public record FilaDatosResponse(Integer idFila, String etiqueta, Map<Integer, String> valores,
                                     Map<Integer, String> justificaciones) {}

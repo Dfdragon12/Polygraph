@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth'
 import formulariosService from '../services/formulariosService'
 import { useCambios } from '../hooks/useCambios'
 import SolicitudCliente from './SolicitudCliente'
+import EditarTemasSolicitud from './solicitud/EditarTemasSolicitud'
 
 // Ficha del candidato vista desde un subproceso: sus datos (identificación, contacto, otros) y los
 // soportes que cargó con el link de hoja de vida, cruzados contra los documentos que exige el
@@ -70,6 +71,9 @@ export default function FichaCandidato({ idServicioSubproceso, seccion = 'datos'
   // Analista/poligrafista/visitador: al devolver, el backend registra además una novedad automática.
   const esEjecutor = ['ANALISTA_INTERNO', 'POLIGRAFISTA', 'VISITADOR'].includes(usuario?.rol)
   const [revisando, setRevisando] = useState(null)
+  const [editandoTemas, setEditandoTemas] = useState(false)
+  // Admin y el gestor del cliente pueden cambiar los temas a evaluar de una poligrafía (también agregando un grupo completo).
+  const puedeEditarTemas = ['ADMIN_POLYGRAPH', 'GESTOR'].includes(usuario?.rol)
   const [devolviendo, setDevolviendo] = useState(null) // formulario de revisión abierto: { idDocumento, resultado, texto }
 
   // Aprobar o devolver (con motivo) un soporte — la respuesta trae la ficha actualizada.
@@ -276,7 +280,12 @@ export default function FichaCandidato({ idServicioSubproceso, seccion = 'datos'
   return (
     <div className="space-y-4">
       {/* Lo que el cliente pidió al solicitar la poligrafía (formato adicional y temas a evaluar) */}
-      <SolicitudCliente solicitud={ficha.solicitudCliente} />
+      <SolicitudCliente solicitud={ficha.solicitudCliente}
+        onEditar={puedeEditarTemas && ficha.admiteTemasPoligrafia ? () => setEditandoTemas(true) : undefined} />
+      {editandoTemas && (
+        <EditarTemasSolicitud idSubproceso={idServicioSubproceso} actuales={ficha.solicitudCliente?.temas ?? []} onClose={() => setEditandoTemas(false)}
+          onGuardado={(solicitudCliente) => { setFicha(f => ({ ...f, solicitudCliente })); setEditandoTemas(false) }} />
+      )}
 
       <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
         <div className="flex items-start justify-between gap-3">

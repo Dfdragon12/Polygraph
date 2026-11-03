@@ -10,6 +10,9 @@ public record PreguntaPoligrafiaRequest(
 
         // El cliente debe escribir cuál (tema tipo "Otros ¿Cuál?")
         Boolean requiereDetalle,
+        // Grupo del tema (opcional, máximo 100 caracteres)
+        @Size(max = 100, message = "El grupo admite máximo 100 caracteres")
+        String grupo,
 
         // null al crear = va al final de la lista
         Integer orden,

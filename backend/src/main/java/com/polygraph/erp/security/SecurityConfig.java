@@ -36,6 +36,7 @@ public class SecurityConfig {
     private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
     private final JwtAccessDeniedHandler jwtAccessDeniedHandler;
     private final RateLimitFilter rateLimitFilter;
+    private final EnlaceProveedorFilter enlaceProveedorFilter;
 
     @Value("${app.cors.allowed-origins}")
     private String origenesPermitidos;
@@ -79,7 +80,9 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authenticationProvider(authenticationProvider())
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
-            .addFilterBefore(rateLimitFilter, JwtAuthenticationFilter.class);
+            .addFilterBefore(rateLimitFilter, JwtAuthenticationFilter.class)
+            // PF-09: el enlace del proveedor externo se resuelve antes que el JWT y solo abre la ruta de su evaluación.
+            .addFilterBefore(enlaceProveedorFilter, JwtAuthenticationFilter.class);
 
         return http.build();
     }

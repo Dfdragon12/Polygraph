@@ -27,6 +27,10 @@ public class PreguntaPoligrafia {
     @Column(name = "requiere_detalle", nullable = false)
     private Boolean requiereDetalle = false;
 
+    /** Grupo al que pertenece (ej. «Conducta laboral»); texto libre, null = sin grupo. */
+    @Column(name = "grupo", length = 100)
+    private String grupo;
+
     @Builder.Default
     @Column(name = "orden", nullable = false)
     private Integer orden = 0;

@@ -10,7 +10,7 @@ import Paginacion, { usePaginacion } from '../../../components/ui/Paginacion'
 // La solicitud guarda el texto del tema que se pidió: renombrar o borrar uno no cambia lo ya solicitado.
 
 const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white'
-const vacio = { id: null, nombre: '', requiereDetalle: false, orden: '', activo: true }
+const vacio = { id: null, nombre: '', grupo: '', requiereDetalle: false, orden: '', activo: true }
 
 function IconoLapiz() {
   return <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
@@ -34,7 +34,7 @@ function Th({ children, cls = '' }) {
   return <th className={`px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap ${cls}`}>{children}</th>
 }
 
-function ModalTema({ inicial, onClose, onGuardado }) {
+function ModalTema({ inicial, grupos, onClose, onGuardado }) {
   const idCampos = useId()
   const [f, setF] = useState(inicial)
   const [guardando, setGuardando] = useState(false)
@@ -48,7 +48,7 @@ function ModalTema({ inicial, onClose, onGuardado }) {
     setGuardando(true)
     setError(null)
     try {
-      const datos = { nombre: f.nombre.trim(), requiereDetalle: f.requiereDetalle, orden: f.orden === '' ? null : Number(f.orden), activo: f.activo }
+      const datos = { nombre: f.nombre.trim(), grupo: (f.grupo ?? '').trim() || null, requiereDetalle: f.requiereDetalle, orden: f.orden === '' ? null : Number(f.orden), activo: f.activo }
       const r = nuevo ? await preguntasPoligrafiaService.crear(datos) : await preguntasPoligrafiaService.actualizar(f.id, datos)
       onGuardado(r, nuevo)
     } catch (err) {
@@ -68,6 +68,14 @@ function ModalTema({ inicial, onClose, onGuardado }) {
           <input id={`${idCampos}-1`} value={f.nombre} onChange={e => set('nombre', e.target.value)} maxLength={150} autoFocus
             placeholder="Ej: Robos" className={inputCls} />
           <p className="mt-1 text-[11px] text-gray-500">Así lo ve el cliente al solicitar y el poligrafista en su formulario.</p>
+        </div>
+
+        <div>
+          <label htmlFor={`${idCampos}-5`} className="block text-xs font-medium text-gray-600 mb-1">Grupo</label>
+          <input id={`${idCampos}-5`} value={f.grupo ?? ''} onChange={e => set('grupo', e.target.value)} maxLength={100} list={`${idCampos}-grupos`}
+            placeholder="Ej: Conducta laboral" className={inputCls} />
+          <datalist id={`${idCampos}-grupos`}>{grupos.map(g => <option key={g} value={g} />)}</datalist>
+          <p className="mt-1 text-[11px] text-gray-500">Agrupa los temas parecidos: el cliente los ve juntos y el admin puede escoger un grupo completo para una solicitud. Escribe uno nuevo o elige uno existente.</p>
         </div>
 
         <div className="flex items-start gap-2.5">
@@ -111,6 +119,7 @@ export default function TemasPoligrafia() {
   const [lista, setLista] = useState(null)
   const [error, setError] = useState(null)
   const [busqueda, setBusqueda] = useState('')
+  const [grupoFiltro, setGrupoFiltro] = useState('')
   const [modal, setModal] = useState(null)
   const [borrar, setBorrar] = useState(null)
   const [toast, setToast] = useState(null)
@@ -120,9 +129,11 @@ export default function TemasPoligrafia() {
   }, [])
 
   const visibles = useMemo(() => (lista ?? [])
-    .filter(t => !busqueda || t.nombre.toLowerCase().includes(busqueda.toLowerCase()))
-    .sort((a, b) => a.orden - b.orden || a.id - b.id), [lista, busqueda])
-  const pag = usePaginacion(visibles, busqueda)
+    .filter(t => !busqueda || t.nombre.toLowerCase().includes(busqueda.toLowerCase()) || (t.grupo ?? '').toLowerCase().includes(busqueda.toLowerCase()))
+    .filter(t => !grupoFiltro || (grupoFiltro === '__sin' ? !t.grupo : t.grupo === grupoFiltro))
+    .sort((a, b) => a.orden - b.orden || a.id - b.id), [lista, busqueda, grupoFiltro])
+  const grupos = useMemo(() => [...new Set((lista ?? []).map(t => t.grupo).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es')), [lista])
+  const pag = usePaginacion(visibles, `${busqueda}|${grupoFiltro}`)
   const activos = (lista ?? []).filter(t => t.activo).length
 
   const guardado = (r, nuevo) => {
@@ -158,7 +169,7 @@ export default function TemasPoligrafia() {
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Temas de poligrafía</h2>
-          <p className="text-sm text-gray-500 mt-0.5">Los temas que el cliente puede pedir evaluar al solicitar una poligrafía (máximo 4 por solicitud). El poligrafista los ve en su formulario.</p>
+          <p className="text-sm text-gray-500 mt-0.5">Los temas que el cliente puede pedir evaluar al solicitar una poligrafía (máximo 4 por solicitud), organizados por grupo. El poligrafista los ve en su formulario y el admin puede cambiar los de una solicitud.</p>
         </div>
         <button onClick={() => setModal(vacio)}
           className="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
@@ -171,6 +182,12 @@ export default function TemasPoligrafia() {
       <div className="flex flex-wrap items-center gap-3 mb-3">
         <input aria-label="Buscar tema" type="search" value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar…"
           className="flex-1 min-w-[200px] max-w-xs border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+        <select aria-label="Filtrar por grupo" value={grupoFiltro} onChange={e => setGrupoFiltro(e.target.value)}
+          className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500">
+          <option value="">Todos los grupos</option>
+          {grupos.map(g => <option key={g} value={g}>{g}</option>)}
+          <option value="__sin">Sin grupo</option>
+        </select>
         <span className="text-xs text-gray-500">
           {visibles.length} resultado{visibles.length !== 1 ? 's' : ''}{lista ? ` · ${activos} activo${activos !== 1 ? 's' : ''}` : ''}
         </span>
@@ -189,13 +206,14 @@ export default function TemasPoligrafia() {
           <div className="overflow-x-auto scrollbar-thin">
             <table className="table-stack w-full divide-y divide-gray-100 text-sm">
               <thead className="bg-gray-50">
-                <tr><Th cls="w-16">N.°</Th><Th>Tema</Th><Th cls="hidden lg:table-cell">Pide escribir cuál</Th><Th>Estado</Th><Th>···</Th></tr>
+                <tr><Th cls="w-16">N.°</Th><Th>Tema</Th><Th>Grupo</Th><Th cls="hidden lg:table-cell">Pide escribir cuál</Th><Th>Estado</Th><Th>···</Th></tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {pag.visibles.map((t, n) => (
                   <tr key={t.id} className="hover:bg-gray-50/70 transition-colors">
                     <td className="px-4 py-3 text-gray-500 tabular-nums">{pag.desde + n + 1}</td>
                     <td className="px-4 py-3 font-medium text-gray-900 min-w-[14rem]">{t.nombre}</td>
+                    <td className="px-4 py-3 text-xs text-gray-700">{t.grupo || <span className="text-gray-500">Sin grupo</span>}</td>
                     <td className="hidden lg:table-cell px-4 py-3 text-xs text-gray-600">{t.requiereDetalle ? 'Sí' : 'No'}</td>
                     <td className="px-4 py-3"><Badge activo={t.activo} /></td>
                     <td className="px-4 py-3 text-center">
@@ -214,7 +232,7 @@ export default function TemasPoligrafia() {
         <Paginacion pagina={pag.pagina} total={pag.total} porPagina={pag.porPagina} onChange={pag.setPagina} />
       </div>
 
-      {modal && <ModalTema inicial={modal} onClose={() => setModal(null)} onGuardado={guardado} />}
+      {modal && <ModalTema inicial={modal} grupos={grupos} onClose={() => setModal(null)} onGuardado={guardado} />}
       {borrar && (
         <ConfirmModal titulo="¿Eliminar este tema?" danger confirmLabel="Eliminar" onConfirmar={eliminar} onCancelar={() => setBorrar(null)}>
           <p className="text-sm text-gray-600">{borrar.nombre}</p>

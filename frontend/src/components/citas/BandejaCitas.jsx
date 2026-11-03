@@ -31,14 +31,20 @@ function Fila({ a, children }) {
 }
 
 function Panel({ titulo, detalle, cantidad, tono, children }) {
+  const [abierta, setAbierta] = useState(false)   // cerrada: solo título y conteo, para no empujar el semáforo ni la tabla
   return (
     <section className={`bg-white rounded-xl border shadow-sm overflow-hidden ${tono}`} aria-label={titulo}>
-      <header className="px-4 py-3 border-b border-gray-100 flex items-center gap-3">
+      <button type="button" onClick={() => setAbierta(v => !v)} aria-expanded={abierta}
+        className={`w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-gray-50/70 transition-colors ${abierta ? 'border-b border-gray-100' : ''}`}>
         <h3 className="text-sm font-semibold text-gray-900">{titulo}</h3>
         <span className="text-xs font-semibold bg-gray-900 text-white rounded-full px-2 py-0.5">{cantidad}</span>
-        <p className="text-xs text-gray-600 hidden sm:block">{detalle}</p>
-      </header>
-      <ul className="divide-y divide-gray-100">{children}</ul>
+        <p className="text-xs text-gray-700 hidden sm:block flex-1 min-w-0 truncate">{detalle}</p>
+        <span className="ml-auto text-xs font-medium text-primary-700 flex-shrink-0">{abierta ? 'Ocultar' : 'Ver lista'}</span>
+        <svg aria-hidden="true" className={`w-4 h-4 text-gray-500 flex-shrink-0 transition-transform ${abierta ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
+          <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+        </svg>
+      </button>
+      {abierta && <ul className="divide-y divide-gray-100 max-h-80 overflow-y-auto">{children}</ul>}
     </section>
   )
 }

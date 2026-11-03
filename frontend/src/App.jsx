@@ -83,6 +83,8 @@ import MisAsignaciones from './pages/shared/MisAsignaciones'
 import MiPerfil from './pages/shared/MiPerfil'
 import MiPerfilAnalista from './pages/client/MiPerfilAnalista'
 import Formulario       from './pages/shared/Formulario'
+import FormularioPoligrafista from './pages/poligrafista/FormatoPoligrafia'
+import ProveedorExterno from './pages/proveedor/ProveedorExterno'
 import CandidatoPerfil  from './pages/shared/CandidatoPerfil'
 
 const ROLES_CLIENTE = ['ADMIN_CLIENTE', 'ANALISTA_CLIENTE']
@@ -153,6 +155,8 @@ function App() {
         <Route path="/cambiar-password"   element={<ProtectedRoute><CambiarPassword /></ProtectedRoute>} />
         <Route path="/evaluado/link/:token"      element={<EvalueeForm />} />
         <Route path="/evaluado/completar/:token" element={<EvalueeForm />} />
+        {/* PF-09: proveedor externo de poligrafía — entra con su enlace, sin usuario ni contraseña */}
+        <Route path="/proveedor/:token"          element={<ProveedorExterno />} />
         <Route path="/no-autorizado" element={
           <div className="min-h-screen flex items-center justify-center bg-slate-50">
             <div className="text-center">
@@ -262,7 +266,7 @@ function App() {
           <Route path="dashboard" element={<AsignacionDashboard />} />
           <Route path="servicios" element={<MisAsignaciones />} />
           <Route path="perfil" element={<MiPerfil />} />
-          <Route path="formulario/:idServicioSubproceso" element={<Formulario />} />
+          <Route path="formulario/:idServicioSubproceso" element={<FormularioPoligrafista />} />
           <Route path="candidatos/:idCandidato" element={<CandidatoPerfil />} />
         </Route>
 

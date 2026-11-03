@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { tokenProveedor, enModoProveedor, CABECERA_PROVEEDOR } from './accesoProveedor'
 
 const api = axios.create({
   baseURL: '/api/v1',
@@ -12,6 +13,13 @@ const api = axios.create({
 const clienteRefresh = axios.create({ baseURL: '/api/v1' })
 
 api.interceptors.request.use((config) => {
+  // PF-09: con un enlace de proveedor manda el enlace y NUNCA la sesión de otra persona que haya quedado en el navegador.
+  const enlace = tokenProveedor()
+  if (enlace) {
+    config.headers[CABECERA_PROVEEDOR] = enlace
+    delete config.headers.Authorization
+    return config
+  }
   const token = localStorage.getItem('token')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
@@ -82,6 +90,9 @@ api.interceptors.response.use(
   async (error) => {
     await normalizarErrorBlob(error)
     const { response, config } = error
+
+    // PF-09: un 401 con enlace de proveedor es "el enlace ya no sirve" (lo muestra su pantalla); no hay sesión que renovar ni login al que ir.
+    if (enModoProveedor()) return Promise.reject(error)
 
     // 401 = sesión inválida/expirada (ver JwtAuthenticationEntryPoint en backend).
     // Se intenta renovar una sola vez por request antes de rendirse.

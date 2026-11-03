@@ -41,6 +41,7 @@ public class PreguntaPoligrafiaService {
         PreguntaPoligrafia tema = repository.save(PreguntaPoligrafia.builder()
                 .nombre(nombre)
                 .requiereDetalle(Boolean.TRUE.equals(req.requiereDetalle()))
+                .grupo(limpiarGrupo(req.grupo()))
                 .orden(req.orden() != null ? req.orden() : ultimo + 10)
                 .activo(req.activo() == null || req.activo())
                 .build());
@@ -54,6 +55,7 @@ public class PreguntaPoligrafiaService {
         validarNoRepetido(repository.findAllByOrderByOrdenAscIdAsc(), nombre, id);
         tema.setNombre(nombre);
         if (req.requiereDetalle() != null) tema.setRequiereDetalle(req.requiereDetalle());
+        tema.setGrupo(limpiarGrupo(req.grupo()));
         if (req.orden() != null) tema.setOrden(req.orden());
         if (req.activo() != null) tema.setActivo(req.activo());
         return PreguntaPoligrafiaResponse.de(repository.save(tema));
@@ -64,6 +66,10 @@ public class PreguntaPoligrafiaService {
         PreguntaPoligrafia tema = obtener(id);
         repository.delete(tema);
         log.info("Temas de poligrafía: se eliminó '{}'", tema.getNombre());
+    }
+
+    private static String limpiarGrupo(String grupo) {
+        return grupo == null || grupo.isBlank() ? null : grupo.trim();
     }
 
     private PreguntaPoligrafia obtener(Integer id) {

@@ -736,7 +736,7 @@ complementa): `docs/DICCIONARIO.md` (glosario de negocio↔código↔BD), `docs/
 - `shared/estados/MaquinaEstadosSubproceso` (pura, sin Spring) define las ÚNICAS transiciones: enviar al programador, asignar, agendar,
   enviar informe, aprobar, devolver, cita no realizada, reprogramar, reasignar y cancelar. `AsignacionService.evaluar(...)` la aplica y
   traduce el rechazo a 403 (permiso), 409 (estado/condición) o 400 (falta motivo). Hoy el programador también aprueba, devuelve y cancela
-  CITAS (como antes); el spec dice solo gestor — pendiente de decisión del usuario. Cita = rol POLIGRAFISTA/VISITADOR (VerifEye sigue con
+  CITAS (como antes); el spec decía solo gestor, pero el usuario decidió (2026-10-28) que el programador SÍ puede. Cita = rol POLIGRAFISTA/VISITADOR (VerifEye sigue con
   rol ANALISTA_INTERNO hasta que el usuario decida pasarlo al programador: `AsignacionService.esCita` es el único lugar).
 - Marcas (no son estados): `servicio_subprocesos.devuelto`, `reprogramaciones` (contador), `iniciado`/`fecha_iniciado`;
   `servicios.candidato_desistio`. ASIGNADA_NO_REALIZADA y CANCELADA van al historial. `iniciado` se activa al guardar avance el responsable
@@ -832,7 +832,7 @@ complementa): `docs/DICCIONARIO.md` (glosario de negocio↔código↔BD), `docs/
   gestor: las de sus clientes). `AsignacionResponse` trae `porConfirmar`, `noHaLlegadoDisponible`, `noSePresentoDisponible`, `evaluadoAvisado`
   calculados en el servidor. `CitasPorConfirmarTareas` avisa UNA vez por cita cada minuto (`aviso_por_confirmar_en`). Frontend:
   `components/citas/BandejaCitas.jsx` y `ModalCitaAccion.jsx` (Mis asignaciones del profesional y Agenda del programador).
-- Pendiente: el programador sigue pudiendo aprobar/devolver/cancelar sus citas (decisión sin responder); VerifEye sigue con rol analista.
+- Decidido 2026-10-28: el programador sigue pudiendo aprobar/devolver/cancelar sus citas; VerifEye se queda con rol analista. Desplazamiento entre visitas sigue en 0 min (falta el dato).
 
 ## Agenda: atrasado en agenda, disponibilidad y cronograma (SE-08, 2026-10-27)
 
@@ -1005,3 +1005,22 @@ complementa): `docs/DICCIONARIO.md` (glosario de negocio↔código↔BD), `docs/
   todas las filas, o cupo pospago acumulado en el orden del archivo (precio + recargo por ciudad). Si algo falla: no se crea nada y `BulkUploadResponse` trae `errores` por fila con el motivo (más `mensaje`).
 - Si todo pasa, `SolicitudService.crearLote` crea todas en UNA transacción (cada una por el mismo camino que Nueva solicitud: lote y valor de NS-02, descuento atómico de NS-03, fecha de NS-06); si algo falla ya con todo validado, tampoco queda nada a medias.
   No se implementó la opción «crear solo las válidas con confirmación». `CargaMasivaValidadorTest`.
+
+## Poligrafía Pre Empleo — proveedor externo con enlace (PF-09, V241, 2026-11-03)
+
+- El programador (responsable de la cita) o el admin genera un enlace para que un proveedor externo diligencie UNA evaluación de poligrafía sin usuario ni contraseña: Agenda → menú de la cita → «Enlace para proveedor externo»
+  (`components/citas/ModalEnlaceProveedor.jsx`; solo poligrafista asignado y subproceso EN_EJECUCION). Endpoints `POST|GET|DELETE /api/v1/gestor/asignaciones/{id}/enlace-proveedor` (`EnlaceProveedorController`).
+- Tabla `enlaces_proveedor`: solo se guarda el SHA-256 del token (256 bits, base64url); el enlace completo se ve UNA vez al generarlo. Índice único parcial `ux_enlaces_proveedor_vigente`: un solo enlace vigente por evaluación
+  (generar otro cierra el anterior como REEMPLAZADO). Vence al ENVIAR el informe (`AsignacionService.completar` → `EnlaceProveedorService.cerrarAlEnviar`, motivo ENVIADO) o a las 72 h; el programador lo revoca. Historial: quién lo generó,
+  cuándo, primer/último uso y número de ingresos. «Un solo uso» = un enlace por evaluación hasta enviar el informe, no uno que se invalida al abrirse (permite volver a entrar si se corta la señal).
+- Seguridad: `security/EnlaceProveedorFilter` (antes del filtro JWT) lee la cabecera `X-Acceso-Proveedor` y actúa COMO el poligrafista asignado, pero solo en las rutas de `ReglasEnlaceProveedor.rutaPermitida` (formulario, ficha, foto,
+  PDF y completar de ESA evaluación; frases estándar; `/api/v1/proveedor/sesion`; trabajos). Otra ruta o evaluación = 403 `ENLACE_RUTA_NO_PERMITIDA`; enlace inválido = 401 con `codigo` (`ENLACE_ENVIADO|VENCIDO|REVOCADO|REEMPLAZADO|NO_DISPONIBLE|DESCONOCIDO`);
+  20 fallos por IP y minuto = 429 (en memoria, por nodo). Rechaza rutas disfrazadas (`..`, `%`, `;`, `//`, ceros a la izquierda). Una ruta nueva que el proveedor necesite se agrega EXPLÍCITAMENTE a esa lista. `EnlaceProveedorService` es opcional en
+  `AsignacionService` (`required = false`) para no romper las pruebas armadas a mano. Pruebas `ReglasEnlaceProveedorTest`, `EnlaceProveedorFilterTest`.
+- Frontend: ruta pública `/proveedor/:token` (`pages/proveedor/ProveedorExterno.jsx`) guarda el token en sessionStorage (`services/accesoProveedor.js`); `services/api.js` manda la cabecera, quita `Authorization` y NO refresca ni redirige al login.
+  Renderiza `FormatoPoligrafia` con la prop `proveedor`, sin «Mis Servicios» ni «Salir». Solo formato Pre Empleo; otro formato muestra un aviso.
+- Celular (<768 px) con enlace: una pregunta por pantalla con Sí/No grandes y Anterior/Siguiente (`UnaPorPantalla`, `Botones grande`).
+- Sin señal: cada cambio se escribe primero en IndexedDB (`services/colaOffline.js`, base `polygraph-proveedor`, clave `form:<id>`) y luego se sube en orden; se reintenta al volver la señal, cada 20 s y al reabrir el enlace (antes de leer el formulario).
+  El servidor reemplaza el formulario completo: con dos dispositivos gana el último guardado. Enviar el informe EXIGE conexión.
+- Límites conocidos: la foto/cédula no tiene cola sin conexión; el service worker no cachea el HTML, así que reabrir el enlace sin señal muestra «Sin conexión» (lo escrito sigue guardado); lo que guarda el proveedor queda a nombre del poligrafista
+  asignado en el historial; si se reasigna la cita el enlace sigue al nuevo asignado; el token va en la URL. Sin pruebas de interfaz automáticas ni verificación en navegador real.

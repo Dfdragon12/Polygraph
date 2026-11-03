@@ -374,7 +374,17 @@ public class CandidatoInfoService {
     public static final Map<String, Precarga> PRECARGAS = Map.of(
             "referencias_declaradas", new Precarga("referencias", Map.of(
                     "rd_nombre", "nombre", "rd_parentesco", "parentesco",
-                    "rd_tiempo", "tiempo_conocimiento", "rd_telefono", "telefono")));
+                    "rd_tiempo", "tiempo_conocimiento", "rd_telefono", "telefono")),
+            // Visita domiciliaria (V234, e_* y l_*) y Poligrafía pre-empleo (V235, ed_* y ex_*): comparten la clave de sección del Word
+            // (tablas['estudios'] y tablas['empleos']); cada una usa solo las columnas que tiene.
+            "estudios", new Precarga("educacion", Map.of(
+                    "e_nivel", "nivel", "e_institucion", "institucion", "e_titulo", "titulo", "e_estado", "estado", "e_fecha", "fecha_fin",
+                    "ed_formacion", "titulo", "ed_anio", "fecha_fin", "ed_institucion", "institucion")),
+            "empleos", new Precarga("experiencia_laboral", Map.ofEntries(
+                    Map.entry("l_empresa", "empresa"), Map.entry("l_cargo", "cargo"), Map.entry("l_contrato", "tipo_contrato"),
+                    Map.entry("l_ingreso", "fecha_inicio"), Map.entry("l_retiro", "fecha_fin"), Map.entry("l_salario", "salario"),
+                    Map.entry("ex_empresa", "empresa"), Map.entry("ex_cargo", "cargo"), Map.entry("ex_contrato", "tipo_contrato"),
+                    Map.entry("ex_retiro", "motivo_retiro"), Map.entry("ex_llamados_mod", "llamados_atencion"))));
 
     /** Claves de las tablas fijas — usadas por el análisis de marcadores para no marcarlas como
      *  "desconocidas" aunque no estén definidas en el constructor. */

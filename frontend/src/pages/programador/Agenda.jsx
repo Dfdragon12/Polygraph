@@ -11,10 +11,10 @@ import MenuAcciones from '../../components/ui/MenuAcciones'
 import ModalAsignarSubproceso from '../../components/ModalAsignarSubproceso'
 import EstadoTiempo from '../../components/EstadoTiempo'
 import ModalCitaAccion from '../../components/citas/ModalCitaAccion'
+import ModalEnlaceProveedor from '../../components/citas/ModalEnlaceProveedor'
 import { useDiasNoHabiles } from '../../hooks/useDiasNoHabiles'
 import DisponibilidadEquipo from '../../components/agenda/DisponibilidadEquipo'
 import BandejaParaReprogramar from '../../components/agenda/BandejaParaReprogramar'
-import BandejaCitas from '../../components/citas/BandejaCitas'
 import CronogramaDia from '../../components/CronogramaDia'
 import { toLocalDateTimeString, toLocalDateString, hoyLocalDateString, rangoDelDia } from '../../utils/fechas'
 
@@ -222,6 +222,7 @@ export default function ProgramadorAgenda() {
   const [seleccionado, setSeleccionado] = useState(null)
   const [toast, setToast]               = useState(null)
   const [accionCita, setAccionCita]       = useState(null)   // { cita, modo } — cita no realizada / reprogramar / reasignar (SE-07)
+  const [enlaceCita, setEnlaceCita]       = useState(null)   // PF-09 — cita de poligrafía para la que se maneja el enlace del proveedor externo
   const [fechasAbiertas, setFechasAbiertas] = useState(() => new Set())
   const toggleFechas = (id) => setFechasAbiertas(prev => {
     const next = new Set(prev)
@@ -415,7 +416,6 @@ export default function ProgramadorAgenda() {
 
   return (
     <div>
-      <BandejaCitas rol="programador" />
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-4 mb-5">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
@@ -602,6 +602,10 @@ export default function ProgramadorAgenda() {
                                 label: 'Registrar cita no realizada', icono: <IconoLapiz />, destacado: 'text-red-600',
                                 onClick: () => setAccionCita({ cita: a, modo: 'no-realizada' }),
                               },
+                              // PF-09: la poligrafía en ejecución se le puede dar a un proveedor externo con un enlace de un solo uso.
+                              a.rolResponsable === 'POLIGRAFISTA' && a.estado === 'EN_EJECUCION' && a.idUsuarioAsignado && {
+                                label: 'Enlace para proveedor externo', icono: <IconoHoja />, onClick: () => setEnlaceCita(a),
+                              },
                               a.estado === 'REPROGRAMADO' && {
                                 label: 'Reprogramar', icono: <IconoAsignar />, onClick: () => setAccionCita({ cita: a, modo: 'reprogramar' }),
                               },
@@ -771,6 +775,7 @@ export default function ProgramadorAgenda() {
       )}
 
 
+      {enlaceCita && <ModalEnlaceProveedor cita={enlaceCita} onClose={() => setEnlaceCita(null)} />}
       {accionCita && (
         <ModalCitaAccion cita={accionCita.cita} modo={accionCita.modo} onClose={() => setAccionCita(null)}
           onHecho={() => { setAccionCita(null); setToast({ mensaje: 'Listo: quedó registrado.', tipo: 'exito' }) }} />

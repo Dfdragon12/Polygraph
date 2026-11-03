@@ -54,6 +54,34 @@ const formulariosService = {
     api.patch(`/gestor/formularios/subproceso/${idServicioSubproceso}/soportes/${idDocumento}/revision`,
       { estado, observacion }).then(r => r.data),
 
+  // Frases estándar de un formato (PF-03): clave -> texto.
+  frasesEstandar: (formato = 'POLIGRAFIA_PRE_EMPLEO') =>
+    api.get('/catalogo/frases-estandar', { params: { formato } }).then(r => r.data),
+
+  // Cambios hechos a las preguntas relevantes de la poligrafía (qué, quién, cuándo).
+  historialPreguntas: (idServicioSubproceso) =>
+    api.get(`/gestor/formularios/subproceso/${idServicioSubproceso}/preguntas-historial`).then(r => r.data),
+
+  // Foto del evaluado de la poligrafía (PF-06).
+  fotoEstado: (idServicioSubproceso) =>
+    api.get(`/gestor/formularios/subproceso/${idServicioSubproceso}/foto`).then(r => r.data),
+  fotoImagen: (idServicioSubproceso) =>
+    api.get(`/gestor/formularios/subproceso/${idServicioSubproceso}/foto/imagen`, { responseType: 'blob' }).then(r => r.data),
+  fotoTomar: (idServicioSubproceso, blob, cedulaVerificada) => {
+    const datos = new FormData()
+    datos.append('foto', blob, 'foto.jpg')
+    datos.append('cedulaVerificada', cedulaVerificada)
+    return api.post(`/gestor/formularios/subproceso/${idServicioSubproceso}/foto`, datos).then(r => r.data)
+  },
+  fotoReemplazar: (idServicioSubproceso, blob, motivo) => {
+    const datos = new FormData()
+    datos.append('foto', blob, 'foto.jpg')
+    datos.append('motivo', motivo)
+    return api.post(`/gestor/formularios/subproceso/${idServicioSubproceso}/foto/reemplazo`, datos).then(r => r.data)
+  },
+  fotoBloquear: (idServicioSubproceso) =>
+    api.post(`/gestor/formularios/subproceso/${idServicioSubproceso}/foto/bloquear`).then(r => r.data),
+
   fichaCandidato: (idServicioSubproceso) =>
     api.get(`/gestor/formularios/subproceso/${idServicioSubproceso}/candidato`).then(r => r.data),
 

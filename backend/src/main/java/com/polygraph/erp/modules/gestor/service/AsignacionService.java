@@ -108,6 +108,9 @@ public class AsignacionService {
     private final com.polygraph.erp.modules.servicios.service.RegistroCambiosService registroCambios;
     private final com.polygraph.erp.shared.service.TiempoServicioService tiempoServicioService;
     private final java.time.Clock reloj;
+    /** PF-09 · Opcional (pruebas que arman el servicio a mano no lo tienen): cierra el enlace del proveedor al enviar el informe. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private EnlaceProveedorService enlaceProveedorService;
     private final com.polygraph.erp.shared.service.CalendarioHabilService calendario;
 
     // ───────────────────── Máquina de estados (SE-02) ─────────────────────
@@ -734,6 +737,8 @@ public class AsignacionService {
         }
         asignacion.setEstado(EstadoSubproceso.FINALIZADO);
         registroCambios.registrar(asignacion, EstadoSubproceso.EN_EJECUCION, EstadoSubproceso.FINALIZADO, null, null, null, actor);
+        // PF-09: al enviar el informe, el enlace del proveedor externo deja de servir.
+        if (enlaceProveedorService != null) enlaceProveedorService.cerrarAlEnviar(asignacion.getId());
         asignacion.setFechaCompletado(LocalDateTime.now());
         asignacion.marcarIniciado(asignacion.getFechaCompletado());
         asignacion.setDevuelto(false);   // lo corrigió y lo volvió a enviar: la marca DEVUELTO se limpia

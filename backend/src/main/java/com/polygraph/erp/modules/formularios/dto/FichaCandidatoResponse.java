@@ -17,7 +17,9 @@ public record FichaCandidatoResponse(
         // Lo que el candidato respondió a las preguntas de declaración de su hoja de vida
         List<Declaracion> declaraciones,
         // Lo que el cliente pidió al solicitar (formato adicional de la poligrafía y temas a evaluar); null si nada
-        com.polygraph.erp.modules.solicitudes.dto.SolicitudClienteResponse solicitudCliente
+        com.polygraph.erp.modules.solicitudes.dto.SolicitudClienteResponse solicitudCliente,
+        // La solicitud es de poligrafía: admite temas a evaluar (admin/gestor pueden cambiarlos aunque el cliente no haya escogido)
+        boolean admiteTemasPoligrafia
 ) {
     public record Declaracion(String pregunta, String respuesta, String detalle) {}
 

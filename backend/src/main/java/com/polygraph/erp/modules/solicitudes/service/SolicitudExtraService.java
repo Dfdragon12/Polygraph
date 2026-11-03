@@ -92,10 +92,15 @@ public class SolicitudExtraService {
         List<TemaPoligrafiaRequest> pedidos = temas == null ? List.of() : temas;
         if (pedidos.isEmpty()) return porFormato.isEmpty() ? Extras.VACIO : new Extras(porFormato, List.of(), Map.of());
         if (!admite) throw new ApiException("El servicio elegido no admite temas de poligrafía", HttpStatus.BAD_REQUEST);
-        if (pedidos.size() > MAX_TEMAS) {
-            throw new ApiException("Puedes elegir máximo " + MAX_TEMAS + " temas para la poligrafía", HttpStatus.BAD_REQUEST);
-        }
+        Extras temasElegidos = elegirTemas(pedidos, MAX_TEMAS);
+        return new Extras(porFormato, temasElegidos.temas(), temasElegidos.detalleDeTema());
+    }
 
+    /** Valida los temas pedidos contra el catálogo activo: sin repetir, con su «cuál» si lo piden y sin pasar de `maximo`. */
+    private Extras elegirTemas(List<TemaPoligrafiaRequest> pedidos, int maximo) {
+        if (pedidos.size() > maximo) {
+            throw new ApiException("Puedes elegir máximo " + maximo + " temas para la poligrafía", HttpStatus.BAD_REQUEST);
+        }
         List<PreguntaPoligrafia> elegidos = new ArrayList<>();
         Map<Integer, String> detalles = new LinkedHashMap<>();
         Set<Integer> vistos = new HashSet<>();
@@ -115,7 +120,7 @@ public class SolicitudExtraService {
             }
             elegidos.add(tema);
         }
-        return new Extras(porFormato, elegidos, detalles);
+        return new Extras(Map.of(), elegidos, detalles);
     }
 
     private Map<String, String> validarFormato(FormatoSolicitud formato, Map<String, String> enviados) {
@@ -181,6 +186,27 @@ public class SolicitudExtraService {
                         .detalle(extras.detalleDeTema().get(t.getId())).orden(orden++).build());
             }
         }
+    }
+
+    public static final int MAX_TEMAS_INTERNO = 20;
+
+    /** Admin o gestor cambian los temas a evaluar de una solicitud ya creada (también al escoger un grupo completo del catálogo): reemplaza los que
+     *  tenía. El cliente tiene tope de MAX_TEMAS; el personal de Polygraph hasta MAX_TEMAS_INTERNO. */
+    @Transactional
+    public SolicitudClienteResponse reemplazarTemas(Servicio servicio, List<TemaPoligrafiaRequest> temas) {
+        if (!admitePreguntas(servicio.getProceso())) {
+            throw new ApiException("Este servicio no admite temas de poligrafía", HttpStatus.BAD_REQUEST);
+        }
+        Extras elegidos = elegirTemas(temas == null ? List.of() : temas, MAX_TEMAS_INTERNO);
+        servicioPreguntaRepository.deleteAll(servicioPreguntaRepository.findByServicio_IdServicioOrderByOrdenAscIdAsc(servicio.getIdServicio()));
+        servicioPreguntaRepository.flush();
+        int orden = 0;
+        for (PreguntaPoligrafia t : elegidos.temas()) {
+            servicioPreguntaRepository.save(ServicioPreguntaPoligrafia.builder()
+                    .servicio(servicio).idPregunta(t.getId()).nombre(t.getNombre())
+                    .detalle(elegidos.detalleDeTema().get(t.getId())).orden(orden++).build());
+        }
+        return obtener(servicio.getIdServicio());
     }
 
     /** Lo que el cliente pidió en esta solicitud, o null si no diligenció nada extra. */

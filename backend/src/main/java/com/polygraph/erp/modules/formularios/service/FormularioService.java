@@ -47,10 +47,17 @@ public class FormularioService {
     private final ServicioSubprocesoRepository servicioSubprocesoRepository;
     private final AlmacenamientoDocumentosService almacenamientoService;
     private final CandidatoInfoService candidatoInfoService;
+    private final com.polygraph.erp.modules.servicios.repository.ServicioPreguntaPoligrafiaRepository preguntasClienteRepository;
     private final NotificacionService notificacionService;
     private final org.springframework.context.ApplicationEventPublisher eventos;
     private final FormularioPlantillaConfigRepository plantillaConfigRepository;
     private final com.polygraph.erp.modules.riesgo.codigos.CalculoSubservicioService calculoSubservicioService;
+
+    /** Opcionales (como en FormularioPlantillaWordService): las pruebas que arman este servicio a mano no los necesitan. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private FotoEvaluadoService fotoEvaluadoService;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private HistorialPreguntasService historialPreguntas;
 
     private static final String CATEGORIA_ARCHIVOS = "formularios";
 
@@ -236,7 +243,7 @@ public class FormularioService {
                         seccion.getIdSeccion(), seccion.getNombre(), seccion.getTipo().name(), seccion.getOrden(), columnas, valores, List.of(),
                         justificacionesCampos.entrySet().stream().filter(e -> valores.containsKey(e.getKey()))
                                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue)), false,
-                        Boolean.TRUE.equals(seccion.getOpcional()), omitidas.contains(seccion.getIdSeccion()), seccion.getGrupo()));
+                        Boolean.TRUE.equals(seccion.getOpcional()), omitidas.contains(seccion.getIdSeccion()), seccion.getGrupo(), seccion.getClave()));
             } else {
                 List<FormularioFila> filas = filasPorSeccion.get(seccion.getIdSeccion());
                 List<FormularioResponse.FilaDatosResponse> filasResponse;
@@ -258,6 +265,20 @@ public class FormularioService {
                                     conDefectos(columnas, valoresPorFila.getOrDefault(f.getIdFila(), Map.of())),
                                     justificacionesPorFila.getOrDefault(f.getIdFila(), Map.of())))
                             .toList();
+                } else if ("preguntas".equals(seccion.getClave()) && subproceso.getServicio() != null) {
+                    // Preguntas relevantes (poligrafía): nacen de los temas que el cliente escogió al solicitar (copiados en la solicitud). El poligrafista
+                    // las puede cambiar y agregar; lo que guarde ya no se mueve con la solicitud.
+                    List<com.polygraph.erp.modules.servicios.entity.ServicioPreguntaPoligrafia> temas =
+                            preguntasClienteRepository.findByServicio_IdServicioOrderByOrdenAscIdAsc(subproceso.getServicio().getIdServicio());
+                    filasResponse = temas.stream().map(t -> {
+                        Map<Integer, String> valores = new HashMap<>();
+                        for (ColumnaResponse c : columnas) {
+                            if ("pr_pregunta".equals(c.clave())) {
+                                valores.put(c.idColumna(), t.getNombre() + (t.getDetalle() != null && !t.getDetalle().isBlank() ? ": " + t.getDetalle().trim() : ""));
+                            }
+                        }
+                        return new FormularioResponse.FilaDatosResponse(null, "", conDefectos(columnas, valores), Map.of());
+                    }).toList();
                 } else if (CandidatoInfoService.PRECARGAS.containsKey(seccion.getClave())) {
                     // Aún no se ha guardado nada y la tabla nace de la hoja de vida del candidato (ej. las 4 referencias
                     // que registró): una fila por cada una, sin id hasta que el analista guarde.
@@ -284,7 +305,7 @@ public class FormularioService {
                 seccionesResponse.add(new FormularioResponse.SeccionDatosResponse(
                         seccion.getIdSeccion(), seccion.getNombre(), seccion.getTipo().name(), seccion.getOrden(), columnas, Map.of(), filasResponse, Map.of(),
                         Boolean.TRUE.equals(seccion.getCalculada()), Boolean.TRUE.equals(seccion.getOpcional()),
-                        omitidas.contains(seccion.getIdSeccion()), seccion.getGrupo()));
+                        omitidas.contains(seccion.getIdSeccion()), seccion.getGrupo(), seccion.getClave()));
             }
         }
 
@@ -395,6 +416,8 @@ public class FormularioService {
         List<FormularioDato> datos = formulario == null ? List.of() : datoRepository.findByFormulario_IdFormulario(formulario.getIdFormulario());
         List<FormularioFila> filas = formulario == null ? List.of() : filaRepository.findByFormulario_IdFormularioOrderByOrdenAsc(formulario.getIdFormulario());
         List<String> faltantes = new ArrayList<>();
+        // PF-07: en la poligrafía pre empleo, sin foto del evaluado con la cédula verificada no se envía.
+        if (fotoEvaluadoService != null) faltantes.addAll(fotoEvaluadoService.faltantesParaEnviar(idServicioSubproceso));
         Set<Integer> omitidas = formulario == null ? Set.of() : formulario.getSeccionesOmitidas();
         for (FormularioSeccion seccion : seccionRepository.findByTipoProgreso_IdTipoProgresoOrderByOrdenAsc(subproceso.getTipoProgreso().getIdTipoProgreso())) {
             if (!Boolean.TRUE.equals(seccion.getActivo())) continue;
@@ -488,6 +511,7 @@ public class FormularioService {
         // todos modos. El borrado en bloque va directo a la BD (DELETE físico) sin pasar por esa
         // limpieza intermedia; se borran los datos primero (por más que id_fila tenga ON DELETE
         // CASCADE hacia formulario_filas, ser explícitos evita depender del orden del cascade).
+        registrarCambiosDePreguntas(formulario, actor, req, seccionesPorId);
         List<FormularioFila> filasABorrar = filaRepository.findByFormulario_IdFormularioOrderByOrdenAsc(formulario.getIdFormulario())
                 .stream().filter(f -> !seccionesOcultasIds.contains(f.getSeccion().getIdSeccion())).toList();
         List<FormularioDato> datosABorrar = datoRepository.findByFormulario_IdFormulario(formulario.getIdFormulario())
@@ -798,7 +822,31 @@ public class FormularioService {
         return estado == EstadoSubproceso.FINALIZADO || estado == EstadoSubproceso.PUBLICADO;
     }
 
+    /** Prefijo de la etiqueta de una fila que nace de una pregunta del formato (PF-03). */
+    private static final String ETIQUETA_ORIGEN = "origen:";
     private static final Set<Rol> ROLES_EJECUTORES = Set.of(Rol.ANALISTA_INTERNO, Rol.POLIGRAFISTA, Rol.VISITADOR);
+
+    /** PF-05: deja registro de las preguntas relevantes que el poligrafista cambió o agregó (compara con lo guardado, antes del reemplazo). */
+    private void registrarCambiosDePreguntas(Formulario formulario, Usuario actor, GuardarFormularioRequest req, Map<Integer, FormularioSeccion> seccionesPorId) {
+        if (req.secciones() == null || actor == null || historialPreguntas == null) return;
+        for (var s : req.secciones()) {
+            FormularioSeccion seccion = seccionesPorId.get(s.idSeccion());
+            if (seccion == null || !"preguntas".equals(seccion.getClave()) || s.filas() == null) continue;
+            Integer idPregunta = seccion.getColumnas().stream().filter(c -> "pr_pregunta".equals(c.getClave())).map(FormularioColumna::getIdColumna).findFirst().orElse(null);
+            if (idPregunta == null) continue;
+            historialPreguntas.registrar(formulario.getIdFormulario(), actor,
+                    s.filas().stream().map(f -> f.valores() == null ? "" : f.valores().getOrDefault(idPregunta, "")).toList());
+        }
+    }
+
+    /** PF-05: cambios hechos a las preguntas relevantes de este subproceso (qué, quién, cuándo). */
+    @Transactional(readOnly = true)
+    public List<HistorialPreguntasService.Cambio> historialDePreguntas(Long idServicioSubproceso, Usuario actor) {
+        ServicioSubproceso subproceso = obtenerSubproceso(idServicioSubproceso);
+        validarAcceso(subproceso, actor);
+        return formularioRepository.findByServicioSubproceso_Id(idServicioSubproceso)
+                .map(f -> historialPreguntas == null ? List.<HistorialPreguntasService.Cambio>of() : historialPreguntas.listar(f.getIdFormulario())).orElse(List.of());
+    }
 
     /** ANALISTA_INTERNO/POLIGRAFISTA/VISITADOR solo acceden a subprocesos asignados a ellos
      *  mismos — GESTOR/ADMIN_POLYGRAPH entran sin restricción (supervisión). */
@@ -824,11 +872,14 @@ public class FormularioService {
         if (!ROLES_EJECUTORES.contains(actor.getRol()) || formulario.getIdFormulario() == null) return;
         Map<Integer, Long> existentesPorSeccion = filaRepository.findByFormulario_IdFormularioOrderByOrdenAsc(formulario.getIdFormulario())
                 .stream().filter(f -> !seccionesOcultasIds.contains(f.getSeccion().getIdSeccion()))
+                // Las filas que nacen de una pregunta ("origen:...", p. ej. una admisión) las crea y quita la pantalla según la respuesta Sí / No.
+                .filter(f -> f.getEtiqueta() == null || !f.getEtiqueta().startsWith(ETIQUETA_ORIGEN))
                 .collect(Collectors.groupingBy(f -> f.getSeccion().getIdSeccion(), Collectors.counting()));
         Map<Integer, Integer> nuevasPorSeccion = new HashMap<>();
         if (req.secciones() != null) {
             for (var s : req.secciones()) {
-                nuevasPorSeccion.put(s.idSeccion(), s.filas() == null ? 0 : s.filas().size());
+                nuevasPorSeccion.put(s.idSeccion(), s.filas() == null ? 0
+                        : (int) s.filas().stream().filter(f -> f.etiqueta() == null || !f.etiqueta().startsWith(ETIQUETA_ORIGEN)).count());
             }
         }
         for (var entry : existentesPorSeccion.entrySet()) {

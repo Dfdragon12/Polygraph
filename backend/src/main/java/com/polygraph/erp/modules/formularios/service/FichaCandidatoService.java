@@ -84,7 +84,8 @@ public class FichaCandidatoService {
                 candidatoInfoService.declaraciones(candidato).stream()
                         .map(d -> new FichaCandidatoResponse.Declaracion(d.pregunta(), d.respuesta(), d.detalle()))
                         .toList(),
-                servicio != null ? solicitudExtraService.obtener(servicio.getIdServicio()) : null);
+                servicio != null ? solicitudExtraService.obtener(servicio.getIdServicio()) : null,
+                servicio != null && solicitudExtraService.admitePreguntas(servicio.getProceso()));
     }
 
     private static FichaCandidatoResponse.Soporte soporte(String clave, String nombre, boolean requerido,

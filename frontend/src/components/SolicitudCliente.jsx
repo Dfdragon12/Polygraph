@@ -4,17 +4,20 @@
 export default function SolicitudCliente({ solicitud, titulo = 'Lo que pidió el cliente', detalle = 'Información que diligenció al solicitar el servicio', onEditar }) {
   const datos = solicitud?.datos ?? []
   const temas = solicitud?.temas ?? []
-  if (!datos.length && !temas.length) return null
+  // Con onEditar (admin / gestor) la tarjeta sale aunque el cliente no haya escogido nada, para poder agregar temas.
+  if (!datos.length && !temas.length && !onEditar) return null
 
   return (
     <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{titulo}</p>
-          <p className="text-[11px] text-gray-500">{solicitud.titulo ? `${solicitud.titulo}. ` : ''}{detalle}</p>
+          <p className="text-[11px] text-gray-500">{solicitud?.titulo ? `${solicitud.titulo}. ` : ''}{detalle}</p>
         </div>
-        {onEditar && <button type="button" onClick={onEditar} aria-label={`Editar ${titulo}`} className="flex-shrink-0 text-xs font-medium text-primary-700 hover:underline">Editar</button>}
+        {onEditar && <button type="button" onClick={onEditar} aria-label={`Editar temas a evaluar`} className="flex-shrink-0 text-xs font-medium text-primary-700 hover:underline">Editar</button>}
       </div>
+
+      {temas.length === 0 && onEditar && <p className="mb-3 text-sm text-gray-700">El cliente no escogió temas a evaluar. Puedes agregarlos con «Editar».</p>}
 
       {temas.length > 0 && (
         <div className="mb-4">

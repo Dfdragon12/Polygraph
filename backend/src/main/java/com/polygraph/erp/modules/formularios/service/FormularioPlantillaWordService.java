@@ -59,6 +59,9 @@ public class FormularioPlantillaWordService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.polygraph.erp.modules.solicitudes.service.SolicitudExtraService solicitudExtraService;
     private final AlmacenamientoDocumentosService almacenamientoService;
+    /** Por campo (no por constructor) para no tocar a quien arma este servicio a mano; sin él, el marcador ev_foto sale vacío. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private FotoEvaluadoService fotoEvaluadoService;
     private final com.polygraph.erp.modules.riesgo.repository.CodigoCalificacionRepository codigoRepository;
 
     /** Anexo 1 del informe sale del CATÁLOGO DE HALLAZGOS de la plataforma (pedido del usuario
@@ -438,6 +441,10 @@ public class FormularioPlantillaWordService {
                 mapaTablas.put(clave, filas.stream().<Map<String, Object>>map(HashMap::new).toList()));
         mapaTablas.put("preguntas_cliente", List.of());
         mapaTablas.put("solicitud_cliente", List.of());
+        // Módulos que el Word puede encerrar en repeatDocPart/repeatTableRow y que hoy ninguna plantilla llena (Visita domiciliaria: salud y
+        // pregunta 10 sindical, apagadas por decisión jurídica): vacías para que el bloque desaparezca en vez de fallar. Una sección con esa clave las pisa.
+        mapaTablas.put("salud", List.of());
+        mapaTablas.put("ps_sindical", List.of());
         if (solicitudExtraService != null && subproceso != null && subproceso.getServicio() != null) {
             mapaTablas.putAll(solicitudExtraService.tablasParaWord(subproceso.getServicio().getIdServicio()));
         }
@@ -539,6 +546,9 @@ public class FormularioPlantillaWordService {
             }
         }
 
+        // Foto del evaluado de la poligrafía (PF-06): la vigente, recortada 3:4, de unos 3,3 cm de ancho. Sin foto, el marcador sale vacío.
+        mapaCampos.put("ev_foto", fotoParaInforme(subproceso));
+
         ContextoPlantillaWord contexto = new ContextoPlantillaWord(mapaCandidato, mapaCampos, mapaTablas);
         contexto.soportesAnexo().addAll(soportes);
         return contexto;
@@ -607,6 +617,21 @@ public class FormularioPlantillaWordService {
             if (v != null && !v.isBlank() && !"—".equals(v.trim())) return v.trim();
         }
         return null;
+    }
+
+    /** 3,3 cm en twips (1440 = 1 pulgada). */
+    private static final int ANCHO_FOTO_EVALUADO_TWIPS = 1871;
+
+    private Object fotoParaInforme(ServicioSubproceso subproceso) {
+        if (fotoEvaluadoService == null || subproceso == null || subproceso.getId() == null) return "";
+        return fotoEvaluadoService.imagenParaInforme(subproceso.getId()).<Object>map(bytes -> {
+            try {
+                return new Image(new java.io.ByteArrayInputStream(bytes), ANCHO_FOTO_EVALUADO_TWIPS);
+            } catch (Exception e) {
+                log.warn("No se pudo incrustar la foto del evaluado: {}", e.getMessage());
+                return "";
+            }
+        }).orElse("");
     }
 
     private static final Set<String> EXTENSIONES_IMAGEN = Set.of("jpg", "jpeg", "png");
@@ -704,6 +729,8 @@ public class FormularioPlantillaWordService {
             columnas.forEach(c -> filaEjemplo.put(c, "(ejemplo)"));
             mapaTablas.put(claveFija, List.of(filaEjemplo));
         });
+        mapaTablas.put("salud", List.of());
+        mapaTablas.put("ps_sindical", List.of());
         mapaTablas.putAll(tablasCatalogo(config.getTipoProgreso(), hallazgosUsados(req)));
         for (var seccion : req.secciones()) {
             List<GuardarPlantillaRequest.ColumnaRequest> columnas = seccion.columnas() == null ? List.of() : seccion.columnas();

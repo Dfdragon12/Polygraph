@@ -20,6 +20,15 @@ export default function TemasPoligrafia({ temas, elegidos, onChange, numero = 4 
   const idCampos = useId()
   if (!temas?.length) return null
   const lleno = elegidos.length >= MAX_TEMAS
+  // Los temas con grupo van juntos bajo su título; los que no tienen, al final como «Otros».
+  const porGrupo = new Map()
+  temas.forEach((t, i) => {
+    const g = t.grupo || 'Otros'
+    if (!porGrupo.has(g)) porGrupo.set(g, [])
+    porGrupo.get(g).push({ t, i })
+  })
+  const grupos = [...porGrupo.entries()]
+  const conGrupos = grupos.length > 1
 
   const alternar = (t) => {
     if (elegidos.some((e) => e.idPregunta === t.id)) onChange(elegidos.filter((e) => e.idPregunta !== t.id))
@@ -44,8 +53,12 @@ export default function TemasPoligrafia({ temas, elegidos, onChange, numero = 4 
         </span>
       </header>
 
-      <div className="px-6 py-5 grid grid-cols-1 sm:grid-cols-2 gap-2">
-        {temas.map((t, i) => {
+      <div className="px-6 py-5 space-y-4">
+        {grupos.map(([nombreGrupo, delGrupo]) => (
+          <div key={nombreGrupo}>
+            {conGrupos && <h3 className="text-[11px] font-semibold text-gray-600 uppercase tracking-wider mb-1.5">{nombreGrupo}</h3>}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {delGrupo.map(({ t, i }) => {
           const elegido = elegidos.find((e) => e.idPregunta === t.id)
           const deshabilitado = !elegido && lleno
           const id = `${idCampos}-${i}`
@@ -65,6 +78,9 @@ export default function TemasPoligrafia({ temas, elegidos, onChange, numero = 4 
             </div>
           )
         })}
+            </div>
+          </div>
+        ))}
       </div>
     </section>
   )

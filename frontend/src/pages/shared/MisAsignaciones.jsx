@@ -47,10 +47,10 @@ const BADGE = {
 // (`indicador`), así el filtro recorre TODAS las asignaciones y no solo la página visible; el
 // conteo de cada chip sale de /conteo con las mismas consultas del listado.
 const FILTROS_INDICADOR = [
-  { valor: 'revisar', label: 'Documentos por revisar', desc: 'El candidato ya los cargó', conteo: 'conDocumentosPorRevisar', border: 'border-sky-200', dot: 'bg-sky-400', texto: 'text-sky-600', bgActivo: 'bg-sky-50/70', ring: 'ring-sky-300' },
-  { valor: 'devueltos', label: 'Con devoluciones', desc: 'Esperan que el candidato corrija', conteo: 'conDevoluciones', border: 'border-amber-200', dot: 'bg-amber-400', texto: 'text-amber-600', bgActivo: 'bg-amber-50/70', ring: 'ring-amber-300' },
-  { valor: 'novedades', label: 'Con novedades abiertas', desc: 'Sin respuesta todavía', conteo: 'conNovedadesAbiertas', border: 'border-red-200', dot: 'bg-red-400', texto: 'text-red-600', bgActivo: 'bg-red-50/70', ring: 'ring-red-300' },
-  { valor: 'urgentes', label: 'Entrega vencida o en 1 día hábil', desc: 'Para priorizar', conteo: 'porVencer', border: 'border-violet-200', dot: 'bg-violet-400', texto: 'text-violet-600', bgActivo: 'bg-violet-50/70', ring: 'ring-violet-300' },
+  { valor: 'revisar', label: 'Documentos por revisar', desc: 'El candidato ya los cargó', conteo: 'conDocumentosPorRevisar', color: '#0EA5E9' },
+  { valor: 'devueltos', label: 'Con devoluciones', desc: 'Esperan que el candidato corrija', conteo: 'conDevoluciones', color: '#F59E0B' },
+  { valor: 'novedades', label: 'Con novedades abiertas', desc: 'Sin respuesta todavía', conteo: 'conNovedadesAbiertas', color: '#EF4444' },
+  { valor: 'urgentes', label: 'Entrega vencida o en 1 día hábil', desc: 'Para priorizar', conteo: 'porVencer', color: '#8B5CF6' },
 ]
 
 function Etiqueta({ cls, children }) {
@@ -286,34 +286,38 @@ export default function MisAsignaciones() {
         <p className="text-sm text-gray-500 mt-0.5">{subtitulo}</p>
       </div>
 
-      {/* Citas por confirmar (poligrafista y visitador): pasaron 15 minutos de la hora y no hay registro de qué pasó. */}
-      {prefijo !== 'analista' && <BandejaCitas rol="profesional" prefijo={prefijo} onCambio={() => cargar(true)} />}
-
       {error && (
         <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{error}</div>
       )}
 
       <SemaforoEstados seleccionado={indicador ? '' : estado} onSeleccionar={(e) => cambiarEstado(e || 'EN_EJECUCION')} titulo="Estado de tus subprocesos" />
-      <AlertasAparte />
+      <section aria-label="Filtros de lo que está en ejecución" className="mb-4">
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7" role="group" aria-label="Filtrar lo que está en ejecución">
+          {FILTROS_INDICADOR.map(f => {
+            const activo = estado === 'EN_EJECUCION' && indicador === f.valor
+            return (
+              <button key={f.valor} type="button" aria-pressed={activo} onClick={() => { setEstado('EN_EJECUCION'); cambiarIndicador(activo ? '' : f.valor) }}
+                className={`text-left bg-white rounded-xl border p-4 shadow-sm transition-all hover:shadow-md ${activo ? 'ring-2' : 'border-gray-200'}`}
+                style={activo ? { borderColor: f.color, '--tw-ring-color': f.color, backgroundColor: `${f.color}12` } : undefined}>
+                <span className="flex items-center gap-2 mb-1.5">
+                  <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: f.color }} />
+                  <span className="text-xs font-semibold text-gray-800">{f.label}</span>
+                </span>
+                <span className="block text-3xl font-bold text-gray-900 tabular-nums">{conteos ? (conteos[f.conteo] ?? 0) : '—'}</span>
+                <span className="block text-xs text-gray-700 mt-1 leading-snug">{f.desc}</span>
+              </button>
+            )
+          })}
+        </div>
+      </section>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
-        {FILTROS_INDICADOR.map(f => {
-          const activo = estado === 'EN_EJECUCION' && indicador === f.valor
-          return (
-            <button key={f.valor} type="button" aria-pressed={activo} onClick={() => { setEstado('EN_EJECUCION'); cambiarIndicador(activo ? '' : f.valor) }}
-              className={`text-left bg-white rounded-xl border shadow-sm p-4 cursor-pointer hover:shadow-md transition-shadow ${f.border} ${
-                activo ? `${f.bgActivo} ring-2 ${f.ring}` : ''
-              }`}>
-              <div className="flex items-center gap-2 mb-2">
-                <span className={`w-2 h-2 rounded-full ${f.dot}`} />
-                <span className="text-xs font-medium text-gray-500">{f.label}</span>
-              </div>
-              <p className={`text-3xl font-bold ${f.texto}`}>{conteos ? (conteos[f.conteo] ?? 0) : '—'}</p>
-              <p className="text-xs text-gray-400 mt-1">{f.desc}</p>
-            </button>
-          )
-        })}
-      </div>
+      <AlertasAparte onAlerta={(clave) => {
+        const filtro = { novedadesAbiertas: 'novedades', vencidas: 'urgentes', paraHoy: 'urgentes' }[clave]
+        if (filtro) { setEstado('EN_EJECUCION'); cambiarIndicador(filtro) }
+      }} />
+
+      {/* Citas por confirmar (poligrafista y visitador): plegada bajo las tarjetas en los tres perfiles, igual que «Para reprogramar» del gestor. */}
+      <BandejaCitas rol="profesional" prefijo={prefijo} onCambio={() => cargar(true)} />
 
       <div className="bg-white rounded-2xl ring-1 ring-gray-900/5 shadow-sm overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center gap-3">

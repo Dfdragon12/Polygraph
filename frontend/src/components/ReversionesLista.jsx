@@ -143,6 +143,8 @@ export default function ReversionesLista({ base, soloLectura = false }) {
       setTotalElementos(pag.totalElements ?? 0)
       if (!soloLectura) setPendientes(count ?? 0)
     } catch (e) {
+      // El navegador cortó la petición (recarga, HMR o cambio de página): no es un fallo de la API, no se avisa.
+      if (e.message === 'Request aborted' || e.code === 'ERR_CANCELED') return
       const status = e.response?.status
       const detalle = e.response?.data?.mensaje ?? e.message
       console.error('Error al cargar reversiones:', status, e.response?.data ?? e)

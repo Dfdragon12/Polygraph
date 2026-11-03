@@ -12,6 +12,7 @@ import TablaHojaVidaEditable from '../../components/TablaHojaVidaEditable'
 import NovedadesSubproceso from '../../components/NovedadesSubproceso'
 import SoportesInforme from '../../components/SoportesInforme'
 import FichaCandidato from '../../components/FichaCandidato'
+import { FotoEvaluadoGestor } from '../poligrafista/FotoEvaluado'
 import { ConfirmModal } from '../../components/ui/Modal'
 import CiudadSelect from '../../components/CiudadSelect'
 import BarrioSelect from '../../components/BarrioSelect'
@@ -48,13 +49,13 @@ const ETIQUETA_TIPO = { CAMPOS: 'Campos', TABLA: 'Tabla' }
 let contador = 0
 const idLocal = () => `local-${++contador}`
 
-const inputCls = "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:bg-gray-50 disabled:text-gray-500 print:border-none print:p-0 print:text-black"
+export const inputCls = "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:bg-gray-50 disabled:text-gray-500 print:border-none print:p-0 print:text-black"
 
 // Mismo ícono por tipo de dato que usa admin/catálogo → Plantilla, para que un campo se reconozca
 // igual en los dos lados (quien arma la plantilla y quien la llena).
 const ICONO_TIPO_DATO = { TEXTO: 'Aa', NUMERO: '#', FECHA: '📅', BOOLEANO: '✓', LISTA: '▾', ARCHIVO: '📎', CIUDAD: '📍', BARRIO: '🏘' }
 
-function Campo({ label, tipoDato, automatico, calculado, obligatorio, children }) {
+export function Campo({ label, tipoDato, automatico, calculado, obligatorio, children }) {
   const id = useId()
   return (
     <div>
@@ -250,7 +251,7 @@ function TextoAjustable({ value, onChange, disabled, maxLength }) {
   )
 }
 
-function InputPorTipo({ tipoDato, value, opciones, onChange, idServicioSubproceso, onError, disabled, etiquetas, maxLength }) {
+export function InputPorTipo({ tipoDato, value, opciones, onChange, idServicioSubproceso, onError, disabled, etiquetas, maxLength }) {
   if (tipoDato === 'ARCHIVO') {
     return <CampoArchivo idServicioSubproceso={idServicioSubproceso} value={value} onChange={onChange} onError={onError} disabled={disabled} />
   }
@@ -898,6 +899,8 @@ export default function Formulario() {
           avisoCalculo: r.avisoCalculo ?? null,
           avisosFormulario: r.avisosFormulario ?? [],
           criticidadDeSolicitud: r.criticidadDeSolicitud ?? false,
+          // Formato de poligrafía pre empleo: el gestor ve (y puede reemplazar) la foto del evaluado.
+          esFormatoPoligrafia: (r.secciones ?? []).some(x => x.clave === 'datos_prueba') && (r.secciones ?? []).some(x => x.clave === 'preguntas'),
         })
         const seccionesEditables = (r.secciones ?? []).map(s => ({
           idSeccion: s.idSeccion,
@@ -1459,6 +1462,8 @@ export default function Formulario() {
             </div>
           )}
         </div>
+
+        {meta?.esFormatoPoligrafia && ['gestor', 'admin'].includes(prefijo) && <FotoEvaluadoGestor idServicioSubproceso={idServicioSubproceso} />}
 
         <FranjaRiesgo riesgo={riesgo} tablas={secciones
           .filter(s => s.tipo === 'TABLA')
