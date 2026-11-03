@@ -38,15 +38,17 @@ public class FotoEvaluadoController {
     @PostMapping(consumes = "multipart/form-data")
     @PreAuthorize("hasRole('POLIGRAFISTA')")
     public ResponseEntity<FotoEvaluadoService.Estado> tomar(@PathVariable Long id, @RequestParam MultipartFile foto,
-                                                           @RequestParam boolean cedulaVerificada, Authentication auth) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(service.tomar(id, foto, cedulaVerificada, usuario(auth)));
+                                                           @RequestParam boolean cedulaVerificada, @RequestParam(defaultValue = "CAMARA") String origen,
+                                                           Authentication auth) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.tomar(id, foto, cedulaVerificada, origen, usuario(auth)));
     }
 
     @PostMapping(value = "/reemplazo", consumes = "multipart/form-data")
     @PreAuthorize("hasAnyRole('GESTOR', 'ADMIN_POLYGRAPH')")
     public ResponseEntity<FotoEvaluadoService.Estado> reemplazar(@PathVariable Long id, @RequestParam MultipartFile foto,
-                                                                @RequestParam String motivo, Authentication auth) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(service.reemplazar(id, foto, motivo, usuario(auth)));
+                                                                @RequestParam String motivo, @RequestParam(defaultValue = "CAMARA") String origen,
+                                                                Authentication auth) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.reemplazar(id, foto, motivo, origen, usuario(auth)));
     }
 
     /** Se llama al pasar a la fase 2: desde ahí la foto queda fija. */

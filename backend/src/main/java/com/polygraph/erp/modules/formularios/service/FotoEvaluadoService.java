@@ -18,6 +18,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
@@ -26,6 +28,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
 
@@ -39,8 +43,10 @@ public class FotoEvaluadoService {
 
     private static final String CATEGORIA = "fotos-poligrafia";
     private static final long MAX_BYTES = 5L * 1024 * 1024;
+    /** La fecha y hora de la foto son siempre de Colombia, sin importar la zona del servidor. */
+    private static final ZoneId ZONA = ZoneId.of("America/Bogota");
 
-    public record Foto(Long id, String tomadaPor, LocalDateTime fecha, boolean cedulaVerificada, boolean vigente, String motivoReemplazo, LocalDateTime bloqueadaEn) {}
+    public record Foto(Long id, String tomadaPor, LocalDateTime fecha, boolean cedulaVerificada, boolean vigente, String motivoReemplazo, LocalDateTime bloqueadaEn, String origen) {}
 
     /** existe: hay foto vigente. bloqueada: ya se pasó a la fase 2. puedeTomar / puedeReemplazar: lo que puede hacer quien pregunta. */
     public record Estado(boolean existe, boolean bloqueada, boolean puedeTomar, boolean puedeReemplazar, Foto vigente, List<Foto> historial) {}
@@ -53,10 +59,10 @@ public class FotoEvaluadoService {
     public Estado estado(Long idSubproceso, Usuario actor) {
         ServicioSubproceso sp = subproceso(idSubproceso, actor);
         List<Foto> todas = jdbc.query(
-                "SELECT id, nombre_usuario, fecha, verificacion_cedula, vigente, motivo_reemplazo, bloqueada_en FROM fotos_evaluado_poligrafia WHERE id_servicio_subproceso = ? ORDER BY fecha DESC, id DESC",
+                "SELECT id, nombre_usuario, fecha, verificacion_cedula, vigente, motivo_reemplazo, bloqueada_en, origen FROM fotos_evaluado_poligrafia WHERE id_servicio_subproceso = ? ORDER BY fecha DESC, id DESC",
                 (rs, n) -> new Foto(rs.getLong("id"), rs.getString("nombre_usuario"), rs.getTimestamp("fecha").toLocalDateTime(), rs.getBoolean("verificacion_cedula"),
                         rs.getBoolean("vigente"), rs.getString("motivo_reemplazo"),
-                        rs.getTimestamp("bloqueada_en") == null ? null : rs.getTimestamp("bloqueada_en").toLocalDateTime()), idSubproceso);
+                        rs.getTimestamp("bloqueada_en") == null ? null : rs.getTimestamp("bloqueada_en").toLocalDateTime(), rs.getString("origen")), idSubproceso);
         Foto vigente = todas.stream().filter(Foto::vigente).findFirst().orElse(null);
         boolean bloqueada = vigente != null && vigente.bloqueadaEn() != null;
         boolean cerrado = cerrado(sp);
@@ -66,7 +72,7 @@ public class FotoEvaluadoService {
 
     /** Guarda la foto que el poligrafista acaba de tomar (reemplaza la vigente mientras no se haya pasado a la fase 2). */
     @Transactional
-    public Estado tomar(Long idSubproceso, MultipartFile archivo, boolean cedulaVerificada, Usuario actor) {
+    public Estado tomar(Long idSubproceso, MultipartFile archivo, boolean cedulaVerificada, String origen, Usuario actor) {
         ServicioSubproceso sp = subproceso(idSubproceso, actor);
         if (!esElPoligrafista(sp, actor)) throw new ApiException("Solo el poligrafista asignado puede tomar la foto del evaluado.", HttpStatus.FORBIDDEN);
         if (cerrado(sp)) throw new ApiException("Este subproceso ya está cerrado.", HttpStatus.CONFLICT);
@@ -77,14 +83,14 @@ public class FotoEvaluadoService {
         }
         String ruta = guardarImagen(archivo, idSubproceso);
         if (actual != null) jdbc.update("UPDATE fotos_evaluado_poligrafia SET vigente = FALSE, motivo_reemplazo = 'Repetida por el poligrafista' WHERE id = ?", actual.id());
-        insertar(idSubproceso, ruta, actor, true, null, null);
-        log.info("Foto del evaluado del subproceso {} tomada por {}", idSubproceso, actor.getEmail());
+        insertar(idSubproceso, ruta, actor, true, null, null, origenValido(origen));
+        log.info("Foto del evaluado del subproceso {} tomada por {} (origen {})", idSubproceso, actor.getEmail(), origenValido(origen));
         return estado(idSubproceso, actor);
     }
 
     /** El gestor (o el admin) reemplaza la foto, con motivo; la anterior queda en el historial. */
     @Transactional
-    public Estado reemplazar(Long idSubproceso, MultipartFile archivo, String motivo, Usuario actor) {
+    public Estado reemplazar(Long idSubproceso, MultipartFile archivo, String motivo, String origen, Usuario actor) {
         subproceso(idSubproceso, actor);
         if (!esCoordinador(actor)) throw new ApiException("Solo el gestor puede reemplazar la foto.", HttpStatus.FORBIDDEN);
         if (motivo == null || motivo.isBlank()) throw new ApiException("Escribe el motivo del reemplazo.", HttpStatus.BAD_REQUEST);
@@ -92,7 +98,7 @@ public class FotoEvaluadoService {
         String ruta = guardarImagen(archivo, idSubproceso);
         if (actual != null) jdbc.update("UPDATE fotos_evaluado_poligrafia SET vigente = FALSE WHERE id = ?", actual.id());
         // La que reemplaza hereda el bloqueo (si ya estaba fija, sigue fija); la verificación de la cédula la hizo quien tomó la original.
-        insertar(idSubproceso, ruta, actor, actual == null || actual.cedulaVerificada(), motivo.trim(), actual == null ? null : actual.bloqueadaEn());
+        insertar(idSubproceso, ruta, actor, actual == null || actual.cedulaVerificada(), motivo.trim(), actual == null ? null : actual.bloqueadaEn(), origenValido(origen));
         log.info("Foto del evaluado del subproceso {} reemplazada por {} ({})", idSubproceso, actor.getEmail(), motivo.trim());
         return estado(idSubproceso, actor);
     }
@@ -192,9 +198,9 @@ public class FotoEvaluadoService {
     }
 
     private Foto vigente(Long idSubproceso) {
-        return jdbc.query("SELECT id, nombre_usuario, fecha, verificacion_cedula, vigente, motivo_reemplazo, bloqueada_en FROM fotos_evaluado_poligrafia WHERE id_servicio_subproceso = ? AND vigente",
+        return jdbc.query("SELECT id, nombre_usuario, fecha, verificacion_cedula, vigente, motivo_reemplazo, bloqueada_en, origen FROM fotos_evaluado_poligrafia WHERE id_servicio_subproceso = ? AND vigente",
                 (rs, n) -> new Foto(rs.getLong("id"), rs.getString("nombre_usuario"), rs.getTimestamp("fecha").toLocalDateTime(), rs.getBoolean("verificacion_cedula"),
-                        true, rs.getString("motivo_reemplazo"), rs.getTimestamp("bloqueada_en") == null ? null : rs.getTimestamp("bloqueada_en").toLocalDateTime()), idSubproceso)
+                        true, rs.getString("motivo_reemplazo"), rs.getTimestamp("bloqueada_en") == null ? null : rs.getTimestamp("bloqueada_en").toLocalDateTime(), rs.getString("origen")), idSubproceso)
                 .stream().findFirst().orElse(null);
     }
 
@@ -202,21 +208,71 @@ public class FotoEvaluadoService {
         return jdbc.query("SELECT ruta FROM fotos_evaluado_poligrafia WHERE id_servicio_subproceso = ? AND vigente", (rs, n) -> rs.getString(1), idSubproceso).stream().findFirst();
     }
 
-    private void insertar(Long idSubproceso, String ruta, Usuario actor, boolean cedula, String motivo, LocalDateTime bloqueadaEn) {
+    private void insertar(Long idSubproceso, String ruta, Usuario actor, boolean cedula, String motivo, LocalDateTime bloqueadaEn, String origen) {
         String nombre = ((actor.getNombre() == null ? "" : actor.getNombre()) + " " + (actor.getApellido() == null ? "" : actor.getApellido())).trim();
-        jdbc.update("INSERT INTO fotos_evaluado_poligrafia (id_servicio_subproceso, ruta, id_usuario, nombre_usuario, verificacion_cedula, motivo_reemplazo, bloqueada_en) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                idSubproceso, ruta, actor.getIdUsuario(), nombre, cedula, motivo, bloqueadaEn == null ? null : java.sql.Timestamp.valueOf(bloqueadaEn));
+        jdbc.update("INSERT INTO fotos_evaluado_poligrafia (id_servicio_subproceso, ruta, id_usuario, nombre_usuario, fecha, verificacion_cedula, motivo_reemplazo, bloqueada_en, origen) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                idSubproceso, ruta, actor.getIdUsuario(), nombre, java.sql.Timestamp.valueOf(LocalDateTime.now(ZONA)), cedula, motivo,
+                bloqueadaEn == null ? null : java.sql.Timestamp.valueOf(bloqueadaEn), origen);
     }
 
-    /** Solo imágenes reales (se lee la imagen, no se confía en la extensión) y de tamaño razonable. */
-    private String guardarImagen(MultipartFile archivo, Long idSubproceso) {
-        if (archivo == null || archivo.isEmpty()) throw new ApiException("No llegó la foto.", HttpStatus.BAD_REQUEST);
-        if (archivo.getSize() > MAX_BYTES) throw new ApiException("La foto pesa demasiado (máximo 5 MB).", HttpStatus.BAD_REQUEST);
-        try (InputStream in = new ByteArrayInputStream(archivo.getBytes())) {
-            if (ImageIO.read(in) == null) throw new ApiException("El archivo no es una imagen válida.", HttpStatus.BAD_REQUEST);
-        } catch (IOException e) {
-            throw new ApiException("No se pudo leer la foto.", HttpStatus.BAD_REQUEST);
+    /** CAMARA (por defecto) o ARCHIVO. */
+    private static String origenValido(String origen) {
+        return "ARCHIVO".equalsIgnoreCase(origen) ? "ARCHIVO" : "CAMARA";
+    }
+
+    /** Tipo REAL de la imagen según sus bytes ("jpg" o "png"), o null si no es una foto JPG/PNG. No se confía en la extensión ni en el tipo que declara el navegador. */
+    static String tipoReal(byte[] bytes) {
+        try (ImageInputStream in = ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
+            if (in == null) return null;
+            Iterator<ImageReader> lectores = ImageIO.getImageReaders(in);
+            if (!lectores.hasNext()) return null;
+            ImageReader lector = lectores.next();
+            try {
+                lector.setInput(in);
+                lector.getWidth(0);   // si la cabecera está rota, falla aquí y no se acepta
+                String formato = lector.getFormatName().toLowerCase();
+                if (formato.equals("jpeg") || formato.equals("jpg")) return "jpg";
+                return formato.equals("png") ? "png" : null;
+            } finally {
+                lector.dispose();
+            }
+        } catch (Exception e) {
+            return null;
         }
-        return almacenamiento.guardar(archivo, CATEGORIA, String.valueOf(idSubproceso));
+    }
+
+    /** Solo fotos JPG o PNG reales y de máximo 5 MB. El detalle técnico de un fallo va al log; el mensaje al usuario dice qué hacer. */
+    private String guardarImagen(MultipartFile archivo, Long idSubproceso) {
+        if (archivo == null || archivo.isEmpty()) throw new ApiException("No llegó la foto. Inténtalo de nuevo.", HttpStatus.BAD_REQUEST);
+        if (archivo.getSize() > MAX_BYTES) throw new ApiException("La foto es demasiado pesada. Elige una de menos de 5 MB.", HttpStatus.PAYLOAD_TOO_LARGE);
+        byte[] bytes;
+        try {
+            bytes = archivo.getBytes();
+        } catch (IOException e) {
+            log.error("No se pudo leer la foto del subproceso {}", idSubproceso, e);
+            throw new ApiException("No se pudo guardar la foto. Revisa tu conexión e inténtalo de nuevo.", HttpStatus.BAD_REQUEST);
+        }
+        String tipo = tipoReal(bytes);
+        if (tipo == null) throw new ApiException("El archivo debe ser una foto JPG o PNG.", HttpStatus.BAD_REQUEST);
+        try {
+            return almacenamiento.guardar(new FotoBytes(bytes, "foto." + tipo, "png".equals(tipo) ? "image/png" : "image/jpeg"), CATEGORIA, String.valueOf(idSubproceso));
+        } catch (ApiException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            log.error("No se pudo guardar la foto del subproceso {}", idSubproceso, e);
+            throw new ApiException("No se pudo guardar la foto. Revisa tu conexión e inténtalo de nuevo.", HttpStatus.SERVICE_UNAVAILABLE);
+        }
+    }
+
+    /** La foto ya validada, con un nombre propio según su tipo real. */
+    private record FotoBytes(byte[] contenido, String nombre, String tipoContenido) implements MultipartFile {
+        @Override public String getName() { return "foto"; }
+        @Override public String getOriginalFilename() { return nombre; }
+        @Override public String getContentType() { return tipoContenido; }
+        @Override public boolean isEmpty() { return contenido.length == 0; }
+        @Override public long getSize() { return contenido.length; }
+        @Override public byte[] getBytes() { return contenido; }
+        @Override public InputStream getInputStream() { return new ByteArrayInputStream(contenido); }
+        @Override public void transferTo(java.io.File destino) throws IOException { java.nio.file.Files.write(destino.toPath(), contenido); }
     }
 }

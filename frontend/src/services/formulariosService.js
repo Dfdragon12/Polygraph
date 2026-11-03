@@ -67,17 +67,19 @@ const formulariosService = {
     api.get(`/gestor/formularios/subproceso/${idServicioSubproceso}/foto`).then(r => r.data),
   fotoImagen: (idServicioSubproceso) =>
     api.get(`/gestor/formularios/subproceso/${idServicioSubproceso}/foto/imagen`, { responseType: 'blob' }).then(r => r.data),
-  fotoTomar: (idServicioSubproceso, blob, cedulaVerificada) => {
+  fotoTomar: (idServicioSubproceso, blob, cedulaVerificada, origen = 'CAMARA') => {
     const datos = new FormData()
     datos.append('foto', blob, 'foto.jpg')
     datos.append('cedulaVerificada', cedulaVerificada)
-    return api.post(`/gestor/formularios/subproceso/${idServicioSubproceso}/foto`, datos).then(r => r.data)
+    datos.append('origen', origen)
+    return api.post(`/gestor/formularios/subproceso/${idServicioSubproceso}/foto`, datos, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data)
   },
-  fotoReemplazar: (idServicioSubproceso, blob, motivo) => {
+  fotoReemplazar: (idServicioSubproceso, blob, motivo, origen = 'CAMARA') => {
     const datos = new FormData()
     datos.append('foto', blob, 'foto.jpg')
     datos.append('motivo', motivo)
-    return api.post(`/gestor/formularios/subproceso/${idServicioSubproceso}/foto/reemplazo`, datos).then(r => r.data)
+    datos.append('origen', origen)
+    return api.post(`/gestor/formularios/subproceso/${idServicioSubproceso}/foto/reemplazo`, datos, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data)
   },
   fotoBloquear: (idServicioSubproceso) =>
     api.post(`/gestor/formularios/subproceso/${idServicioSubproceso}/foto/bloquear`).then(r => r.data),
