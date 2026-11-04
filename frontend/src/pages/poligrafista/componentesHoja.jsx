@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import CampoDinero from '../visitador/CampoDinero'
 import { Link } from 'react-router-dom'
 import { InputPorTipo } from '../shared/Formulario'
 import { tituloLimpio } from './revisionFormato'
@@ -30,6 +31,9 @@ export function TextoHoja({ value, onChange, disabled, maxLength, id, ...resto }
   )
 }
 
+// VD-05: montos de la visita (ingresos, egresos, patrimonio): solo números, se ven como «$4.800.000» y se guardan como número.
+const CLAVES_DINERO = new Set(['in_monto', 'eg_monto', 'pf_valor'])
+
 // Entrada de un campo con el aspecto de la hoja. Lo que no es texto/lista/fecha/número/sí-no (archivos,
 // ciudad, barrio) se delega al componente de siempre.
 export function InputHoja({ c, value, onChange, disabled, idServicioSubproceso, onError, id }) {
@@ -37,8 +41,9 @@ export function InputHoja({ c, value, onChange, disabled, idServicioSubproceso, 
   if (t === 'LISTA') {
     return (
       <select id={id} value={value ?? ''} onChange={e => onChange(e.target.value)} disabled={disabled} className={`${CAMPO} max-w-full`}>
-        <option value="">—</option>
-        {(c.opciones ?? []).map(o => <option key={o} value={o}>{o}</option>)}
+        <option value="">Selecciona…</option>
+        {/* Una sola opción vacía: el «—» que traen algunas listas se oculta, salvo que sea lo que ya está guardado. */}
+        {(c.opciones ?? []).filter(o => (o !== '—' && o !== '') || o === value).map(o => <option key={o} value={o}>{o}</option>)}
       </select>
     )
   }
@@ -50,6 +55,7 @@ export function InputHoja({ c, value, onChange, disabled, idServicioSubproceso, 
     )
   }
   if (t === 'FECHA') return <input id={id} type="date" value={value ?? ''} onChange={e => onChange(e.target.value)} disabled={disabled} className={CAMPO} />
+  if (t === 'NUMERO' && CLAVES_DINERO.has(c.clave)) return <CampoDinero id={id} value={value} onChange={onChange} disabled={disabled} />
   if (t === 'NUMERO') return <input id={id} type="number" value={value ?? ''} onChange={e => onChange(e.target.value)} disabled={disabled} className={`${CAMPO} w-28`} />
   if (c.clave?.startsWith('pol_hora')) return <input id={id} type="time" value={value ?? ''} onChange={e => onChange(e.target.value)} disabled={disabled} className={CAMPO} />
   if (t === 'TEXTO') return <TextoHoja id={id} value={value} onChange={onChange} disabled={disabled} maxLength={c.longitudMaxima} />

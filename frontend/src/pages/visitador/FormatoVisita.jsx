@@ -10,8 +10,12 @@ import SoportesInforme from '../../components/SoportesInforme'
 import RevisionEnvio from '../poligrafista/RevisionEnvio'
 import { FUENTE_DOCUMENTO, Tarjeta, useMasAngostoQue } from '../poligrafista/componentesHoja'
 import { Parte, armarSecciones } from '../poligrafista/FormatoPoligrafia'
+import ProtocoloVisita from './ProtocoloVisita'
+import IndicadoresVisita from './IndicadoresVisita'
+import EgresosVisita from './EgresosVisita'
+import { calcularVisita, CLAVES_CALCULADAS, integrantes as integrantesDe, soloDigitos } from './calculosVisita'
 import DatosGeneralesVisita, { FILAS_REGISTRO, resultadoDeFila } from './DatosGeneralesVisita'
-import { FASES, TODOS_LOS_TEMAS, esFormatoVisita, partesDelTema, avanceDelTema, faltantesDeVisita } from './fasesVisita'
+import { FASES, TODOS_LOS_TEMAS, esFormatoVisita, partesDelTema, avanceDelTema, faltantesDeVisita, PREGUNTAS_PROTOCOLO, numerosProtocolo, INDICADORES } from './fasesVisita'
 
 // VD-01 · Visita domiciliaria en 3 fases y 10 temas, como el formato en Word. Usa el mismo backend y el mismo guardado que el formulario
 // genérico (Formulario.jsx): los datos son los mismos, solo cambia cómo y en qué orden se capturan. Otro subservicio del visitador sigue
@@ -109,7 +113,9 @@ function PanelCaso({ ficha, nota, resumen = [] }) {
 export function FormatoVisita({ inicial, idServicioSubproceso }) {
   const navigate = useNavigate()
   const angosto = useMasAngostoQue(900)
-  const [secciones, setSecciones] = useState(() => armarSecciones(inicial))
+  const [secciones, setSecciones] = useState(() => armarSecciones(inicial).map(s => ({
+    ...s, columnas: s.columnas.map(c => (CLAVES_CALCULADAS.has(c.clave) ? { ...c, automatico: true, calculado: true } : c)),
+  })))
   const [meta, setMeta] = useState({ idFormulario: inicial.idFormulario })
   const [omitidas] = useState(() => new Set([...(inicial.secciones ?? []), ...(inicial.tablasFijas ?? [])].filter(s => s.omitida).map(s => s.idSeccion)))
   const soloLectura = !!inicial.soloLectura
@@ -200,6 +206,32 @@ export function FormatoVisita({ inicial, idServicioSubproceso }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // VD-05 · Lo que el sistema calcula se recalcula al cambiar cualquier dato del que depende y se guarda en sus columnas de siempre.
+  useEffect(() => {
+    if (soloLectura) return
+    const calc = calcularVisita(secciones)
+    let cambio = false
+    const nuevas = secciones.map(s => {
+      const dif = calc[s.clave]
+      if (!dif || s.origenFijoClave) return s
+      const idDe = (clave) => s.columnas.find(c => c.clave === clave)?.idColumna
+      if (s.tipo === 'TABLA') {
+        const fila = s.filas[0]
+        if (!fila) return s
+        const valores = { ...fila.valores }
+        let mio = false
+        Object.entries(dif).forEach(([clave, v]) => { const id = idDe(clave); if (id !== undefined && (valores[id] ?? '') !== v) { valores[id] = v; cambio = true; mio = true } })
+        return mio ? { ...s, filas: [{ ...fila, valores }, ...s.filas.slice(1)] } : s
+      }
+      const valores = { ...s.valores }
+      let mio = false
+      Object.entries(dif).forEach(([clave, v]) => { const id = idDe(clave); if (id !== undefined && (valores[id] ?? '') !== v) { valores[id] = v; cambio = true; mio = true } })
+      return mio ? { ...s, valores } : s
+    })
+    if (cambio) { setSecciones(nuevas); marcarCambio() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [secciones])
+
   // Un cambio que el visitador hace sobre lo que llegó de la solicitud queda como novedad: el gestor y el programador se enteran.
   const registrarNovedadVisita = async (clave, descripcion) => {
     try {
@@ -247,11 +279,11 @@ export function FormatoVisita({ inicial, idServicioSubproceso }) {
     await registrarNovedadVisita('VISITA_CARGO_NO_COINCIDE', `El cargo de la solicitud es «${inicial.cargo ?? ''}» y el visitador observó: ${real}.`)
   }
 
-  const guardar = async (silencioso = true) => {
+  const guardar = async (silencioso = true, base = secciones) => {
     const version = cambios.current
     setGuardando(true)
     try {
-      const payload = secciones.filter(s => !omitidas.has(s.idSeccion)).map(s => ({
+      const payload = base.filter(s => !omitidas.has(s.idSeccion)).map(s => ({
         idSeccion: s.idSeccion,
         valores: s.tipo === 'CAMPOS' ? s.valores : null,
         justificaciones: s.tipo === 'CAMPOS' ? (s.justificaciones ?? {}) : null,
@@ -309,7 +341,18 @@ export function FormatoVisita({ inicial, idServicioSubproceso }) {
   const enviar = async () => {
     setEnviando(true)
     try {
-      if (!(await asegurarGuardado())) return
+      // Profesional encargado y fecha de cierre: los pone el sistema al enviar.
+      const hoy = new Date()
+      const fechaCierre = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`
+      const nuevas = secciones.map(x => {
+        if (x.clave !== 'concepto_final') return x
+        const cNombre = x.columnas.find(c => c.clave === 'analista_nombre'), cFecha = x.columnas.find(c => c.clave === 'analista_fecha')
+        if (!cNombre || !cFecha) return x
+        return { ...x, valores: { ...x.valores, [cNombre.idColumna]: inicial.nombreProfesionalEncargado || x.valores[cNombre.idColumna] || '', [cFecha.idColumna]: fechaCierre } }
+      })
+      setSecciones(nuevas)
+      cambios.current += 1
+      if (!(await guardar(true, nuevas))) return
       await asignacionService.completar(idServicioSubproceso)
       setToast({ mensaje: 'Informe enviado a revisión del gestor', tipo: 'exito' })
       setTimeout(() => navigate('/visitador/visitas'), 900)
@@ -343,12 +386,26 @@ export function FormatoVisita({ inicial, idServicioSubproceso }) {
   const textoGuardado = guardando ? 'Guardando…' : fallido ? 'No se pudo guardar' : sucio ? 'Cambios sin guardar'
     : guardadoEn ? `Guardado hace ${Math.max(0, Math.round((ahora - guardadoEn) / 1000))} s` : 'Todo guardado'
   const datosGenerales = secciones.find(s => s.clave === 'datos_generales')
+  const protocolo = secciones.find(s => s.clave === 'protocolo' && !s.origenFijoClave)
+  // Egresos mayores que los ingresos y «Economía equilibrada»: se avisa para revisar, sin bloquear.
+  const econ = useMemo(() => calcularVisita(secciones)._economia, [secciones])
+  const estadoEconomia = (() => {
+    const e = secciones.find(s => s.clave === 'economia')
+    const c = e?.columnas.find(x => x.clave === 'eco_estado')
+    return c ? e.valores[c.idColumna] : ''
+  })()
+  const avisoEconomia = econ?.hayEg && econ?.hayIng && econ.totalEg > econ.totalIng && estadoEconomia === 'Economía equilibrada'
+    ? 'Los egresos superan los ingresos y elegiste «Economía equilibrada». Revisa el estado de la economía.' : null
+  const refsProtocolo = !protocolo ? [] : PREGUNTAS_PROTOCOLO.map(p => {
+    const c = protocolo.columnas.find(x => x.clave === `ps_${p.n}_ref`)
+    return { n: p.n, num: numerosProtocolo()[p.n], ref: c ? protocolo.valores[c.idColumna] : '' }
+  }).filter(r => tieneValor(r.ref))
   const valorDe = (clave) => { const c = datosGenerales?.columnas.find(x => x.clave === clave); return c ? datosGenerales.valores[c.idColumna] : null }
   const fechaCorta = (iso) => (iso ? new Date(iso).toLocaleString('es-CO', { day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit' }) : null)
   const partes = partesDelTema(tema, secciones)
 
   const propsParte = (p) => ({
-    parte: p, soloLectura: soloLectura || p.soloLectura, idServicioSubproceso, secciones, frases: {}, temasCliente: [], declarado: {}, aplicar: NOOP,
+    parte: { ...p, columnas: p.columnasVista ?? p.columnas }, soloLectura: soloLectura || p.soloLectura, idServicioSubproceso, secciones, frases: {}, temasCliente: [], declarado: {}, aplicar: NOOP,
     onCampo: editarCampo, onCelda: editarCeldaFila, onAgregar: agregarFila, confirmados: SIN_CONFIRMAR, onConfirmar: NOOP, onError: error,
     // Un módulo lleva su propio título; los demás, el nombre de su sección cuando el tema reúne varias.
     tema: { ...tema, soloLectura: false, partes: p.modulo ? [{}] : tema.partes },
@@ -471,7 +528,8 @@ export function FormatoVisita({ inicial, idServicioSubproceso }) {
                   modulos={modulos} onCampo={editarCampo} onModulo={cambiarModulo} onCambioConfig={cambiarConfig} onAvisarCargo={avisarCargo}
                   cita={inicial.ciudadEvaluado ?? ''} />
               )}
-              {partes.filter(p => tema.id !== 'generales' || p.seccion.clave !== 'datos_generales').map((p, i) => {
+              {tema.id === 'protocolo' && protocolo && <ProtocoloVisita seccion={protocolo} soloLectura={soloLectura} onCampo={editarCampo} />}
+              {partes.filter(p => (tema.id !== 'generales' || p.seccion.clave !== 'datos_generales') && (tema.id !== 'protocolo' || p.seccion.clave !== 'protocolo')).map((p, i) => {
                 if (p.modulo && !p.activo) {
                   return (
                     <div key={i} className="rounded-lg border border-dashed border-gray-300 px-3 py-2 flex flex-wrap items-center justify-between gap-2">
@@ -490,7 +548,26 @@ export function FormatoVisita({ inicial, idServicioSubproceso }) {
                         Módulo {p.modulo}{p.confidencial && <span className="ml-2 text-xs font-medium text-purple-700">Confidencial · lo registra Polygraph</span>}
                       </h3>
                     )}
-                    <Parte {...propsParte(p)} />
+                    {p.seccion.clave === 'egresos_hogar'
+                      ? <EgresosVisita seccion={p.seccion} integrantes={integrantesDe(secciones.find(x => x.clave === 'familia_convive'))} soloLectura={soloLectura} onCelda={editarCeldaFila} onAgregar={agregarFila} />
+                      : (p.columnasVista ?? p.columnas).length > 0 && <Parte {...propsParte(p)} />}
+                    {p.seccion.clave === 'economia' && avisoEconomia && (
+                      <p role="alert" className="mt-3 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2">{avisoEconomia}</p>
+                    )}
+                    {INDICADORES[p.seccion.clave] && (() => {
+                      const sec = p.seccion
+                      const fila = sec.tipo === 'TABLA' ? sec.filas[0] : null
+                      if (sec.tipo === 'TABLA' && !fila) return null
+                      const porClave = Object.fromEntries(sec.columnas.map(c => [c.clave, c]))
+                      const valores = Object.fromEntries(sec.columnas.map(c => [c.clave, (fila ? fila.valores : sec.valores)[c.idColumna]]))
+                      const poner = (clave, v) => {
+                        const c = porClave[clave]
+                        if (!c) return
+                        if (fila) editarCeldaFila(sec.idSeccion, fila.localId, c.idColumna, v)
+                        else editarCampo(sec.idSeccion, c.idColumna, v)
+                      }
+                      return <IndicadoresVisita claveSeccion={sec.clave} valores={valores} soloLectura={soloLectura} onValor={poner} />
+                    })()}
                   </div>
                 )
               })}
@@ -498,6 +575,12 @@ export function FormatoVisita({ inicial, idServicioSubproceso }) {
               {tema.informe && (
                 <>
                   <SoportesInforme idServicioSubproceso={idServicioSubproceso} secciones={secciones} omitidas={omitidas} />
+                  {refsProtocolo.length > 0 && (
+                    <section aria-labelledby="refs-protocolo">
+                      <h3 id="refs-protocolo" className="text-sm font-bold text-gray-900 mb-2">Protocolo de seguridad · referencias (las calcula el sistema)</h3>
+                      <ul className="text-sm text-gray-800 space-y-0.5">{refsProtocolo.map(r => <li key={r.n}>Pregunta {r.num}: {r.ref}</li>)}</ul>
+                    </section>
+                  )}
                   <RevisionEnvio idServicioSubproceso={idServicioSubproceso} faltantes={faltantes} onIrA={irA} asegurarGuardado={asegurarGuardado}
                     version={cambios.current} pedidoVista={pedidoVista} soloLectura={soloLectura} enviando={enviando} onEnviar={enviar} onError={error} />
                   <button type="button" onClick={descargarWord} disabled={descargando || !meta.idFormulario}

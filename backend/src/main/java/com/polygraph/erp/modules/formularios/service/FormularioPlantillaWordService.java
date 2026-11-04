@@ -548,6 +548,8 @@ public class FormularioPlantillaWordService {
 
         // Foto del evaluado de la poligrafía (PF-06): la vigente, recortada 3:4, de unos 3,3 cm de ancho. Sin foto, el marcador sale vacío.
         mapaCampos.put("ev_foto", fotoParaInforme(subproceso));
+        // VD-03: números que se muestran en el protocolo de seguridad de la visita (continuos; las claves ps_* no cambian).
+        mapaCampos.putAll(NumeracionProtocolo.marcadores(NumeracionProtocolo.SINDICAL_ACTIVA));
 
         ContextoPlantillaWord contexto = new ContextoPlantillaWord(mapaCandidato, mapaCampos, mapaTablas);
         contexto.soportesAnexo().addAll(soportes);
@@ -723,6 +725,7 @@ public class FormularioPlantillaWordService {
         }
 
         Map<String, Object> mapaCampos = new HashMap<>();
+        mapaCampos.putAll(NumeracionProtocolo.marcadores(NumeracionProtocolo.SINDICAL_ACTIVA));
         Map<String, List<Map<String, Object>>> mapaTablas = new HashMap<>();
         CandidatoInfoService.COLUMNAS_TABLAS_FIJAS.forEach((claveFija, columnas) -> {
             Map<String, Object> filaEjemplo = new HashMap<>();
