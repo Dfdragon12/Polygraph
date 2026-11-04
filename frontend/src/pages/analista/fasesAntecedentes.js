@@ -20,7 +20,7 @@ export const FASES = [
     temas: [
       { id: 'nacionales', titulo: 'Listas nacionales', vista: 'listas', tabla: 'nacionales', partes: [{ s: 'listas_nacionales' }] },
       { id: 'internacionales', titulo: 'Listas internacionales y PEP', vista: 'listas', tabla: 'internacionales', partes: [{ s: 'listas_internacionales' }] },
-      { id: 'transito', titulo: 'Tránsito', partes: [{ s: 'transito_simit' }, { s: 'simur' }, { s: 'runt' }] },
+      { id: 'transito', titulo: 'Tránsito', vista: 'transito', partes: [{ s: 'transito_simit' }, { s: 'simur' }, { s: 'runt' }] },
       {
         id: 'identidad', titulo: 'Identidad y contacto',
         partes: [{ s: 'alertas_id' }, { s: 'direcciones' }, { s: 'telefonos' }, { s: 'correos' }, { s: 'identidad_contacto' }],

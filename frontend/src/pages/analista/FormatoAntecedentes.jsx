@@ -12,6 +12,7 @@ import { FUENTE_DOCUMENTO, Tarjeta, useMasAngostoQue } from '../poligrafista/com
 import { Parte, armarSecciones } from '../poligrafista/FormatoPoligrafia'
 import ConsultaInterna from './ConsultaInterna'
 import ListasConsulta from './ListasConsulta'
+import TransitoConsulta from './TransitoConsulta'
 import { DatosEvaluado, ValidacionEvaluado, DeclaracionEvaluado, precargarDeclaraciones } from './TemasFase1'
 import { FASES, TODOS_LOS_TEMAS, esFormatoAntecedentes, partesDelTema, estadoDeTemas, faltantesDeAntecedentes } from './fasesAntecedentes'
 
@@ -411,6 +412,9 @@ export function FormatoAntecedentes({ inicial, idServicioSubproceso }) {
               {tema.vista === 'listas' && partes[0] && (
                 <ListasConsulta seccion={partes[0].seccion} tabla={tema.tabla} soloLectura={soloLectura} idServicioSubproceso={idServicioSubproceso}
                   onCelda={editarCeldaFila} onAgregar={agregarFila} onError={error} />
+              )}
+              {tema.vista === 'transito' && (
+                <TransitoConsulta secciones={secciones} soloLectura={soloLectura} onCampo={editarCampo} onCelda={editarCeldaFila} onAgregar={agregarFila} />
               )}
               {!tema.vista && partes.map((p, i) => (
                 <div key={`${p.seccion.idSeccion}-${i}`}>
