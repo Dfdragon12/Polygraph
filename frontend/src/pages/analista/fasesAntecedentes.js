@@ -7,12 +7,12 @@ export const FASES = [
     id: 1, nombre: 'El evaluado',
     temas: [
       {
-        id: 'datos', titulo: 'Datos del evaluado', candidato: true,
+        id: 'datos', titulo: 'Datos del evaluado', vista: 'datos',
         // La criticidad viene de la solicitud (se muestra en el encabezado): la columna sigue en la plantilla porque el cálculo la usa, pero no se pide.
         partes: [{ s: 'datos_evaluado', sinCols: ['ev_criticidad'] }, { s: 'validacion_evaluado', cols: ['ev_tipo_cargo', 'ev_conduccion'] }],
       },
-      { id: 'validacion', titulo: 'Validación del evaluado', partes: [{ s: 'validacion_evaluado', cols: ['ev_estado_doc', 'ev_rut_actividad'] }] },
-      { id: 'declaracion', titulo: 'Declaración del evaluado', partes: [{ s: 'declaracion_p1' }, { s: 'declaracion_p2' }, { s: 'declaracion_p3' }] },
+      { id: 'validacion', titulo: 'Validación del evaluado', vista: 'validacion', partes: [{ s: 'validacion_evaluado', cols: ['ev_estado_doc', 'ev_rut_actividad'] }] },
+      { id: 'declaracion', titulo: 'Declaración del evaluado', vista: 'declaracion', partes: [{ s: 'declaracion_p1' }, { s: 'declaracion_p2' }, { s: 'declaracion_p3' }] },
     ],
   },
   {

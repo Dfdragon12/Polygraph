@@ -11,6 +11,7 @@ import RevisionEnvio from '../poligrafista/RevisionEnvio'
 import { FUENTE_DOCUMENTO, Tarjeta, useMasAngostoQue } from '../poligrafista/componentesHoja'
 import { Parte, armarSecciones } from '../poligrafista/FormatoPoligrafia'
 import ConsultaInterna from './ConsultaInterna'
+import { DatosEvaluado, ValidacionEvaluado, DeclaracionEvaluado, precargarDeclaraciones } from './TemasFase1'
 import { FASES, TODOS_LOS_TEMAS, esFormatoAntecedentes, partesDelTema, estadoDeTemas, faltantesDeAntecedentes } from './fasesAntecedentes'
 
 // AN-01 · Antecedentes legales en 3 fases y 9 temas, como el formato en Word. Usa el mismo backend y el mismo guardado que el formulario genérico
@@ -119,6 +120,30 @@ export function FormatoAntecedentes({ inicial, idServicioSubproceso }) {
   }
   const faltantes = useMemo(() => faltantesDeAntecedentes(secciones), [secciones])
   const resumen = useMemo(() => resumenDelEvaluado(inicial), [inicial])
+
+  // AN-02 · Las respuestas de la declaración llegan del link del evaluado: se escriben una sola vez, cuando carga su ficha.
+  const precargado = useRef(false)
+  useEffect(() => {
+    if (!ficha || soloLectura || precargado.current) return
+    precargado.current = true
+    const nuevas = precargarDeclaraciones(secciones, ficha.declaraciones)
+    if (nuevas) { setSecciones(nuevas); marcarCambio() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ficha])
+
+  // Un aviso al gestor (dato que no coincide, etc.) se registra como novedad del subproceso.
+  const tiposNovedad = useRef(null)
+  const avisarGestor = async (clave, descripcion) => {
+    try {
+      if (!tiposNovedad.current) tiposNovedad.current = (await asignacionService.novedades(idServicioSubproceso)).tipos ?? []
+      const tipo = tiposNovedad.current.find(t => t.clave === clave)
+      if (!tipo) throw new Error('sin-tipo')
+      await asignacionService.registrarNovedad(idServicioSubproceso, tipo.idTipoNovedad, descripcion)
+    } catch (err) {
+      error(err.response?.data?.mensaje ?? 'No se pudo avisar al gestor. Inténtalo de nuevo.')
+      throw err
+    }
+  }
 
   const marcarCambio = () => { cambios.current += 1; setSucio(true); setFallido(false) }
   const editarCampo = (idSeccion, idColumna, valor) => {
@@ -375,9 +400,14 @@ export function FormatoAntecedentes({ inicial, idServicioSubproceso }) {
             <h2 id="titulo-tema" className="text-[15px] font-bold uppercase tracking-wide text-gray-900 border-b border-gray-300 pb-1 mb-4">{tema.titulo}</h2>
 
             <div className="space-y-6">
-              {tema.candidato && <FichaCandidato idServicioSubproceso={idServicioSubproceso} seccion="datos" onError={error} />}
+              {tema.vista === 'datos' && (
+                <DatosEvaluado secciones={secciones} datosCandidato={inicial.datosCandidato} cargoSolicitud={inicial.cargo} criticidad={criticidad}
+                  soloLectura={soloLectura} onCampo={editarCampo} onAvisar={avisarGestor} />
+              )}
+              {tema.vista === 'validacion' && <ValidacionEvaluado secciones={secciones} datosCandidato={inicial.datosCandidato} soloLectura={soloLectura} onCampo={editarCampo} />}
+              {tema.vista === 'declaracion' && <DeclaracionEvaluado secciones={secciones} declaraciones={ficha?.declaraciones} soloLectura={soloLectura} onCampo={editarCampo} />}
 
-              {partes.map((p, i) => (
+              {!tema.vista && partes.map((p, i) => (
                 <div key={`${p.seccion.idSeccion}-${i}`}>
                   <Parte {...propsParte(p)} />
                 </div>
@@ -394,7 +424,7 @@ export function FormatoAntecedentes({ inicial, idServicioSubproceso }) {
                   </button>
                 </>
               )}
-              {!tema.informe && !tema.candidato && partes.length === 0 && <p className="text-gray-700">Este tema no tiene campos en la plantilla.</p>}
+              {!tema.informe && !tema.vista && partes.length === 0 && <p className="text-gray-700">Este tema no tiene campos en la plantilla.</p>}
             </div>
           </section>
         </div>
