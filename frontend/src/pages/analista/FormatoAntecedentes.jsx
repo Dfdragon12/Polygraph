@@ -11,6 +11,7 @@ import RevisionEnvio from '../poligrafista/RevisionEnvio'
 import { FUENTE_DOCUMENTO, Tarjeta, useMasAngostoQue } from '../poligrafista/componentesHoja'
 import { Parte, armarSecciones } from '../poligrafista/FormatoPoligrafia'
 import ConsultaInterna from './ConsultaInterna'
+import ListasConsulta from './ListasConsulta'
 import { DatosEvaluado, ValidacionEvaluado, DeclaracionEvaluado, precargarDeclaraciones } from './TemasFase1'
 import { FASES, TODOS_LOS_TEMAS, esFormatoAntecedentes, partesDelTema, estadoDeTemas, faltantesDeAntecedentes } from './fasesAntecedentes'
 
@@ -155,10 +156,10 @@ export function FormatoAntecedentes({ inicial, idServicioSubproceso }) {
     setSecciones(prev => prev.map(s => (s.idSeccion !== idSeccion ? s
       : { ...s, filas: s.filas.map(f => (f.localId === localId ? { ...f, valores: { ...f.valores, [idColumna]: valor } } : f)) })))
   }
-  const agregarFila = (idSeccion) => {
+  const agregarFila = (idSeccion, valores = {}) => {
     marcarCambio()
     setSecciones(prev => prev.map(s => (s.idSeccion === idSeccion
-      ? { ...s, filas: [...s.filas, { localId: `an-${Date.now()}-${s.filas.length}`, idFila: null, etiqueta: '', valores: {}, justificaciones: {} }] } : s)))
+      ? { ...s, filas: [...s.filas, { localId: `an-${Date.now()}-${s.filas.length}`, idFila: null, etiqueta: '', valores: { ...valores }, justificaciones: {} }] } : s)))
   }
 
   const guardar = async (silencioso = true) => {
@@ -407,6 +408,10 @@ export function FormatoAntecedentes({ inicial, idServicioSubproceso }) {
               {tema.vista === 'validacion' && <ValidacionEvaluado secciones={secciones} datosCandidato={inicial.datosCandidato} soloLectura={soloLectura} onCampo={editarCampo} />}
               {tema.vista === 'declaracion' && <DeclaracionEvaluado secciones={secciones} declaraciones={ficha?.declaraciones} soloLectura={soloLectura} onCampo={editarCampo} />}
 
+              {tema.vista === 'listas' && partes[0] && (
+                <ListasConsulta seccion={partes[0].seccion} tabla={tema.tabla} soloLectura={soloLectura} idServicioSubproceso={idServicioSubproceso}
+                  onCelda={editarCeldaFila} onAgregar={agregarFila} onError={error} />
+              )}
               {!tema.vista && partes.map((p, i) => (
                 <div key={`${p.seccion.idSeccion}-${i}`}>
                   <Parte {...propsParte(p)} />

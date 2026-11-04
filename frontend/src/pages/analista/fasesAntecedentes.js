@@ -18,8 +18,8 @@ export const FASES = [
   {
     id: 2, nombre: 'Consultas',
     temas: [
-      { id: 'nacionales', titulo: 'Listas nacionales', partes: [{ s: 'listas_nacionales' }] },
-      { id: 'internacionales', titulo: 'Listas internacionales y PEP', partes: [{ s: 'listas_internacionales' }] },
+      { id: 'nacionales', titulo: 'Listas nacionales', vista: 'listas', tabla: 'nacionales', partes: [{ s: 'listas_nacionales' }] },
+      { id: 'internacionales', titulo: 'Listas internacionales y PEP', vista: 'listas', tabla: 'internacionales', partes: [{ s: 'listas_internacionales' }] },
       { id: 'transito', titulo: 'Tránsito', partes: [{ s: 'transito_simit' }, { s: 'simur' }, { s: 'runt' }] },
       {
         id: 'identidad', titulo: 'Identidad y contacto',
@@ -81,6 +81,13 @@ export function avanceDelTema(tema, secciones) {
   }
   partesDelTema(tema, secciones).forEach(p => {
     if (p.soloLectura || p.seccion.calculada) return
+    if (tema.vista === 'listas') {   // AN-03: cada fuente cuenta cuando tiene su resultado
+      const pre = tema.tabla === 'internacionales' ? 'li' : 'ln'
+      const idRes = p.seccion.columnas.find(c => c.clave === `${pre}_resultado`)?.idColumna
+      total += p.seccion.filas.length
+      llenos += p.seccion.filas.filter(f => tieneValor(f.valores[idRes])).length
+      return
+    }
     const manuales = p.columnas.filter(c => !c.automatico && !c.calculado)
     if (p.seccion.tipo === 'CAMPOS') {
       total += manuales.length
@@ -99,6 +106,20 @@ export function faltantesDeAntecedentes(secciones) {
   FASES.forEach(f => f.temas.forEach(t => {
     const items = []
     partesDelTema(t, secciones).forEach(p => {
+      // AN-03: en las listas, cada fila necesita su resultado y, con resultado, su soporte.
+      if (t.vista === 'listas') {
+        const pre = t.tabla === 'internacionales' ? 'li' : 'ln'
+        const id = (clave) => p.seccion.columnas.find(c => c.clave === clave)?.idColumna
+        const nombreFuente = (f) => f.valores[id(t.tabla === 'internacionales' ? 'li_lista' : 'ln_fuente')] || 'Fuente'
+        p.seccion.filas.forEach(f => {
+          if (!tieneValor(f.valores[id(`${pre}_resultado`)])) items.push({ texto: `${nombreFuente(f)}: marca el resultado`, clave: `${p.seccion.clave}-${nombreFuente(f)}` })
+          else {
+            const sop = f.valores[id(`${pre}_soporte`)]
+            if (!tieneValor(sop) || sop === '[]') items.push({ texto: `${nombreFuente(f)}: falta soporte`, clave: `${pre}_soporte` })
+          }
+        })
+        return
+      }
       const obligatorias = p.columnas.filter(c => c.obligatorio && !c.automatico && !c.calculado)
       if (p.seccion.tipo === 'CAMPOS') {
         obligatorias.filter(c => !tieneValor(p.seccion.valores[c.idColumna])).forEach(c => items.push({ texto: c.nombre || c.clave, clave: c.clave }))
