@@ -93,11 +93,14 @@ const formulariosService = {
 
   // Columnas tipo ARCHIVO — el analista sube el archivo apenas lo selecciona; la "ruta" que
   // devuelve se guarda como el valor de esa columna, igual que cualquier otro dato.
-  subirArchivo: (idServicioSubproceso, archivo) => {
+  // `nombre` (VD-07): nombre con el que se guarda un Blob (ej. «foto.jpg»); `alProgreso(0..1)`: avance de la subida.
+  subirArchivo: (idServicioSubproceso, archivo, nombre, alProgreso) => {
     const formData = new FormData()
-    formData.append('archivo', archivo)
+    if (nombre) formData.append('archivo', archivo, nombre)
+    else formData.append('archivo', archivo)
     return api.post(`/gestor/formularios/subproceso/${idServicioSubproceso}/archivo`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: alProgreso ? (e) => alProgreso(e.total ? e.loaded / e.total : 0) : undefined,
     }).then(r => r.data.ruta)
   },
 

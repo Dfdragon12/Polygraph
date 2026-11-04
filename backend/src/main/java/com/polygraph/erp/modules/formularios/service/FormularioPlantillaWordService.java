@@ -682,7 +682,8 @@ public class FormularioPlantillaWordService {
         int puntoExt = ruta.lastIndexOf('.');
         if (puntoExt < 0 || !EXTENSIONES_IMAGEN.contains(ruta.substring(puntoExt + 1).toLowerCase())) return null;
         try (InputStream in = almacenamientoService.cargarComoResource(ruta).getInputStream()) {
-            return new Image(in, ANCHO_IMAGEN_TWIPS);
+            // VD-07: una foto guardada con su tamaño de origen se reduce SOLO para el informe; el original no se toca.
+            return new Image(new java.io.ByteArrayInputStream(ReductorImagen.paraInforme(in.readAllBytes())), ANCHO_IMAGEN_TWIPS);
         } catch (Exception e) {
             log.warn("No se pudo incrustar la imagen ({}), se deja como referencia de texto: {}", ruta, e.getMessage());
             return null;

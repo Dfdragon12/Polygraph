@@ -241,6 +241,45 @@ export const GRUPOS_TELETRABAJO = [
   },
 ]
 
+// VD-07 · Fotos de la visita: espacios con nombre, descripción sugerida y mínimo por sección. Cada foto vive en una fila de la sección (etiqueta = nombre del espacio).
+export const FOTOS = {
+  fotos: {
+    titulo: 'Fotos de la vivienda', minimo: 3, agregar: '+ Agregar otra foto de la vivienda', nombreExtra: 'Otra foto de la vivienda', descripcionExtra: 'Foto de la vivienda',
+    grupos: [{ espacios: [
+      { nombre: 'Fachada con nomenclatura y el candidato', descripcion: 'Fachada de la vivienda' },
+      { nombre: 'Habitación del candidato', descripcion: 'Habitación del candidato' },
+      { nombre: 'Sala, comedor u otra área social, con el candidato', descripcion: 'Área social de la vivienda' },
+    ] }],
+  },
+  fotos_vehicular: {
+    titulo: 'Fotos de la zona de parqueo', minimo: 2, agregar: '+ Agregar otra', nombreExtra: 'Otra foto de la zona de parqueo', descripcionExtra: 'Zona de parqueo',
+    grupos: [{ espacios: [
+      { nombre: 'Punto de entrega', descripcion: 'Punto de entrega del vehículo' },
+      { nombre: 'Lugar de parqueo', descripcion: 'Lugar de parqueo del vehículo' },
+    ] }],
+  },
+  fotos_teletrabajo: {
+    titulo: 'Fotos del lugar de teletrabajo', minimo: 20, agregar: null, nombreExtra: 'Otra foto del lugar de teletrabajo', descripcionExtra: 'Lugar de teletrabajo',
+    grupos: [
+      { titulo: 'Con el candidato (4)', espacios: [1, 2, 3, 4].map(n => ({ nombre: `Con el candidato ${n}`, descripcion: `Foto ${n} con el candidato` })) },
+      { titulo: 'Del lugar de trabajo (13)', espacios: Array.from({ length: 13 }, (_, i) => ({ nombre: `Lugar de trabajo ${i + 1}`, descripcion: `Lugar de trabajo ${i + 1}` })) },
+      { titulo: 'De la calle (3)', espacios: [1, 2, 3].map(n => ({ nombre: `Calle ${n}`, descripcion: `Calle, foto ${n}` })) },
+    ],
+  },
+}
+// Las fotos de un módulo existen mientras el módulo esté activo: dependen de su sección principal.
+export const PADRE_DE_FOTOS = { fotos_vehicular: 'vehicular', fotos_teletrabajo: 'teletrabajo' }
+const rutaOk = (v) => tieneValorFoto(v)
+function tieneValorFoto(v) { return v !== undefined && v !== null && String(v).trim() !== '' && String(v) !== '[]' }
+
+// Cuántas fotos hay en una sección de fotos y cuántas no tienen descripción.
+export function conteoDeFotos(seccion) {
+  const img = seccion.columnas.find(c => c.clave === 'ft_imagen')?.idColumna
+  const des = seccion.columnas.find(c => c.clave === 'ft_descripcion')?.idColumna
+  const con = seccion.filas.filter(f => rutaOk(f.valores[img]))
+  return { fotos: con.length, sinDescripcion: con.filter(f => !String(f.valores[des] ?? '').trim()).length }
+}
+
 export const TODOS_LOS_TEMAS = FASES.flatMap(f => f.temas.map(t => ({ ...t, fase: f.id })))
 
 // Es la visita domiciliaria si trae las secciones que identifican esta plantilla.
@@ -259,7 +298,7 @@ export function partesDelTema(tema, secciones) {
     if (columnas.length === 0) return
     // VD-04: los indicadores (y su porcentaje y concepto) se dibujan aparte, con su nombre y la escala.
     const columnasVista = columnas.filter(c => !esClaveDeIndicador(seccion.clave, c.clave) && !(seccion.clave === 'teletrabajo' && /^tt_\d+$/.test(c.clave)))
-    partes.push({ seccion, columnas, columnasVista, modulo: p.modulo ?? null, confidencial: !!p.confidencial, soloLectura: !!p.soloLectura, activo: !p.modulo || seccion.filas.length > 0 })
+    partes.push({ seccion, columnas, columnasVista, modulo: p.modulo ?? null, confidencial: !!p.confidencial, soloLectura: !!p.soloLectura, activo: !p.modulo || (PADRE_DE_FOTOS[seccion.clave] ? (secciones.find(x => x.clave === PADRE_DE_FOTOS[seccion.clave] && !x.origenFijoClave)?.filas.length ?? 0) > 0 : seccion.filas.length > 0) })
   })
   return partes
 }
@@ -273,6 +312,13 @@ export function avanceDelTema(tema, secciones) {
   if (tema.informe) return { llenos, total }
   partesDelTema(tema, secciones).forEach(p => {
     if (!p.activo || p.soloLectura || p.seccion.calculada) return
+    if (FOTOS[p.seccion.clave]) {
+      const { fotos, sinDescripcion } = conteoDeFotos(p.seccion)
+      const minimo = FOTOS[p.seccion.clave].minimo
+      total += minimo
+      llenos += Math.max(0, Math.min(fotos - sinDescripcion, minimo))
+      return
+    }
     const manuales = p.columnas.filter(c => !c.automatico && !esClaveCalculada(p.seccion.clave, c.clave) && (p.seccion.clave !== 'protocolo' || /^ps_\d+$/.test(c.clave)))
     if (p.seccion.tipo === 'CAMPOS') {
       total += manuales.length
@@ -294,6 +340,13 @@ export function faltantesDeVisita(secciones) {
     const items = []
     partesDelTema(t, secciones).forEach(p => {
       if (!p.activo) return
+      if (FOTOS[p.seccion.clave]) {
+        const { fotos, sinDescripcion } = conteoDeFotos(p.seccion)
+        const cfg = FOTOS[p.seccion.clave]
+        if (fotos < cfg.minimo) items.push(`${cfg.titulo}: ${fotos} de ${cfg.minimo} mínimas`)
+        if (sinDescripcion > 0) items.push(`${cfg.titulo}: ${sinDescripcion} sin descripción`)
+        return
+      }
       const obligatorias = p.columnas.filter(c => c.obligatorio && !c.automatico)
       if (p.seccion.tipo === 'CAMPOS') obligatorias.filter(c => !tieneValor(p.seccion.valores[c.idColumna])).forEach(c => items.push(c.nombre || c.clave))
       else obligatorias.filter(c => p.seccion.filas.some(fila => !tieneValor(fila.valores[c.idColumna]))).forEach(c => items.push(c.nombre || c.clave))

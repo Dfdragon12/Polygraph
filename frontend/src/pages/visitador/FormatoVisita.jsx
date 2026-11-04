@@ -14,9 +14,10 @@ import ProtocoloVisita from './ProtocoloVisita'
 import IndicadoresVisita from './IndicadoresVisita'
 import EgresosVisita from './EgresosVisita'
 import TeletrabajoVisita from './TeletrabajoVisita'
+import FotosVisita from './FotosVisita'
 import { calcularVisita, CLAVES_CALCULADAS, integrantes as integrantesDe, soloDigitos } from './calculosVisita'
 import DatosGeneralesVisita, { FILAS_REGISTRO, resultadoDeFila } from './DatosGeneralesVisita'
-import { FASES, TODOS_LOS_TEMAS, esFormatoVisita, partesDelTema, avanceDelTema, faltantesDeVisita, PREGUNTAS_PROTOCOLO, numerosProtocolo, INDICADORES } from './fasesVisita'
+import { FASES, TODOS_LOS_TEMAS, esFormatoVisita, partesDelTema, avanceDelTema, faltantesDeVisita, PREGUNTAS_PROTOCOLO, numerosProtocolo, INDICADORES, FOTOS, PADRE_DE_FOTOS } from './fasesVisita'
 
 // VD-01 · Visita domiciliaria en 3 fases y 10 temas, como el formato en Word. Usa el mismo backend y el mismo guardado que el formulario
 // genérico (Formulario.jsx): los datos son los mismos, solo cambia cómo y en qué orden se capturan. Otro subservicio del visitador sigue
@@ -118,7 +119,7 @@ export function FormatoVisita({ inicial, idServicioSubproceso }) {
     ...s, columnas: s.columnas.map(c => (CLAVES_CALCULADAS.has(c.clave) ? { ...c, automatico: true, calculado: true } : c)),
   })))
   const [meta, setMeta] = useState({ idFormulario: inicial.idFormulario })
-  const [omitidas] = useState(() => new Set([...(inicial.secciones ?? []), ...(inicial.tablasFijas ?? [])].filter(s => s.omitida).map(s => s.idSeccion)))
+  const [omitidas, setOmitidas] = useState(() => new Set([...(inicial.secciones ?? []), ...(inicial.tablasFijas ?? [])].filter(s => s.omitida).map(s => s.idSeccion)))
   const soloLectura = !!inicial.soloLectura
   const [temaId, setTemaId] = useState(TODOS_LOS_TEMAS[0].id)
   const [sucio, setSucio] = useState(false)
@@ -172,6 +173,10 @@ export function FormatoVisita({ inicial, idServicioSubproceso }) {
     marcarCambio()
     setSecciones(prev => prev.map(s => (s.idSeccion !== idSeccion ? s
       : { ...s, filas: s.filas.map(f => (f.localId === localId ? { ...f, valores: { ...f.valores, [idColumna]: valor } } : f)) })))
+  }
+  const cambiarFilas = (idSeccion, fn) => {
+    marcarCambio()
+    setSecciones(prev => prev.map(s => (s.idSeccion === idSeccion ? { ...s, filas: fn(s.filas) } : s)))
   }
   const agregarFila = (idSeccion) => {
     marcarCambio()
@@ -250,10 +255,13 @@ export function FormatoVisita({ inicial, idServicioSubproceso }) {
   // Enciende o apaga las secciones de un módulo. Al apagar, sus filas se guardan aparte y la sección sale vacía.
   const fijarSecciones = (claves, activar) => {
     marcarCambio()
+    const ids = secciones.filter(s => claves.includes(s.clave) && !s.origenFijoClave).map(s => s.idSeccion)
+    // Apagar = «quitar sección» (opcional desde V244): el servidor puede borrar sus filas. Encender la vuelve a incluir.
+    setOmitidas(prev => { const n = new Set(prev); ids.forEach(id => (activar ? n.delete(id) : n.add(id))); return n })
     setSecciones(prev => prev.map(s => {
-      if (!claves.includes(s.clave) || s.origenFijoClave) return s
+      if (!ids.includes(s.idSeccion)) return s
       if (activar) {
-        if (s.filas.length > 0) return s
+        if (s.filas.length > 0 || PADRE_DE_FOTOS[s.clave]) return s
         const guardadas = ocultos.current[s.idSeccion]
         const filas = guardadas?.length ? guardadas : [{ localId: `vd-${Date.now()}-${s.idSeccion}`, idFila: null, etiqueta: '', valores: {}, justificaciones: {} }]
         return { ...s, filas }
@@ -262,7 +270,7 @@ export function FormatoVisita({ inicial, idServicioSubproceso }) {
       return { ...s, filas: [] }
     }))
   }
-  const estaActivo = (claves) => claves.every(c => { const s = secciones.find(x => x.clave === c && !x.origenFijoClave); return !s || s.filas.length > 0 })
+  const estaActivo = (claves) => claves.filter(c => !PADRE_DE_FOTOS[c]).every(c => { const s = secciones.find(x => x.clave === c && !x.origenFijoClave); return !s || s.filas.length > 0 })
   const modulos = MODULOS.map(m => ({ nombre: m.nombre, activo: estaActivo(m.secs) }))
 
   const cambiarModulo = (nombre, activar) => {
@@ -546,9 +554,13 @@ export function FormatoVisita({ inicial, idServicioSubproceso }) {
                       const valores = Object.fromEntries(sec.columnas.map(c => [c.clave, fila.valores[c.idColumna]]))
                       return <TeletrabajoVisita valores={valores} soloLectura={soloLectura} onValor={(clave, v) => { const c = porClave[clave]; if (c) editarCeldaFila(sec.idSeccion, fila.localId, c.idColumna, v) }} />
                     })()}
+                    {FOTOS[p.seccion.clave] && (
+                      <FotosVisita seccion={p.seccion} config={FOTOS[p.seccion.clave]} idServicioSubproceso={idServicioSubproceso} soloLectura={soloLectura}
+                        onCambiarFilas={cambiarFilas} onError={error} />
+                    )}
                     {p.seccion.clave === 'egresos_hogar'
                       ? <EgresosVisita seccion={p.seccion} integrantes={integrantesDe(secciones.find(x => x.clave === 'familia_convive'))} soloLectura={soloLectura} onCelda={editarCeldaFila} onAgregar={agregarFila} />
-                      : (p.columnasVista ?? p.columnas).length > 0 && <Parte {...propsParte(p)} />}
+                      : !FOTOS[p.seccion.clave] && (p.columnasVista ?? p.columnas).length > 0 && <Parte {...propsParte(p)} />}
                     {p.seccion.clave === 'economia' && avisoEconomia && (
                       <p role="alert" className="mt-3 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2">{avisoEconomia}</p>
                     )}
