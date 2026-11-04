@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import CampoFecha from '../../components/CampoFecha'
 import { InputPorTipo } from '../shared/Formulario'
 import { Botones } from '../visitador/DatosGeneralesVisita'
 import { useMasAngostoQue } from '../poligrafista/componentesHoja'
@@ -102,8 +103,8 @@ export default function ListasConsulta({ seccion, tabla, soloLectura, idServicio
             onChange={e => poner(fila, 'ln_estado', e.target.value)} />
         </>
       ) : null,
-      fecha: <input type="date" aria-label={`${fuente}: fecha`} className={inputCls} value={leer(fila, `${p}_fecha`)} disabled={soloLectura}
-        onChange={e => poner(fila, `${p}_fecha`, e.target.value)} />,
+      fecha: <CampoFecha aria-label={`${fuente}: fecha`} className={inputCls} value={leer(fila, `${p}_fecha`)} disabled={soloLectura}
+        onChange={v => poner(fila, `${p}_fecha`, v)} />,
       soporte: (
         <div data-clave={`${p}_soporte`} className="space-y-1">
           {tiene(resultado) && (marca

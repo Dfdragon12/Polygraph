@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import CampoFecha from '../../components/CampoFecha'
 import { Botones } from '../visitador/DatosGeneralesVisita'
 import { coincide, comoSiNo } from './identidadFormato'
 
@@ -102,7 +103,7 @@ export default function IdentidadContacto({ secciones, datosCandidato, soloLectu
                     <Botones etiqueta="Fuente de la alerta" opciones={['Reconocer', 'Datacrédito']} valor={val('a_fuente')} deshabilitado={soloLectura} onElegir={v => poner('a_fuente', v)} />
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div><label className="block text-xs text-gray-700 mb-1">Fecha</label><input type="date" className={inputCls} value={val('a_fecha')} disabled={soloLectura} onChange={e => poner('a_fecha', e.target.value)} /></div>
+                    <div><label className="block text-xs text-gray-700 mb-1">Fecha</label><CampoFecha className={inputCls} value={val('a_fecha')} disabled={soloLectura} onChange={v => poner('a_fecha', v)} /></div>
                     <div><label className="block text-xs text-gray-700 mb-1">Novedad</label><input className={inputCls} value={val('a_novedad')} disabled={soloLectura} onChange={e => poner('a_novedad', e.target.value)} /></div>
                   </div>
                   <div><label className="block text-xs text-gray-700 mb-1">Descripción</label><textarea rows={2} className={`${inputCls} py-2`} value={val('a_descripcion')} disabled={soloLectura} onChange={e => poner('a_descripcion', e.target.value)} /></div>

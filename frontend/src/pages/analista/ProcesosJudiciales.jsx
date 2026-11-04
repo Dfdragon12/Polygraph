@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import CampoFecha from '../../components/CampoFecha'
 import { InputPorTipo } from '../shared/Formulario'
 import { Botones } from '../visitador/DatosGeneralesVisita'
 import { CATALOGO_DELITOS, sugerirCodigo, sugerirRelacion, radicadoRepetido } from './procesosReglas'
@@ -122,7 +123,7 @@ export default function ProcesosJudiciales({ secciones, soloLectura, idServicioS
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label htmlFor={`${base}-fec`} className="block text-xs text-gray-700 mb-1">Fecha del proceso</label>
-                  <input id={`${base}-fec`} type="date" className={inputCls} value={val(`${pre}fecha`)} disabled={soloLectura} onChange={e => poner(`${pre}fecha`, e.target.value)} />
+                  <CampoFecha id={`${base}-fec`} className={inputCls} value={val(`${pre}fecha`)} disabled={soloLectura} onChange={v => poner(`${pre}fecha`, v)} />
                 </div>
                 <div>
                   <label htmlFor={`${base}-eta`} className="block text-xs text-gray-700 mb-1">Etapa</label>

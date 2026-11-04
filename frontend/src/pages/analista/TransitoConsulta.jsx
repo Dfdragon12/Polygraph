@@ -1,4 +1,5 @@
 import { Botones } from '../visitador/DatosGeneralesVisita'
+import CampoFecha from '../../components/CampoFecha'
 import { ITEMS_SIMIT, leerItem, escribirItem, sugerirLeg17, sugerirRunt } from './transitoFormato'
 
 // AN-04 · Tránsito: SIMIT con botones y número, SIMUR y RUNT como tablas, y «Sin registros» para dejar la tabla completa. Se guarda en las mismas columnas de
@@ -102,7 +103,7 @@ export default function TransitoConsulta({ secciones, soloLectura, onCampo, onCe
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div><label className="block text-xs text-gray-700 mb-1">Comparendo</label><input className={inputCls} value={val('simur_comparendo')} disabled={soloLectura} onChange={e => poner('simur_comparendo', e.target.value)} /></div>
                     <div><label className="block text-xs text-gray-700 mb-1">Placa</label><input className={inputCls} value={val('simur_placa')} disabled={soloLectura} onChange={e => poner('simur_placa', e.target.value)} /></div>
-                    <div><label className="block text-xs text-gray-700 mb-1">Fecha de infracción</label><input type="date" className={inputCls} value={val('simur_fecha')} disabled={soloLectura} onChange={e => poner('simur_fecha', e.target.value)} /></div>
+                    <div><label className="block text-xs text-gray-700 mb-1">Fecha de infracción</label><CampoFecha className={inputCls} value={val('simur_fecha')} disabled={soloLectura} onChange={v => poner('simur_fecha', v)} /></div>
                   </div>
                 </TarjetaFila>
               )
@@ -133,7 +134,7 @@ export default function TransitoConsulta({ secciones, soloLectura, onCampo, onCe
                 <TarjetaFila key={f.localId} titulo={`Licencia ${i + 1}`}>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div><label className="block text-xs text-gray-700 mb-1">Categoría</label><input className={inputCls} value={val('runt_categoria')} disabled={soloLectura} onChange={e => poner('runt_categoria', e.target.value)} /></div>
-                    <div><label className="block text-xs text-gray-700 mb-1">Vencimiento</label><input type="date" className={inputCls} value={val('runt_vencimiento')} disabled={soloLectura} onChange={e => poner('runt_vencimiento', e.target.value)} /></div>
+                    <div><label className="block text-xs text-gray-700 mb-1">Vencimiento</label><CampoFecha className={inputCls} value={val('runt_vencimiento')} disabled={soloLectura} onChange={v => poner('runt_vencimiento', v)} /></div>
                   </div>
                   <div>
                     <p id={`an-runt-e-${i}`} className="text-xs text-gray-700 mb-1">Estado de la licencia</p>

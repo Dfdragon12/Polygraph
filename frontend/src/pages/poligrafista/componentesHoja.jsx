@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import CampoDinero from '../visitador/CampoDinero'
+import CampoFecha from '../../components/CampoFecha'
 import { Link } from 'react-router-dom'
 import { InputPorTipo } from '../shared/Formulario'
 import { tituloLimpio } from './revisionFormato'
@@ -42,8 +43,8 @@ export function InputHoja({ c, value, onChange, disabled, idServicioSubproceso, 
     return (
       <select id={id} value={value ?? ''} onChange={e => onChange(e.target.value)} disabled={disabled} className={`${CAMPO} max-w-full`}>
         <option value="">Selecciona…</option>
-        {/* Una sola opción vacía: el «—» que traen algunas listas se oculta, salvo que sea lo que ya está guardado. */}
-        {(c.opciones ?? []).filter(o => (o !== '—' && o !== '') || o === value).map(o => <option key={o} value={o}>{o}</option>)}
+        {/* Una sola opción vacía: el «—» que traen algunas listas se oculta, salvo que sea lo que ya está guardado o una columna Ref. / Calificación, donde «—» significa «sin novedad». */}
+        {(c.opciones ?? []).filter(o => (o !== '—' && o !== '') || o === value || (o === '—' && /(_ref|_calificacion)$/.test(c.clave ?? ''))).map(o => <option key={o} value={o}>{o}</option>)}
       </select>
     )
   }
@@ -54,7 +55,7 @@ export function InputHoja({ c, value, onChange, disabled, idServicioSubproceso, 
       </select>
     )
   }
-  if (t === 'FECHA') return <input id={id} type="date" value={value ?? ''} onChange={e => onChange(e.target.value)} disabled={disabled} className={CAMPO} />
+  if (t === 'FECHA') return <CampoFecha id={id} value={value ?? ''} onChange={onChange} disabled={disabled} className={`${CAMPO} w-40`} />
   if (t === 'NUMERO' && CLAVES_DINERO.has(c.clave)) return <CampoDinero id={id} value={value} onChange={onChange} disabled={disabled} />
   if (t === 'NUMERO') return <input id={id} type="number" value={value ?? ''} onChange={e => onChange(e.target.value)} disabled={disabled} className={`${CAMPO} w-28`} />
   if (c.clave?.startsWith('pol_hora')) return <input id={id} type="time" value={value ?? ''} onChange={e => onChange(e.target.value)} disabled={disabled} className={CAMPO} />
