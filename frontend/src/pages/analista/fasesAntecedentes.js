@@ -25,7 +25,7 @@ export const FASES = [
         id: 'identidad', titulo: 'Identidad y contacto', vista: 'identidad',
         partes: [{ s: 'alertas_id' }, { s: 'direcciones' }, { s: 'telefonos' }, { s: 'correos' }, { s: 'identidad_contacto' }],
       },
-      { id: 'procesos', titulo: 'Procesos judiciales', partes: [{ s: 'procesos' }, { s: 'procesos_privados' }] },
+      { id: 'procesos', titulo: 'Procesos judiciales', vista: 'procesos', partes: [{ s: 'procesos' }, { s: 'procesos_privados' }] },
     ],
   },
   {
@@ -35,7 +35,7 @@ export const FASES = [
         id: 'revision', titulo: 'Revisión', informe: true,
         // Lo que arma el sistema va de solo lectura.
         partes: [{ s: 'resultado_servicio', soloLectura: true }, { s: 'hallazgos', soloLectura: true }, { s: 'informativos' },
-          { s: 'notas_procesos', soloLectura: true }, { s: 'concepto_analista' }],
+          { s: 'notas_procesos', soloLectura: true, sinCols: ['procesos_revisados', 'procesos_priv_revisados'] }, { s: 'concepto_analista' }],
       },
     ],
   },
@@ -90,6 +90,16 @@ export function avanceDelTema(tema, secciones) {
       llenos += tieneValor(v(id, 'rec_residencial')) ? 1 : 0
       return
     }
+    if (tema.vista === 'procesos') {   // AN-06: una fuente cuenta con sus procesos o con «No se encontraron procesos»
+      const notas = secciones.find(x => x.clave === 'notas_procesos' && !x.origenFijoClave)
+      const v = (clave) => notas?.valores[notas.columnas.find(c => c.clave === clave)?.idColumna]
+      ;[['procesos', 'procesos_revisados'], ['procesos_privados', 'procesos_priv_revisados']].forEach(([clave, marca]) => {
+        const s = secciones.find(x => x.clave === clave && !x.origenFijoClave)
+        total += 1
+        llenos += (s && s.filas.length > 0) || v(marca) === 'Sí' ? 1 : 0
+      })
+      return
+    }
     if (tema.vista === 'listas') {   // AN-03: cada fuente cuenta cuando tiene su resultado
       const pre = tema.tabla === 'internacionales' ? 'li' : 'ln'
       const idRes = p.seccion.columnas.find(c => c.clave === `${pre}_resultado`)?.idColumna
@@ -116,6 +126,7 @@ export function faltantesDeAntecedentes(secciones) {
     const items = []
     partesDelTema(t, secciones).forEach(p => {
       // AN-03: en las listas, cada fila necesita su resultado y, con resultado, su soporte.
+      if (t.vista === 'procesos') return   // se revisa abajo, una sola vez por tema
       if (t.vista === 'listas') {
         const pre = t.tabla === 'internacionales' ? 'li' : 'ln'
         const id = (clave) => p.seccion.columnas.find(c => c.clave === clave)?.idColumna
@@ -136,6 +147,21 @@ export function faltantesDeAntecedentes(secciones) {
         obligatorias.filter(c => p.seccion.filas.some(fila => !tieneValor(fila.valores[c.idColumna]))).forEach(c => items.push({ texto: `${p.seccion.nombre.replace(/^\d+\.\s*/, '')}: ${c.nombre || c.clave}`, clave: c.clave }))
       }
     })
+    if (t.vista === 'procesos') {   // AN-06: cada fuente se completa con sus procesos o con «No se encontraron procesos»; cada proceso lleva código y soporte
+      const notas = secciones.find(x => x.clave === 'notas_procesos' && !x.origenFijoClave)
+      const idN = (clave) => notas?.columnas.find(c => c.clave === clave)?.idColumna
+      ;[['procesos', 'p_', 'procesos_revisados', 'Rama Judicial'], ['procesos_privados', 'pp_', 'procesos_priv_revisados', 'Bases privadas']].forEach(([clave, pre, marca, titulo]) => {
+        const s = secciones.find(x => x.clave === clave && !x.origenFijoClave)
+        if (!s) return
+        const id = (c) => s.columnas.find(x => x.clave === c)?.idColumna
+        if (s.filas.length === 0 && notas?.valores[idN(marca)] !== 'Sí') items.push({ texto: `${titulo}: agrega los procesos o marca «No se encontraron procesos»`, clave: `seccion-${clave}` })
+        s.filas.forEach((f, i) => {
+          if (!tieneValor(f.valores[id(`${pre}calificacion`)])) items.push({ texto: `${titulo} · Proceso ${i + 1}: define el código (o —)`, clave: `${pre}proceso-${i + 1}` })
+          const sop = f.valores[id(`${pre}soporte`)]
+          if (!tieneValor(sop) || sop === '[]') items.push({ texto: `${titulo} · Proceso ${i + 1}: falta soporte`, clave: `${pre}soporte` })
+        })
+      })
+    }
     if (items.length > 0) grupos.push({ id: t.id, titulo: t.titulo, fase: f.id, items })
   }))
   return { grupos, total: grupos.reduce((n, g) => n + g.items.length, 0) }

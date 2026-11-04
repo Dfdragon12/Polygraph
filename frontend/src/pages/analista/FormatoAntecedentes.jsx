@@ -14,6 +14,7 @@ import ConsultaInterna from './ConsultaInterna'
 import ListasConsulta from './ListasConsulta'
 import TransitoConsulta from './TransitoConsulta'
 import IdentidadContacto from './IdentidadContacto'
+import ProcesosJudiciales from './ProcesosJudiciales'
 import { DatosEvaluado, ValidacionEvaluado, DeclaracionEvaluado, precargarDeclaraciones } from './TemasFase1'
 import { FASES, TODOS_LOS_TEMAS, esFormatoAntecedentes, partesDelTema, estadoDeTemas, faltantesDeAntecedentes } from './fasesAntecedentes'
 
@@ -419,6 +420,10 @@ export function FormatoAntecedentes({ inicial, idServicioSubproceso }) {
               )}
               {tema.vista === 'identidad' && (
                 <IdentidadContacto secciones={secciones} datosCandidato={inicial.datosCandidato} soloLectura={soloLectura} onCampo={editarCampo} onCelda={editarCeldaFila} onAgregar={agregarFila} />
+              )}
+              {tema.vista === 'procesos' && (
+                <ProcesosJudiciales secciones={secciones} soloLectura={soloLectura} idServicioSubproceso={idServicioSubproceso}
+                  onCelda={editarCeldaFila} onCampo={editarCampo} onAgregar={agregarFila} onError={error} />
               )}
               {!tema.vista && partes.map((p, i) => (
                 <div key={`${p.seccion.idSeccion}-${i}`}>
