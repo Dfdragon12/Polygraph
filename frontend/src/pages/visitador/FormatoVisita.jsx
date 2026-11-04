@@ -15,6 +15,7 @@ import IndicadoresVisita from './IndicadoresVisita'
 import EgresosVisita from './EgresosVisita'
 import TeletrabajoVisita from './TeletrabajoVisita'
 import FotosVisita from './FotosVisita'
+import CatalogoReferencias from './CatalogoReferencias'
 import { calcularVisita, CLAVES_CALCULADAS, integrantes as integrantesDe, soloDigitos } from './calculosVisita'
 import DatosGeneralesVisita, { FILAS_REGISTRO, resultadoDeFila } from './DatosGeneralesVisita'
 import { FASES, TODOS_LOS_TEMAS, esFormatoVisita, partesDelTema, avanceDelTema, faltantesDeVisita, PREGUNTAS_PROTOCOLO, numerosProtocolo, INDICADORES, FOTOS, PADRE_DE_FOTOS, estadoDeTemas } from './fasesVisita'
@@ -604,6 +605,7 @@ export function FormatoVisita({ inicial, idServicioSubproceso }) {
 
               {tema.informe && (
                 <>
+                  <CatalogoReferencias />
                   <SoportesInforme idServicioSubproceso={idServicioSubproceso} secciones={secciones} omitidas={omitidas} />
                   {refsProtocolo.length > 0 && (
                     <section aria-labelledby="refs-protocolo">

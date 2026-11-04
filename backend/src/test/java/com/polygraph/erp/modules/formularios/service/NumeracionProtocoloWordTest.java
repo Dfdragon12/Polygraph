@@ -48,4 +48,16 @@ class NumeracionProtocoloWordTest {
         assertThat(t).noneMatch(s -> s.contains("${"));
         assertThat(t).anyMatch(s -> s.contains("Las preguntas 1, 2, 3, 12 y 13 se comparan"));
     }
+
+    /** VD-09: el catálogo de referencias es interno; los soportes pasan a ser el Anexo 1. */
+    @Test
+    void elCatalogoNoVaEnElInformeYLosSoportesSonElAnexo1() throws Exception {
+        List<String> t = textos(false);
+        assertThat(t).noneMatch(s -> s.contains("CATÁLOGO DE REFERENCIAS"));
+        assertThat(t).noneMatch(s -> s.contains("Cada código cuenta una sola vez por estudio"));
+        assertThat(t).anyMatch(s -> s.startsWith("Anexo 1. REGISTRO DECADACTILAR"));
+        assertThat(t).noneMatch(s -> s.contains("Anexo 2"));
+        assertThat(t).anyMatch(s -> s.contains("un código del catálogo de Polygraph, que indica sus puntos"));
+        assertThat(t).noneMatch(s -> s.contains("catálogo de Polygraph (Anexo 1)"));
+    }
 }
