@@ -15,6 +15,7 @@ import ListasConsulta from './ListasConsulta'
 import TransitoConsulta from './TransitoConsulta'
 import IdentidadContacto from './IdentidadContacto'
 import ProcesosJudiciales from './ProcesosJudiciales'
+import { SugerenciasAlertas, ConceptoAnalista } from './RevisionAntecedentes'
 import { DatosEvaluado, ValidacionEvaluado, DeclaracionEvaluado, precargarDeclaraciones } from './TemasFase1'
 import { FASES, TODOS_LOS_TEMAS, esFormatoAntecedentes, partesDelTema, estadoDeTemas, faltantesDeAntecedentes } from './fasesAntecedentes'
 
@@ -165,11 +166,11 @@ export function FormatoAntecedentes({ inicial, idServicioSubproceso }) {
       ? { ...s, filas: [...s.filas, { localId: `an-${Date.now()}-${s.filas.length}`, idFila: null, etiqueta: '', valores: { ...valores }, justificaciones: {} }] } : s)))
   }
 
-  const guardar = async (silencioso = true) => {
+  const guardar = async (silencioso = true, base = secciones) => {
     const version = cambios.current
     setGuardando(true)
     try {
-      const payload = secciones.filter(s => !omitidas.has(s.idSeccion)).map(s => ({
+      const payload = base.filter(s => !omitidas.has(s.idSeccion)).map(s => ({
         idSeccion: s.idSeccion,
         valores: s.tipo === 'CAMPOS' ? s.valores : null,
         justificaciones: s.tipo === 'CAMPOS' ? (s.justificaciones ?? {}) : null,
@@ -240,7 +241,17 @@ export function FormatoAntecedentes({ inicial, idServicioSubproceso }) {
   const enviar = async () => {
     setEnviando(true)
     try {
-      if (!(await asegurarGuardado())) return
+      // La fecha del concepto la pone el sistema al marcar como completado (el profesional ya viene del estudio).
+      const hoy = new Date()
+      const fechaCierre = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`
+      const nuevas = secciones.map(x => {
+        if (x.clave !== 'concepto_analista') return x
+        const cFecha = x.columnas.find(c => c.clave === 'analista_fecha')
+        return cFecha ? { ...x, valores: { ...x.valores, [cFecha.idColumna]: fechaCierre } } : x
+      })
+      setSecciones(nuevas)
+      cambios.current += 1
+      if (!(await guardar(true, nuevas))) return
       await asignacionService.completar(idServicioSubproceso)
       setToast({ mensaje: 'Informe enviado a revisión del gestor', tipo: 'exito' })
       setTimeout(() => navigate('/analista/asignaciones'), 900)
@@ -427,7 +438,14 @@ export function FormatoAntecedentes({ inicial, idServicioSubproceso }) {
               )}
               {!tema.vista && partes.map((p, i) => (
                 <div key={`${p.seccion.idSeccion}-${i}`}>
-                  <Parte {...propsParte(p)} />
+                  {p.seccion.clave === 'concepto_analista'
+                    ? <ConceptoAnalista secciones={secciones} nombreProfesional={inicial.nombreProfesionalEncargado} soloLectura={soloLectura} onCampo={editarCampo} />
+                    : (
+                      <>
+                        {p.seccion.clave === 'informativos' && <div className="mb-3"><SugerenciasAlertas secciones={secciones} soloLectura={soloLectura} onAgregar={agregarFila} /></div>}
+                        <Parte {...propsParte(p)} />
+                      </>
+                    )}
                 </div>
               ))}
 

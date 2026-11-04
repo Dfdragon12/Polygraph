@@ -34,7 +34,8 @@ export const FASES = [
       {
         id: 'revision', titulo: 'Revisión', informe: true,
         // Lo que arma el sistema va de solo lectura.
-        partes: [{ s: 'resultado_servicio', soloLectura: true }, { s: 'hallazgos', soloLectura: true }, { s: 'informativos' },
+        partes: [{ s: 'resultado_servicio', soloLectura: true, sinCols: ['srv_alertas_nota'] }, { s: 'resultado_servicio', cols: ['srv_alertas_nota'] },
+          { s: 'hallazgos', soloLectura: true }, { s: 'informativos' },
           { s: 'notas_procesos', soloLectura: true, sinCols: ['procesos_revisados', 'procesos_priv_revisados'] }, { s: 'concepto_analista' }],
       },
     ],
@@ -73,7 +74,7 @@ export function avanceDelTema(tema, secciones) {
   if (tema.informe) {
     // En la Revisión solo se diligencia el concepto del analista.
     partesDelTema(tema, secciones).filter(p => p.seccion.clave === 'concepto_analista').forEach(p => {
-      const m = p.columnas.filter(c => !c.automatico)
+      const m = p.columnas.filter(c => !c.automatico && c.clave !== 'analista_fecha')
       total += m.length
       llenos += m.filter(c => tieneValor(p.seccion.valores[c.idColumna])).length
     })
@@ -140,7 +141,11 @@ export function faltantesDeAntecedentes(secciones) {
         })
         return
       }
-      const obligatorias = p.columnas.filter(c => c.obligatorio && !c.automatico && !c.calculado)
+      const obligatorias = p.columnas.filter(c => c.obligatorio && !c.automatico && !c.calculado && c.clave !== 'analista_fecha')
+      if (p.seccion.clave === 'informativos') {   // AN-07: cada alerta registrada lleva el tratamiento que escribe el analista
+        const idT = p.seccion.columnas.find(c => c.clave === 'i_tratamiento')?.idColumna
+        p.seccion.filas.forEach((f, i) => { if (!tieneValor(f.valores[idT])) items.push({ texto: `Hallazgos sin impacto · fila ${i + 1}: escribe el tratamiento`, clave: 'i_tratamiento' }) })
+      }
       if (p.seccion.tipo === 'CAMPOS') {
         obligatorias.filter(c => !tieneValor(p.seccion.valores[c.idColumna])).forEach(c => items.push({ texto: c.nombre || c.clave, clave: c.clave }))
       } else {
