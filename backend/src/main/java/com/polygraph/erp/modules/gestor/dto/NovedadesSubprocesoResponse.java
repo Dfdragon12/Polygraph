@@ -21,5 +21,5 @@ public record NovedadesSubprocesoResponse(
     /** Una opción de la lista "¿Qué pasó?" — del catálogo tipos_novedad, ya filtrada por el rol
      *  del subproceso y solo activas. textoAyuda: ejemplo para el campo Detalle. */
     public record TipoNovedadResponse(Integer idTipoNovedad, String etiqueta, String categoria, String categoriaEtiqueta,
-                                      String categoriaColor, String textoAyuda) {}
+                                      String categoriaColor, String textoAyuda, String clave) {}
 }

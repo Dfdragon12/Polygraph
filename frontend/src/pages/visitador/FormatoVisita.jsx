@@ -10,6 +10,7 @@ import SoportesInforme from '../../components/SoportesInforme'
 import RevisionEnvio from '../poligrafista/RevisionEnvio'
 import { FUENTE_DOCUMENTO, Tarjeta, useMasAngostoQue } from '../poligrafista/componentesHoja'
 import { Parte, armarSecciones } from '../poligrafista/FormatoPoligrafia'
+import DatosGeneralesVisita, { FILAS_REGISTRO, resultadoDeFila } from './DatosGeneralesVisita'
 import { FASES, TODOS_LOS_TEMAS, esFormatoVisita, partesDelTema, avanceDelTema, faltantesDeVisita } from './fasesVisita'
 
 // VD-01 · Visita domiciliaria en 3 fases y 10 temas, como el formato en Word. Usa el mismo backend y el mismo guardado que el formulario
@@ -19,6 +20,16 @@ import { FASES, TODOS_LOS_TEMAS, esFormatoVisita, partesDelTema, avanceDelTema, 
 const tieneValor = (v) => v !== undefined && v !== null && String(v).trim() !== ''
 const NOOP = () => {}
 const SIN_CONFIRMAR = new Set()
+
+// VD-02 · Módulos que el visitador enciende o apaga: cada uno agrupa las secciones de la plantilla que lo componen.
+const MODULOS = [
+  { nombre: 'OEA', secs: ['oea_bd', 'oea'] },
+  { nombre: 'Teletrabajo', secs: ['teletrabajo', 'fotos_teletrabajo'] },
+  { nombre: 'Vehicular', secs: ['vehicular', 'fotos_vehicular'] },
+]
+// Lo que la clase y el tipo de la visita encienden solos.
+const SECS_RUTINA = ['rutina']
+const SECS_VIRTUAL = ['virtual']
 
 // Un solo GET: si el servicio no es la visita domiciliaria, se deja el formulario de siempre.
 export default function FormularioVisitador() {
@@ -40,13 +51,33 @@ export default function FormularioVisitador() {
 }
 
 // Lo que el visitador necesita tener a la vista durante toda la visita.
-function PanelCaso({ ficha, nota }) {
+// Resumen del link del evaluado: dirección, estrato, estado civil, estudios y empleos (las referencias no se muestran).
+function resumenDelEvaluado(inicial) {
+  const filas = []
+  ;(inicial.datosCandidato ?? []).filter(c => c.valor && /direcci|barrio|ciudad de resid|estrato|civil/i.test(`${c.clave} ${c.etiqueta}`))
+    .forEach(c => filas.push({ etiqueta: c.etiqueta, valor: c.valor }))
+  ;(inicial.tablasFijas ?? []).forEach(t => {
+    const esEstudio = /educ|estudi/i.test(t.clave ?? '')
+    const esEmpleo = /experiencia|emple/i.test(t.clave ?? '')
+    if (!esEstudio && !esEmpleo) return
+    const lineas = (t.filas ?? []).map(f => (t.columnas ?? []).map(c => f[c.clave]).filter(Boolean).join(' · ')).filter(Boolean)
+    if (lineas.length > 0) filas.push({ etiqueta: esEstudio ? 'Estudios' : 'Empleos', valor: lineas.join(' | ') })
+  })
+  return filas
+}
+
+function PanelCaso({ ficha, nota, resumen = [] }) {
   const temas = ficha?.solicitudCliente?.temas ?? []
   const datos = ficha?.solicitudCliente?.datos ?? []
   const decl = ficha?.declaraciones ?? []
   return (
     <div className="space-y-3">
-      <Tarjeta key={`ev-${decl.length > 0}`} titulo="Lo que registró el evaluado" vacia={decl.length === 0}>
+      <Tarjeta key={`ev-${resumen.length + decl.length > 0}`} titulo="Lo que registró el evaluado" vacia={resumen.length + decl.length === 0}>
+        {resumen.length > 0 && (
+          <dl className="space-y-1 mb-2">
+            {resumen.map((r, i) => <div key={i}><dt className="text-xs text-gray-600">{r.etiqueta}</dt><dd className="text-gray-900 break-words">{r.valor}</dd></div>)}
+          </dl>
+        )}
         <ul className="space-y-2">
           {decl.map((d, i) => (
             <li key={i}>
@@ -121,6 +152,9 @@ export function FormatoVisita({ inicial, idServicioSubproceso }) {
   }
 
   const faltantes = useMemo(() => faltantesDeVisita(secciones), [secciones])
+  const resumen = useMemo(() => resumenDelEvaluado(inicial), [inicial])
+  const ocultos = useRef({})   // filas de los módulos apagados: se conservan mientras la pantalla siga abierta
+  const tiposNovedad = useRef(null)
 
   const marcarCambio = () => { cambios.current += 1; setSucio(true); setFallido(false) }
   const editarCampo = (idSeccion, idColumna, valor) => {
@@ -136,6 +170,81 @@ export function FormatoVisita({ inicial, idServicioSubproceso }) {
     marcarCambio()
     setSecciones(prev => prev.map(s => (s.idSeccion === idSeccion
       ? { ...s, filas: [...s.filas, { localId: `vd-${Date.now()}-${s.filas.length}`, idFila: null, etiqueta: '', valores: {}, justificaciones: {} }] } : s)))
+  }
+
+  // VD-02 · Prellenar «confirmado en la visita» con lo que registró el candidato y dejar el resultado coherente (una sola vez, al abrir).
+  useEffect(() => {
+    if (soloLectura) return
+    let cambio = false
+    const nuevas = secciones.map(s => {
+      if (s.clave !== 'datos_generales') return s
+      const valores = { ...s.valores }
+      const c = (clave) => s.columnas.find(x => x.clave === clave)
+      FILAS_REGISTRO.forEach(([, pre]) => {
+        const reg = c(`${pre}_reg`), vis = c(`${pre}_vis`), res = c(`${pre}_res`)
+        if (!reg || !vis || !res) return
+        if (!tieneValor(valores[vis.idColumna]) && tieneValor(valores[reg.idColumna])) { valores[vis.idColumna] = valores[reg.idColumna]; cambio = true }
+        const r = resultadoDeFila(valores[reg.idColumna], valores[vis.idColumna])
+        if ((valores[res.idColumna] ?? '') !== r) { valores[res.idColumna] = r; cambio = true }
+      })
+      // Ciudad y fecha de la cita, solo si siguen vacías.
+      const cf = c('v_ciudad_fecha')
+      if (cf && !tieneValor(valores[cf.idColumna]) && inicial.fechaProgramada) {
+        const f = new Date(inicial.fechaProgramada)
+        const fecha = `${String(f.getDate()).padStart(2, '0')}/${String(f.getMonth() + 1).padStart(2, '0')}/${f.getFullYear()}`
+        valores[cf.idColumna] = [inicial.ciudadEvaluado, fecha].filter(Boolean).join(', '); cambio = true
+      }
+      return cambio ? { ...s, valores } : s
+    })
+    if (cambio) { setSecciones(nuevas); marcarCambio() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Un cambio que el visitador hace sobre lo que llegó de la solicitud queda como novedad: el gestor y el programador se enteran.
+  const registrarNovedadVisita = async (clave, descripcion) => {
+    try {
+      if (!tiposNovedad.current) tiposNovedad.current = (await asignacionService.novedades(idServicioSubproceso)).tipos ?? []
+      const tipo = tiposNovedad.current.find(t => t.clave === clave)
+      if (!tipo) throw new Error('sin-tipo')
+      await asignacionService.registrarNovedad(idServicioSubproceso, tipo.idTipoNovedad, descripcion)
+      return true
+    } catch (err) {
+      error(err.response?.data?.mensaje ?? 'No se pudo avisar al gestor. Inténtalo de nuevo.')
+      throw err
+    }
+  }
+
+  // Enciende o apaga las secciones de un módulo. Al apagar, sus filas se guardan aparte y la sección sale vacía.
+  const fijarSecciones = (claves, activar) => {
+    marcarCambio()
+    setSecciones(prev => prev.map(s => {
+      if (!claves.includes(s.clave) || s.origenFijoClave) return s
+      if (activar) {
+        if (s.filas.length > 0) return s
+        const guardadas = ocultos.current[s.idSeccion]
+        const filas = guardadas?.length ? guardadas : [{ localId: `vd-${Date.now()}-${s.idSeccion}`, idFila: null, etiqueta: '', valores: {}, justificaciones: {} }]
+        return { ...s, filas }
+      }
+      if (s.filas.length > 0) ocultos.current[s.idSeccion] = s.filas
+      return { ...s, filas: [] }
+    }))
+  }
+  const estaActivo = (claves) => claves.every(c => { const s = secciones.find(x => x.clave === c && !x.origenFijoClave); return !s || s.filas.length > 0 })
+  const modulos = MODULOS.map(m => ({ nombre: m.nombre, activo: estaActivo(m.secs) }))
+
+  const cambiarModulo = (nombre, activar) => {
+    const m = MODULOS.find(x => x.nombre === nombre)
+    fijarSecciones(m.secs, activar)
+    registrarNovedadVisita('VISITA_CAMBIO_CONFIGURACION', `Módulo ${nombre}: ${activar ? 'activado' : 'desactivado'} por el visitador.`).catch(() => {})
+  }
+  const cambiarConfig = (clave, etiqueta, antes, nuevo) => {
+    // La clase y el tipo encienden solos lo que les corresponde.
+    if (clave === 'v_clase') fijarSecciones(SECS_RUTINA, nuevo === 'Rutina')
+    if (clave === 'v_tipo') fijarSecciones(SECS_VIRTUAL, nuevo === 'Virtual')
+    if (tieneValor(antes)) registrarNovedadVisita('VISITA_CAMBIO_CONFIGURACION', `${etiqueta}: de «${antes}» a «${nuevo}», cambiado por el visitador.`).catch(() => {})
+  }
+  const avisarCargo = async (real) => {
+    await registrarNovedadVisita('VISITA_CARGO_NO_COINCIDE', `El cargo de la solicitud es «${inicial.cargo ?? ''}» y el visitador observó: ${real}.`)
   }
 
   const guardar = async (silencioso = true) => {
@@ -306,7 +415,7 @@ export function FormatoVisita({ inicial, idServicioSubproceso }) {
               className="w-full min-h-11 px-4 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-800">
               {verCaso ? 'Ocultar la información del caso' : 'Información del caso'}
             </button>
-            {verCaso && <PanelCaso ficha={ficha} nota={inicial.observacionesAsignacion} />}
+            {verCaso && <PanelCaso ficha={ficha} nota={inicial.observacionesAsignacion} resumen={resumen} />}
           </div>
         ) : (
           <aside aria-label={`Temas de la fase ${fase.id}`} className="self-start sticky top-0 space-y-3 overflow-y-auto pr-1" style={{ maxHeight: 'calc(100vh - 6rem)' }}>
@@ -331,7 +440,7 @@ export function FormatoVisita({ inicial, idServicioSubproceso }) {
               })}
             </ul>
             <hr className="border-gray-200" />
-            <PanelCaso ficha={ficha} nota={inicial.observacionesAsignacion} />
+            <PanelCaso ficha={ficha} nota={inicial.observacionesAsignacion} resumen={resumen} />
           </aside>
         )}
 
@@ -357,7 +466,12 @@ export function FormatoVisita({ inicial, idServicioSubproceso }) {
                 </div>
               )}
 
-              {partes.map((p, i) => {
+              {tema.id === 'generales' && datosGenerales && (
+                <DatosGeneralesVisita seccion={datosGenerales} soloLectura={soloLectura} criticidad={valorDe('ev_criticidad')} cargoSolicitud={inicial.cargo}
+                  modulos={modulos} onCampo={editarCampo} onModulo={cambiarModulo} onCambioConfig={cambiarConfig} onAvisarCargo={avisarCargo}
+                  cita={inicial.ciudadEvaluado ?? ''} />
+              )}
+              {partes.filter(p => tema.id !== 'generales' || p.seccion.clave !== 'datos_generales').map((p, i) => {
                 if (p.modulo && !p.activo) {
                   return (
                     <div key={i} className="rounded-lg border border-dashed border-gray-300 px-3 py-2 flex flex-wrap items-center justify-between gap-2">

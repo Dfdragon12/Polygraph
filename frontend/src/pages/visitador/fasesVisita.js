@@ -119,5 +119,14 @@ export function faltantesDeVisita(secciones) {
     })
     if (items.length > 0) grupos.push({ id: t.id, titulo: t.titulo.replace(/^\d+\.\s*/, ''), fase: f.id, items })
   }))
+  // VD-02: «No – con explicación» exige la explicación.
+  const dg = secciones.find(s => s.clave === 'datos_generales')
+  const colRes = dg?.columnas.find(c => c.clave === 'v_residencia')
+  const colDet = dg?.columnas.find(c => c.clave === 'v_residencia_det')
+  if (colRes && colDet && dg.valores[colRes.idColumna] === 'No – con explicación' && !tieneValor(dg.valores[colDet.idColumna])) {
+    const g = grupos.find(x => x.id === 'generales')
+    if (g) g.items.push('Explicación de la residencia')
+    else grupos.unshift({ id: 'generales', titulo: 'Datos generales', fase: 1, items: ['Explicación de la residencia'] })
+  }
   return { grupos, total: grupos.reduce((n, g) => n + g.items.length, 0) }
 }

@@ -82,7 +82,7 @@ public class NovedadSubprocesoService {
                 .filter(t -> t.aplicaA(rolResponsable))
                 .map(t -> new NovedadesSubprocesoResponse.TipoNovedadResponse(
                         t.getIdTipoNovedad(), t.getNombre(), t.getCategoria().getClave(), t.getCategoria().getNombre(),
-                        t.getCategoria().getColor(), t.getTextoAyuda()))
+                        t.getCategoria().getColor(), t.getTextoAyuda(), t.getClave()))
                 .toList();
 
         // Analista/poligrafista/visitador solo ven las novedades que ellos mismos registraron —
