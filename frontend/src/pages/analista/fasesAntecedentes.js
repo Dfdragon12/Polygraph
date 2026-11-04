@@ -22,7 +22,7 @@ export const FASES = [
       { id: 'internacionales', titulo: 'Listas internacionales y PEP', vista: 'listas', tabla: 'internacionales', partes: [{ s: 'listas_internacionales' }] },
       { id: 'transito', titulo: 'Tránsito', vista: 'transito', partes: [{ s: 'transito_simit' }, { s: 'simur' }, { s: 'runt' }] },
       {
-        id: 'identidad', titulo: 'Identidad y contacto',
+        id: 'identidad', titulo: 'Identidad y contacto', vista: 'identidad',
         partes: [{ s: 'alertas_id' }, { s: 'direcciones' }, { s: 'telefonos' }, { s: 'correos' }, { s: 'identidad_contacto' }],
       },
       { id: 'procesos', titulo: 'Procesos judiciales', partes: [{ s: 'procesos' }, { s: 'procesos_privados' }] },
@@ -81,6 +81,15 @@ export function avanceDelTema(tema, secciones) {
   }
   partesDelTema(tema, secciones).forEach(p => {
     if (p.soloLectura || p.seccion.calculada) return
+    if (tema.vista === 'identidad') {   // AN-05: alertas revisadas (con filas o «Sin alertas») + información residencial
+      const al = secciones.find(s => s.clave === 'alertas_id' && !s.origenFijoClave)
+      const id = secciones.find(s => s.clave === 'identidad_contacto' && !s.origenFijoClave)
+      const v = (s, clave) => s?.valores[s.columnas.find(c => c.clave === clave)?.idColumna]
+      total += 2
+      llenos += (al && al.filas.length > 0) || v(id, 'alertas_revisadas') === 'Sí' ? 1 : 0
+      llenos += tieneValor(v(id, 'rec_residencial')) ? 1 : 0
+      return
+    }
     if (tema.vista === 'listas') {   // AN-03: cada fuente cuenta cuando tiene su resultado
       const pre = tema.tabla === 'internacionales' ? 'li' : 'ln'
       const idRes = p.seccion.columnas.find(c => c.clave === `${pre}_resultado`)?.idColumna
