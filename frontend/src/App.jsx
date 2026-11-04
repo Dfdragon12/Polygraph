@@ -85,6 +85,7 @@ import MiPerfilAnalista from './pages/client/MiPerfilAnalista'
 import Formulario       from './pages/shared/Formulario'
 import FormularioPoligrafista from './pages/poligrafista/FormatoPoligrafia'
 import FormularioVisitador from './pages/visitador/FormatoVisita'
+import FormularioAnalista from './pages/analista/FormatoAntecedentes'
 import ProveedorExterno from './pages/proveedor/ProveedorExterno'
 import CandidatoPerfil  from './pages/shared/CandidatoPerfil'
 
@@ -245,7 +246,7 @@ function App() {
           <Route path="dashboard" element={<AsignacionDashboard />} />
           <Route path="asignaciones" element={<MisAsignaciones />} />
           <Route path="perfil" element={<MiPerfil />} />
-          <Route path="formulario/:idServicioSubproceso" element={<Formulario />} />
+          <Route path="formulario/:idServicioSubproceso" element={<FormularioAnalista />} />
           <Route path="candidatos/:idCandidato" element={<CandidatoPerfil />} />
         </Route>
 
