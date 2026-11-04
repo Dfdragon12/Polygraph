@@ -169,6 +169,78 @@ export function calcularEscala(valores, n) {
   return { pct, concepto }
 }
 
+// VD-06 · Las 38 preguntas Sí/No del módulo teletrabajo, en los seis grupos del Word. `n` = clave interna (tt_N).
+export const GRUPOS_TELETRABAJO = [
+  {
+    titulo: "Antecedentes teletrabajo",
+    preguntas: [
+      { n: 1, texto: "¿Tiene experiencia previa en el teletrabajo?" },
+      { n: 2, texto: "¿Realiza trabajos de manera independiente o informal?" },
+      { n: 3, texto: "¿Utiliza sus horarios laborales para realizar actividades no productivas para la empresa?" },
+      { n: 4, texto: "¿Maneja plataformas, aplicaciones y herramientas de telecomunicación?" },
+      { n: 5, texto: "¿Tiene acceso a internet o telefonía?" },
+    ],
+  },
+  {
+    titulo: "Condiciones ergonómicas",
+    preguntas: [
+      { n: 6, texto: "¿Tiene un lugar de la vivienda destinado exclusivamente para trabajar?" },
+      { n: 7, texto: "¿El espacio cumple con las dimensiones necesarias (mínimo 150 cm de ancho por 150 cm de alto)?" },
+      { n: 8, texto: "¿Los elementos de trabajo se encuentran a menos de 25 cm de alcance?" },
+      { n: 9, texto: "¿La ubicación del puesto permite movilidad de la silla (80 cm o más)?" },
+      { n: 10, texto: "¿El escritorio permite ajustar el teclado y el mouse según las condiciones ergonómicas?" },
+    ],
+  },
+  {
+    titulo: "Condiciones ambientales",
+    preguntas: [
+      { n: 11, texto: "¿Cuenta con ventanas que permitan la iluminación natural?" },
+      { n: 12, texto: "¿La cantidad de luz que ingresa es suficiente?" },
+      { n: 13, texto: "¿La intensidad lumínica permite leer sin dificultad?" },
+      { n: 14, texto: "¿La luz permite visualizar la pantalla sin fatiga visual por reflejos?" },
+      { n: 15, texto: "¿Cuenta con ventilación natural?" },
+      { n: 16, texto: "¿Tiene ventilación artificial?" },
+      { n: 17, texto: "¿El ruido externo permite trabajar sin interferencia?" },
+    ],
+  },
+  {
+    titulo: "Condiciones locativas",
+    preguntas: [
+      { n: 18, texto: "¿Los pisos son planos y están en buenas condiciones?" },
+      { n: 19, texto: "¿Está libre de obstáculos o desperdicios?" },
+      { n: 20, texto: "¿El techo está en buenas condiciones?" },
+      { n: 21, texto: "¿Las paredes están en buenas condiciones?" },
+      { n: 22, texto: "¿Los cuadros, repisas y objetos anclados son seguros?" },
+      { n: 23, texto: "¿Las entradas y salidas están libres de obstáculos?" },
+      { n: 24, texto: "¿Hay buenas prácticas de orden, limpieza y aseo?" },
+    ],
+  },
+  {
+    titulo: "Riesgos",
+    preguntas: [
+      { n: 25, texto: "¿El área está libre de virus, bacterias, hongos, insectos y roedores?" },
+      { n: 26, texto: "¿Hay contacto con residuos biológicos?" },
+      { n: 27, texto: "¿Conoce los procedimientos en caso de emergencia?" },
+      { n: 28, texto: "¿Cuenta con extintor y conoce su uso?" },
+      { n: 29, texto: "¿Hay almacenamiento de líquidos o sólidos combustibles?" },
+      { n: 30, texto: "¿Los equipos tienen conexión a tierra?" },
+      { n: 31, texto: "¿Las instalaciones eléctricas están protegidas?" },
+      { n: 32, texto: "¿Hay ausencia de empalmes o uniones en cables eléctricos?" },
+      { n: 33, texto: "¿Los enchufes están sobrecargados de conexiones?" },
+      { n: 34, texto: "¿Las cajas de interruptores están cubiertas?" },
+    ],
+  },
+  {
+    titulo: "Seguridad de la información",
+    preguntas: [
+      { n: 35, texto: "¿Usa una red privada (no pública ni compartida con terceros)?" },
+      { n: 36, texto: "¿El computador es de uso exclusivo para el trabajo?" },
+      { n: 37, texto: "¿Mantiene la privacidad de sus contraseñas?" },
+      { n: 38, texto: "¿El espacio de trabajo evita que terceros vean o escuchen información de la empresa?" },
+    ],
+  },
+]
+
 export const TODOS_LOS_TEMAS = FASES.flatMap(f => f.temas.map(t => ({ ...t, fase: f.id })))
 
 // Es la visita domiciliaria si trae las secciones que identifican esta plantilla.
@@ -186,7 +258,7 @@ export function partesDelTema(tema, secciones) {
     const columnas = p.cols ? seccion.columnas.filter(c => p.cols.includes(c.clave)) : seccion.columnas
     if (columnas.length === 0) return
     // VD-04: los indicadores (y su porcentaje y concepto) se dibujan aparte, con su nombre y la escala.
-    const columnasVista = columnas.filter(c => !esClaveDeIndicador(seccion.clave, c.clave))
+    const columnasVista = columnas.filter(c => !esClaveDeIndicador(seccion.clave, c.clave) && !(seccion.clave === 'teletrabajo' && /^tt_\d+$/.test(c.clave)))
     partes.push({ seccion, columnas, columnasVista, modulo: p.modulo ?? null, confidencial: !!p.confidencial, soloLectura: !!p.soloLectura, activo: !p.modulo || seccion.filas.length > 0 })
   })
   return partes

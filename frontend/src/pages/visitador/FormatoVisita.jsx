@@ -13,6 +13,7 @@ import { Parte, armarSecciones } from '../poligrafista/FormatoPoligrafia'
 import ProtocoloVisita from './ProtocoloVisita'
 import IndicadoresVisita from './IndicadoresVisita'
 import EgresosVisita from './EgresosVisita'
+import TeletrabajoVisita from './TeletrabajoVisita'
 import { calcularVisita, CLAVES_CALCULADAS, integrantes as integrantesDe, soloDigitos } from './calculosVisita'
 import DatosGeneralesVisita, { FILAS_REGISTRO, resultadoDeFila } from './DatosGeneralesVisita'
 import { FASES, TODOS_LOS_TEMAS, esFormatoVisita, partesDelTema, avanceDelTema, faltantesDeVisita, PREGUNTAS_PROTOCOLO, numerosProtocolo, INDICADORES } from './fasesVisita'
@@ -530,17 +531,8 @@ export function FormatoVisita({ inicial, idServicioSubproceso }) {
               )}
               {tema.id === 'protocolo' && protocolo && <ProtocoloVisita seccion={protocolo} soloLectura={soloLectura} onCampo={editarCampo} />}
               {partes.filter(p => (tema.id !== 'generales' || p.seccion.clave !== 'datos_generales') && (tema.id !== 'protocolo' || p.seccion.clave !== 'protocolo')).map((p, i) => {
-                if (p.modulo && !p.activo) {
-                  return (
-                    <div key={i} className="rounded-lg border border-dashed border-gray-300 px-3 py-2 flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-sm text-gray-700">Módulo {p.modulo} · no activo</p>
-                      {!soloLectura && (
-                        <button type="button" onClick={() => agregarFila(p.seccion.idSeccion)}
-                          className="min-h-11 px-4 text-sm font-medium rounded-lg border border-purple-300 text-purple-800 hover:bg-purple-50">Activar módulo</button>
-                      )}
-                    </div>
-                  )
-                }
+                // VD-06: un módulo inactivo no se muestra (se enciende en «Datos generales»).
+                if (p.modulo && !p.activo) return null
                 return (
                   <div key={i}>
                     {p.modulo && (
@@ -548,6 +540,12 @@ export function FormatoVisita({ inicial, idServicioSubproceso }) {
                         Módulo {p.modulo}{p.confidencial && <span className="ml-2 text-xs font-medium text-purple-700">Confidencial · lo registra Polygraph</span>}
                       </h3>
                     )}
+                    {p.seccion.clave === 'teletrabajo' && p.seccion.filas[0] && (() => {
+                      const sec = p.seccion, fila = sec.filas[0]
+                      const porClave = Object.fromEntries(sec.columnas.map(c => [c.clave, c]))
+                      const valores = Object.fromEntries(sec.columnas.map(c => [c.clave, fila.valores[c.idColumna]]))
+                      return <TeletrabajoVisita valores={valores} soloLectura={soloLectura} onValor={(clave, v) => { const c = porClave[clave]; if (c) editarCeldaFila(sec.idSeccion, fila.localId, c.idColumna, v) }} />
+                    })()}
                     {p.seccion.clave === 'egresos_hogar'
                       ? <EgresosVisita seccion={p.seccion} integrantes={integrantesDe(secciones.find(x => x.clave === 'familia_convive'))} soloLectura={soloLectura} onCelda={editarCeldaFila} onAgregar={agregarFila} />
                       : (p.columnasVista ?? p.columnas).length > 0 && <Parte {...propsParte(p)} />}
