@@ -84,12 +84,12 @@ export default function DatosGeneralesVisita({
           <h3 id="vd-config" className="text-sm font-bold text-purple-900">Configuración de la visita</h3>
           <span className="text-xs text-purple-800">No se imprime</span>
         </div>
-        <div>
+        <div data-clave="v_tipo" className="rounded">
           <Etiqueta id="vd-tipo">Tipo de visita</Etiqueta>
           <Botones id="vd-tipo" etiqueta="Tipo de visita" opciones={['Presencial', 'Virtual']} valor={val('v_tipo')} deshabilitado={sl}
             onElegir={v => elegirConfig('v_tipo', 'Tipo de visita', v)} />
         </div>
-        <div>
+        <div data-clave="v_clase" className="rounded">
           <Etiqueta id="vd-clase">Clase de visita</Etiqueta>
           <Botones id="vd-clase" etiqueta="Clase de visita" opciones={['Pre-empleo', 'Rutina']} valor={val('v_clase')} deshabilitado={sl}
             onElegir={v => elegirConfig('v_clase', 'Clase de visita', v)} />
@@ -145,7 +145,7 @@ export default function DatosGeneralesVisita({
       {/* Ciudad y fecha, quién atiende, cómo llegó */}
       <section aria-labelledby="vd-visita" className="space-y-4">
         <h3 id="vd-visita" className="text-sm font-bold text-gray-900">La visita</h3>
-        <div>
+        <div data-clave="v_ciudad_fecha" className="rounded">
           <label htmlFor="vd-ciudad-fecha" className="block text-xs font-semibold text-gray-700 mb-1">Ciudad y fecha de visita *</label>
           <input id="vd-ciudad-fecha" className={inputCls} value={val('v_ciudad_fecha')} disabled={sl} onChange={e => poner('v_ciudad_fecha', e.target.value)} placeholder={cita || 'Bogotá, 03/11/2026'} />
         </div>
@@ -195,7 +195,7 @@ export default function DatosGeneralesVisita({
             </tbody>
           </table>
         </div>
-        <div className="mt-4">
+        <div data-clave="v_residencia" className="mt-4 rounded">
           <Etiqueta id="vd-reside">¿Reside en la dirección declarada? *</Etiqueta>
           <Botones id="vd-reside" etiqueta="Reside en la dirección declarada" opciones={['Sí', 'No – con explicación', 'No – sin explicación']} valor={residencia}
             deshabilitado={sl} onElegir={v => poner('v_residencia', v)} />

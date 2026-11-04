@@ -17,7 +17,7 @@ import TeletrabajoVisita from './TeletrabajoVisita'
 import FotosVisita from './FotosVisita'
 import { calcularVisita, CLAVES_CALCULADAS, integrantes as integrantesDe, soloDigitos } from './calculosVisita'
 import DatosGeneralesVisita, { FILAS_REGISTRO, resultadoDeFila } from './DatosGeneralesVisita'
-import { FASES, TODOS_LOS_TEMAS, esFormatoVisita, partesDelTema, avanceDelTema, faltantesDeVisita, PREGUNTAS_PROTOCOLO, numerosProtocolo, INDICADORES, FOTOS, PADRE_DE_FOTOS } from './fasesVisita'
+import { FASES, TODOS_LOS_TEMAS, esFormatoVisita, partesDelTema, avanceDelTema, faltantesDeVisita, PREGUNTAS_PROTOCOLO, numerosProtocolo, INDICADORES, FOTOS, PADRE_DE_FOTOS, estadoDeTemas } from './fasesVisita'
 
 // VD-01 · Visita domiciliaria en 3 fases y 10 temas, como el formato en Word. Usa el mismo backend y el mismo guardado que el formulario
 // genérico (Formulario.jsx): los datos son los mismos, solo cambia cómo y en qué orden se capturan. Otro subservicio del visitador sigue
@@ -147,10 +147,7 @@ export function FormatoVisita({ inicial, idServicioSubproceso }) {
   const siguiente = TODOS_LOS_TEMAS[indice + 1]
   const posEnFase = fase.temas.findIndex(t => t.id === temaId)
 
-  const avances = useMemo(() => Object.fromEntries(TODOS_LOS_TEMAS.map(t => {
-    const { llenos, total } = avanceDelTema(t, secciones)
-    return [t.id, total === 0 ? 'sin' : llenos >= total ? 'completo' : llenos === 0 ? 'vacio' : 'parcial']
-  })), [secciones])
+  const { estados: avances, llenos: avanceLlenos, total: avanceTotal } = useMemo(() => estadoDeTemas(secciones), [secciones])
   const modulosActivos = (t) => partesDelTema(t, secciones).filter(p => p.modulo && p.activo).map(p => p.modulo.split(' · ')[0])
   const estadoFase = (f) => {
     const conCampos = f.temas.filter(t => avances[t.id] !== 'sin')
@@ -338,11 +335,26 @@ export function FormatoVisita({ inicial, idServicioSubproceso }) {
     return () => window.removeEventListener('beforeunload', aviso)
   }, [sucio])
 
-  const irA = (id) => {
+  const [objetivo, setObjetivo] = useState(null)
+  const irA = (id, clave = null) => {
     setTemaId(id)
     setVerCaso(false)
-    inicioRef.current?.scrollIntoView({ block: 'start' })
+    setObjetivo(clave ? { id, clave, n: Date.now() } : null)
+    if (!clave) inicioRef.current?.scrollIntoView({ block: 'start' })
   }
+  // VD-08 · Un faltante lleva a la pregunta exacta: se desplaza hasta ella y la resalta unos segundos.
+  useEffect(() => {
+    if (!objetivo) return undefined
+    const t = setTimeout(() => {
+      const el = document.querySelector(`[data-clave="${objetivo.clave}"]`) ?? inicioRef.current
+      el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      if (el && el !== inicioRef.current) {
+        el.classList.add('ring-2', 'ring-amber-500', 'bg-amber-50')
+        setTimeout(() => el.classList.remove('ring-2', 'ring-amber-500', 'bg-amber-50'), 3000)
+      }
+    }, 80)
+    return () => clearTimeout(t)
+  }, [objetivo])
 
   // Antes de generar la vista o enviar: lo último que escribió ya está guardado (true) o se avisa y no se sigue (false).
   const asegurarGuardado = async () => (sucio ? guardar(true) : true)
@@ -448,6 +460,14 @@ export function FormatoVisita({ inicial, idServicioSubproceso }) {
             <button type="button" onClick={() => { irA('revision'); setPedidoVista(n => n + 1) }}
               className="min-h-11 px-4 text-sm font-medium rounded-lg border border-primary-300 text-primary-700 hover:bg-primary-50">Ver el informe</button>
           </div>
+        </div>
+      </div>
+
+      <div className="mb-3" role="group" aria-label="Avance de la visita">
+        <p className="text-xs text-gray-800 mb-1">Avance: {avanceLlenos} de {avanceTotal} campos diligenciados</p>
+        <div className="h-2 bg-gray-200 rounded" role="progressbar" aria-valuemin={0} aria-valuemax={100}
+          aria-valuenow={avanceTotal ? Math.round(avanceLlenos / avanceTotal * 100) : 0} aria-label="Avance de la visita">
+          <div className="h-2 bg-primary-600 rounded" style={{ width: `${avanceTotal ? Math.round(avanceLlenos / avanceTotal * 100) : 0}%` }} />
         </div>
       </div>
 
@@ -591,7 +611,7 @@ export function FormatoVisita({ inicial, idServicioSubproceso }) {
                       <ul className="text-sm text-gray-800 space-y-0.5">{refsProtocolo.map(r => <li key={r.n}>Pregunta {r.num}: {r.ref}</li>)}</ul>
                     </section>
                   )}
-                  <RevisionEnvio idServicioSubproceso={idServicioSubproceso} faltantes={faltantes} onIrA={irA} asegurarGuardado={asegurarGuardado}
+                  <RevisionEnvio etiquetaEnvio="Marcar como completado" idServicioSubproceso={idServicioSubproceso} faltantes={faltantes} onIrA={irA} asegurarGuardado={asegurarGuardado}
                     version={cambios.current} pedidoVista={pedidoVista} soloLectura={soloLectura} enviando={enviando} onEnviar={enviar} onError={error} />
                   <button type="button" onClick={descargarWord} disabled={descargando || !meta.idFormulario}
                     className="text-sm text-primary-700 underline min-h-11 disabled:opacity-60">

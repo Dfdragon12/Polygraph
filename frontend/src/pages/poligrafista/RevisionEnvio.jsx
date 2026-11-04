@@ -32,7 +32,7 @@ export function ResumenAdmisiones({ secciones }) {
   )
 }
 
-export default function RevisionEnvio({ idServicioSubproceso, faltantes, onIrA, asegurarGuardado, version, pedidoVista, soloLectura, enviando, onEnviar, onError }) {
+export default function RevisionEnvio({ etiquetaEnvio = 'Enviar a revisión del gestor', idServicioSubproceso, faltantes, onIrA, asegurarGuardado, version, pedidoVista, soloLectura, enviando, onEnviar, onError }) {
   const [vista, setVista] = useState({ estado: 'ninguna', url: null, version: null })
   const [confirmando, setConfirmando] = useState(false)
   const abortoRef = useRef(null)
@@ -80,7 +80,13 @@ export default function RevisionEnvio({ idServicioSubproceso, faltantes, onIrA, 
                   Fase {g.fase} · {g.titulo} →
                 </button>
                 <ul className="list-disc pl-5 text-sm text-gray-900">
-                  {g.items.map((t, i) => <li key={i} className="break-words">{t}</li>)}
+                  {g.items.map((t, i) => (
+                    <li key={i} className="break-words">
+                      {typeof t === 'object' && t.clave
+                        ? <button type="button" onClick={() => onIrA(g.id, t.clave)} className="text-left underline decoration-dotted min-h-11">{t.texto}</button>
+                        : (typeof t === 'object' ? t.texto : t)}
+                    </li>
+                  ))}
                 </ul>
               </li>
             ))}
@@ -131,7 +137,7 @@ export default function RevisionEnvio({ idServicioSubproceso, faltantes, onIrA, 
           <div>
             <button type="button" onClick={() => setConfirmando(true)} disabled={total > 0}
               className="min-h-11 px-5 text-sm font-semibold rounded-lg bg-primary-600 hover:bg-primary-700 disabled:bg-gray-300 disabled:text-gray-700 text-white">
-              Enviar a revisión del gestor
+              {etiquetaEnvio}
             </button>
             {total > 0 && <p className="mt-2 text-sm text-gray-800">Faltan {total} {plural(total)}. Complétalas para poder enviar.</p>}
           </div>

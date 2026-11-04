@@ -236,7 +236,7 @@ export default function FotosVisita({ seccion, config, idServicioSubproceso, sol
   const nombreExtra = (n) => `${config.nombreExtra} ${n}`
 
   return (
-    <section aria-labelledby={`fotos-${seccion.clave}`} className="space-y-3">
+    <section aria-labelledby={`fotos-${seccion.clave}`} data-clave={`seccion-${seccion.clave}`} className="space-y-3 rounded">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h4 id={`fotos-${seccion.clave}`} className="text-sm font-bold text-gray-900">{config.titulo}</h4>
         <p className={`text-xs font-medium ${conFoto >= config.minimo ? 'text-green-700' : 'text-amber-800'}`} aria-live="polite">{conFoto} de {config.minimo} mínimas</p>

@@ -343,13 +343,13 @@ export function faltantesDeVisita(secciones) {
       if (FOTOS[p.seccion.clave]) {
         const { fotos, sinDescripcion } = conteoDeFotos(p.seccion)
         const cfg = FOTOS[p.seccion.clave]
-        if (fotos < cfg.minimo) items.push(`${cfg.titulo}: ${fotos} de ${cfg.minimo} mínimas`)
-        if (sinDescripcion > 0) items.push(`${cfg.titulo}: ${sinDescripcion} sin descripción`)
+        if (fotos < cfg.minimo) items.push({ texto: `${cfg.titulo}: ${fotos} de ${cfg.minimo} mínimas`, clave: `seccion-${p.seccion.clave}` })
+        if (sinDescripcion > 0) items.push({ texto: `${cfg.titulo}: ${sinDescripcion} sin descripción`, clave: `seccion-${p.seccion.clave}` })
         return
       }
       const obligatorias = p.columnas.filter(c => c.obligatorio && !c.automatico)
-      if (p.seccion.tipo === 'CAMPOS') obligatorias.filter(c => !tieneValor(p.seccion.valores[c.idColumna])).forEach(c => items.push(c.nombre || c.clave))
-      else obligatorias.filter(c => p.seccion.filas.some(fila => !tieneValor(fila.valores[c.idColumna]))).forEach(c => items.push(c.nombre || c.clave))
+      if (p.seccion.tipo === 'CAMPOS') obligatorias.filter(c => !tieneValor(p.seccion.valores[c.idColumna])).forEach(c => items.push({ texto: c.nombre || c.clave, clave: c.clave }))
+      else obligatorias.filter(c => p.seccion.filas.some(fila => !tieneValor(fila.valores[c.idColumna]))).forEach(c => items.push({ texto: c.nombre || c.clave, clave: c.clave }))
     })
     if (items.length > 0) grupos.push({ id: t.id, titulo: t.titulo.replace(/^\d+\.\s*/, ''), fase: f.id, items })
   }))
@@ -360,7 +360,7 @@ export function faltantesDeVisita(secciones) {
     const faltan = PREGUNTAS_PROTOCOLO.map(p => {
       const r = prot.columnas.find(c => c.clave === `ps_${p.n}`)
       const d = prot.columnas.find(c => c.clave === `ps_${p.n}_det`)
-      return r && d && prot.valores[r.idColumna] === 'Sí' && !tieneValor(prot.valores[d.idColumna]) ? `Pregunta ${nums[p.n]}: detalle` : null
+      return r && d && prot.valores[r.idColumna] === 'Sí' && !tieneValor(prot.valores[d.idColumna]) ? { texto: `Pregunta ${nums[p.n]}: detalle`, clave: `ps_${p.n}` } : null
     }).filter(Boolean)
     if (faltan.length > 0) {
       const g = grupos.find(x => x.id === 'protocolo')
@@ -374,8 +374,25 @@ export function faltantesDeVisita(secciones) {
   const colDet = dg?.columnas.find(c => c.clave === 'v_residencia_det')
   if (colRes && colDet && dg.valores[colRes.idColumna] === 'No – con explicación' && !tieneValor(dg.valores[colDet.idColumna])) {
     const g = grupos.find(x => x.id === 'generales')
-    if (g) g.items.push('Explicación de la residencia')
-    else grupos.unshift({ id: 'generales', titulo: 'Datos generales', fase: 1, items: ['Explicación de la residencia'] })
+    const it = { texto: 'Explicación de la residencia', clave: 'v_residencia' }
+    if (g) g.items.push(it)
+    else grupos.unshift({ id: 'generales', titulo: 'Datos generales', fase: 1, items: [it] })
   }
   return { grupos, total: grupos.reduce((n, g) => n + g.items.length, 0) }
+}
+
+// VD-08 · UNA sola regla para los temas, las fases y la lista de faltantes: un tema lleva ✓ cuando no le falta ningún obligatorio (y tiene algo diligenciado);
+// una fase dice «✓ completa» solo si ninguno de sus temas tiene faltantes. Devuelve { [idTema]: 'sin' | 'vacio' | 'parcial' | 'completo' } y el avance global
+// (campos diligenciados de las fases 1 y 2, módulos activos incluidos; no cuenta lo inactivo ni lo que arma el sistema).
+export function estadoDeTemas(secciones) {
+  const faltan = new Map(faltantesDeVisita(secciones).grupos.map(g => [g.id, g.items.length]))
+  const estados = {}
+  let llenosTotal = 0
+  let total = 0
+  TODOS_LOS_TEMAS.forEach(t => {
+    const { llenos, total: n } = avanceDelTema(t, secciones)
+    if (!t.informe) { llenosTotal += llenos; total += n }
+    estados[t.id] = n === 0 ? 'sin' : (faltan.get(t.id) ?? 0) > 0 ? (llenos === 0 ? 'vacio' : 'parcial') : llenos === 0 ? 'vacio' : 'completo'
+  })
+  return { estados, llenos: llenosTotal, total }
 }

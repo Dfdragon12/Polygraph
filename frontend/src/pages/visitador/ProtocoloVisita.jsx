@@ -40,7 +40,7 @@ export default function ProtocoloVisita({ seccion, soloLectura, onCampo }) {
               const opcionesPrec = colPrec ? (colPrec.opciones ?? []).filter(o => o && o !== '—') : []
               const idDet = `ps-${p.n}-det`
               return (
-                <tr key={p.n} className="border-b border-gray-200 align-top">
+                <tr key={p.n} data-clave={`ps_${p.n}`} className="border-b border-gray-200 align-top rounded">
                   <td className="p-2 w-[42%]">
                     <p className="text-gray-900"><span className="font-semibold">{numeros[p.n]}.</span> {p.texto}</p>
                     {si && colPrec && (

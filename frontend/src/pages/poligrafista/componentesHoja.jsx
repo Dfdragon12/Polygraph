@@ -21,7 +21,7 @@ export function TextoHoja({ value, onChange, disabled, maxLength, id, ...resto }
     el.style.height = `${el.scrollHeight}px`
   }, [value])
   const largo = (value ?? '').length
-  const cerca = largo >= max * 0.9
+  const cerca = largo >= max * 0.8   // VD-08: el contador aparece solo cuando el texto pasa del 80 % del límite
   return (
     <>
       <textarea ref={ref} id={id} rows={1} value={value ?? ''} maxLength={max} disabled={disabled} spellCheck lang="es"
@@ -75,11 +75,12 @@ export function CampoHoja({ c, value, onChange, disabled, idServicioSubproceso, 
   const precargado = c.automatico && !c.calculado
   const enLinea = esEnLinea(c)
   return (
-    <div className={`mb-4 ${enLinea ? 'flex flex-wrap items-baseline gap-x-2 gap-y-1' : ''}`}>
+    <div data-clave={c.clave} className={`mb-4 rounded ${enLinea ? 'flex flex-wrap items-baseline gap-x-2 gap-y-1' : ''}`}>
       <label htmlFor={id} className="text-[15px] font-bold text-gray-900">
         {tituloLimpio(c.nombre)}{c.obligatorio && <span className="text-red-600"> *</span>}
         {enLinea ? ':' : ''}
       </label>
+      {/no se imprime/i.test(c.nombre ?? '') && <span className="ml-2 align-middle text-[11px] font-medium text-gray-600 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">No se imprime</span>}
       {precargado ? (
         <span className="inline-flex flex-wrap items-center gap-2">
           <span id={id} className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-[15px]">{value || '—'}</span>
