@@ -98,11 +98,12 @@ class WordAntecedentesC2Test {
             assertThat(celdas(hallazgos.getRow(2))).startsWith("LEG-19").endsWith("15").contains("Proceso N° 1: Hurto (Inactivo)");
             assertThat(celdas(hallazgos.getRow(3))).startsWith("LEG-19").endsWith("15").contains("Proceso N° 2: Violencia intrafamiliar (Inactivo)");
 
-            // Anexo 1: sale del catálogo de hallazgos de la plataforma (24 LEG de V202), no del Word.
-            XWPFTable anexo = tablaConEncabezado(doc, "Ref.", "Hallazgo", "Calificación");
-            assertThat(anexo.getRows()).hasSize(1 + 24 + 1); // encabezado, 24 LEG, título de alertas (sin alertas en esta base)
-            assertThat(celdas(anexo.getRow(1))).containsExactly("LEG-01", "Documento cancelado o no encontrado en la Registraduría", "Crítico");
-            assertThat(celdas(anexo.getRow(18))).containsExactly("LEG-18", "Medida correctiva registrada (RNMC), en cualquier estado", "30");
+            // AN-09: los anexos 1 (catálogo) y 2 (relación del delito con el cargo) son internos: no van en el informe del cliente.
+            assertThat(texto).doesNotContain("CATÁLOGO DE REFERENCIAS").doesNotContain("RELACIÓN DEL DELITO CON EL CARGO")
+                    .doesNotContain("Anexo 1").doesNotContain("Anexo 2")
+                    .contains("un código del catálogo de Polygraph, que indica sus puntos")
+                    .contains("Tipo de cargo:");
+            // El cuerpo conserva los códigos LEG y sus puntos en la tabla de hallazgos (ya verificada arriba).
 
             // Fórmula, puntaje y semáforo: solo MEDIO lleva texto.
             assertThat(texto).contains("30 + 15 + 15 = 60 de 100 posibles").contains("60,0");

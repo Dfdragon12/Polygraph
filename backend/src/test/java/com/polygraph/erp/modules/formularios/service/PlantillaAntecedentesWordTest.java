@@ -79,11 +79,9 @@ class PlantillaAntecedentesWordTest {
         Set<String> columnasTabla = claves(TipoSeccionFormulario.TABLA);
 
         assertThat(word.campos).as("${campos[...]} del Word").isEqualTo(sin(campos, SIN_MARCADOR));
-        // Anexo 1 (catálogo y alertas) son tablas del sistema, no secciones del formulario.
-        assertThat(word.tablas).as("tablas[...] de los comentarios del Word")
-                .isEqualTo(union(tablas, FormularioPlantillaWordService.TABLAS_CATALOGO));
-        assertThat(word.filas).as("${[...]} dentro de las tablas del Word")
-                .isEqualTo(union(sin(columnasTabla, SIN_MARCADOR), Set.of("a1_ref", "a1_hallazgo", "a1_calificacion")));
+        // AN-09: el catálogo (Anexo 1) ya no va en el Word del cliente, así que la plantilla solo marca las secciones del formulario.
+        assertThat(word.tablas).as("tablas[...] de los comentarios del Word").isEqualTo(tablas);
+        assertThat(word.filas).as("${[...]} dentro de las tablas del Word").isEqualTo(sin(columnasTabla, SIN_MARCADOR));
 
         Set<String> todas = new HashSet<>(campos);
         todas.addAll(columnasTabla);
