@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Botones } from '../visitador/DatosGeneralesVisita'
+import { filasDeIdentidad } from './datosDelEvaluado'
 import { sugerirTipoDeCargo, sugerirConduccion } from './sugerenciasCargo'
 
 // AN-02 · Fase 1 del formato de antecedentes: datos del evaluado, validación y declaración. Los datos que se guardan son los mismos de la plantilla (claves ev_*,
@@ -27,18 +28,12 @@ function acceso(secciones, claveSeccion, onCampo) {
 export function DatosEvaluado({ secciones, datosCandidato, cargoSolicitud, criticidad, soloLectura, onCampo, onAvisar }) {
   const datos = acceso(secciones, 'datos_evaluado', onCampo)
   const valid = acceso(secciones, 'validacion_evaluado', onCampo)
-  const link = (clave) => (datosCandidato ?? []).find(c => c.clave === clave)?.valor
   const [corregir, setCorregir] = useState({ dato: '', valor: '' })
   const [avisos, setAvisos] = useState([])
   const [enviando, setEnviando] = useState(false)
 
   const filas = [
-    ['Nombres y apellidos', link('NOMBRE_COMPLETO')],
-    ['N.º de documento', [link('TIPO_DOCUMENTO'), link('CEDULA')].filter(Boolean).join(' ')],
-    ['Fecha de expedición', link('FECHA_EXPEDICION')],
-    ['Lugar de expedición', link('CIUDAD_EXPEDICION') || datos.val('ev_lugar_exp')],
-    ['Fecha de nacimiento', link('FECHA_NACIMIENTO')],
-    ['Lugar de nacimiento', link('LUGAR_NACIMIENTO')],
+    ...filasDeIdentidad(datosCandidato, datos.val('ev_lugar_exp')),
     ['Cliente', datos.val('ev_cliente')],
     ['Cargo', datos.val('ev_cargo') || cargoSolicitud],
   ]

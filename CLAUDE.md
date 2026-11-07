@@ -1024,3 +1024,55 @@ complementa): `docs/DICCIONARIO.md` (glosario de negocio↔código↔BD), `docs/
   El servidor reemplaza el formulario completo: con dos dispositivos gana el último guardado. Enviar el informe EXIGE conexión.
 - Límites conocidos: la foto/cédula no tiene cola sin conexión; el service worker no cachea el HTML, así que reabrir el enlace sin señal muestra «Sin conexión» (lo escrito sigue guardado); lo que guarda el proveedor queda a nombre del poligrafista
   asignado en el historial; si se reasigna la cita el enlace sigue al nuevo asignado; el token va en la URL. Sin pruebas de interfaz automáticas ni verificación en navegador real.
+
+## Foto del evaluado y panel lateral — poligrafía (FA-01 a FA-03, 2026-11-03)
+
+- Foto (FA-01/02): `FotoEvaluado.jsx` reduce en el navegador (recorte 3:4, 600×800, JPG, <300 KB) y sube `multipart` con `foto`, `cedulaVerificada` y `origen` (CAMARA|ARCHIVO, V242).
+  `services/api.js` manda `Content-Type: application/json` por defecto: toda llamada con `FormData` debe fijar `'Content-Type': 'multipart/form-data'` o el servidor responde «Error interno»
+  (esa fue la causa del 500 de la foto). `FotoEvaluadoService.tipoReal` valida la firma real (JPG/PNG); tope de 5 MB en el servicio (el límite global de multipart sigue en 10 MB porque lo comparten los
+  documentos del candidato y las plantillas). Mensajes claros, nunca «Error interno»; «Reintentar» si falla la subida.
+- Panel del caso (FA-03): `componentesHoja.jsx` exporta `useMasAngostoQue(px)`, `Tarjeta` (plegable; sin datos empieza plegada «· sin datos») y `PanelContexto`. Va en la columna izquierda debajo de los temas
+  (sticky, con desplazamiento propio); con menos de 900 px: selector de temas + botón «Información del caso». Lo reutilizan la visita y antecedentes.
+
+## Visita domiciliaria — formato por fases (VD-01 a VD-09, 2026-11-03)
+
+- Pantalla del visitador: `pages/visitador/FormatoVisita.jsx` (el default `FormularioVisitador` pide el formulario y, si no trae las secciones de la visita, deja el `Formulario` genérico). 3 fases / 11 temas en
+  `fasesVisita.js` (`FASES`, `partesDelTema`, `avanceDelTema`, `faltantesDeVisita`, `estadoDeTemas`). Mismos datos y mismo guardado que el formulario: las claves (`ps_*`, `dc_*`, `eco_*`, `df_*`…) no cambian,
+  solo cómo se capturan. Una sola regla para temas, fases y faltantes: ✓ cuando no falta ningún obligatorio y hay algo diligenciado. Cada faltante lleva a su campo (atributo `data-clave` + resaltado).
+- Datos generales (VD-02, `DatosGeneralesVisita.jsx`): tipo/clase/módulos en botones, SIN precarga desde la solicitud (la solicitud de visita no trae esos datos); cambiar lo ya elegido registra una novedad
+  (V243: `VISITA_CAMBIO_CONFIGURACION`, `VISITA_CARGO_NO_COINCIDE`; `NovedadesSubprocesoResponse.TipoNovedadResponse` ahora trae `clave`). «Confirmado en la visita» nace con lo del link y «Resultado»
+  (Coincide/Corregido) lo calcula la pantalla. La criticidad solo se muestra (viene de la solicitud).
+- Módulos (V244): rutina, virtual, vehicular, OEA, teletrabajo y las fotos de los dos últimos son secciones OPCIONALES; apagar un módulo = «quitar sección» (un visitador no puede borrar filas de una sección no
+  opcional: 403). Las fotos de vehicular/teletrabajo existen mientras su módulo principal esté activo. La rutina no tiene precarga (no hay fuente definida).
+- Protocolo (VD-03, `ProtocoloVisita.jsx`, `PREGUNTAS_PROTOCOLO`): numeración continua 1–16; la pregunta 10 (sindical) está APAGADA (`NumeracionProtocolo.SINDICAL_ACTIVA = false` en el backend y `SINDICAL_ACTIVA`
+  en `fasesVisita.js`; no existe interruptor de administrador). El Word usa `${campos['ps_N_num']}` y `${campos['ps_comparadas']}` (`NumeracionProtocolo.marcadores`); las claves `ps_N` no cambian.
+- Indicadores y cálculos (VD-04/05, `IndicadoresVisita.jsx`, `calculosVisita.js`): porcentajes, conceptos, totales de economía y aporte del candidato se calculan EN LA PANTALLA con la regla de `motor_vis.py`
+  (redondeo mitad-al-par: `redondear`) y se guardan en sus columnas de siempre; si otra pantalla edita el formulario no se recalculan. Los aportantes de cada egreso son filas en pantalla que se guardan como el
+  texto «Madre $450.000; Candidato $450.000» en `eg_aportantes`. Montos (`in_monto`, `eg_monto`, `pf_valor`): `CampoDinero`. Los textos de la escala 1–4 (Deficiente/Aceptable/Bueno/Muy bueno) no están
+  confirmados con el diccionario.
+- Fotos (VD-07, `FotosVisita.jsx`, `utils/reducirImagen.js`): espacios con nombre (fila.etiqueta = espacio), cámara o archivo, reducción en el navegador (1600 px, JPG 0,85, <500 KB, sin EXIF/GPS, HEIC con
+  `heic2any`), descripción obligatoria; «Quitar» vacía la foto (no borra la fila). El Word reduce las fotos viejas al generar (`ReductorImagen`, sin tocar el original). Los mínimos (3/2/20) solo los valida la pantalla.
+- Revisión (VD-08/09): botón «Marcar como completado» (`etiquetaEnvio` de `RevisionEnvio`). El catálogo de referencias (Anexo 1) salió del Word del cliente (una sola plantilla, tipo de progreso 7); los soportes
+  pasaron a ser el Anexo 1; «Ver catálogo de referencias» (`CatalogoReferencias.jsx`) es consulta interna. Hay que subir el Word nuevo en Admin → Catálogo → Plantilla en cada ambiente.
+
+## Antecedentes legales — formato por fases (AN-01 a AN-09, 2026-11-03/04)
+
+- Pantalla del analista: `pages/analista/FormatoAntecedentes.jsx` (el default `FormularioAnalista` deja el `Formulario` genérico si el formulario no trae las secciones de antecedentes). 3 fases / 9 temas en
+  `fasesAntecedentes.js` (cada tema con `vista` propia cuando tiene componente a medida). Mismas claves y mismo guardado; la criticidad sigue en la plantilla pero oculta (el cálculo la lee de la solicitud).
+- Fase 1 (AN-02, `TemasFase1.jsx`, V245): el lugar de expedición viene del link (`campo_candidato = CIUDAD_EXPEDICION`); la declaración (3 preguntas) se precarga del link en `decN_respuesta/_detalle` (si el evaluado
+  no respondió: botones Sí/No). Tipo de cargo y conducción se SUGIEREN por palabras clave del cargo (`sugerenciasCargo.js`), nunca se marcan solos. «Corregir y avisar al gestor» crea una novedad
+  (`ANT_DATO_NO_COINCIDE`) sin tocar el dato del link.
+- Listas (AN-03, `ListasConsulta.jsx`, `codigosPorFuente.js`, V246): el resultado ya NO nace «Sin novedad» (es obligatorio y lo marca el analista); el código se filtra por fuente según la hoja «Listas» del
+  diccionario (manda el diccionario sobre el prompt); coincidencia «Documento / Solo nombre»; estado = texto libre con sugerencias.
+- Tránsito (AN-04): SIMIT en botones, guardado como el texto de siempre («2 pendientes», `transitoFormato.js`); LEG-10/14/17 solo se sugieren y solo en cargos de conducción.
+- Identidad (AN-05, `IdentidadContacto.jsx`, V247): lo declarado va al lado de lo reportado y «¿Coincide?» se calcula con normalización (`identidadFormato.js`); ALR-06 se sugiere y se registra en hallazgos sin
+  impacto. «Sin alertas» guarda `alertas_revisadas`.
+- Procesos (AN-06, `ProcesosJudiciales.jsx`, `procesosReglas.js`, V248): dos pestañas, relación con el cargo sugerida con el Anexo 2 (se parsea de `anexosInternos.js`), código sugerido con su razón, radicado
+  repetido entre fuentes. Columnas nuevas que no se imprimen: `pp_radicado`, `pp_tipo`, `pp_motivo`, `p_soporte`, `pp_soporte`, `procesos_revisados`, `procesos_priv_revisados`; LEG-05 agregado a `p_calificacion`.
+- Revisión (AN-07/08, `RevisionAntecedentes.jsx`, `conceptoBorrador.js`): las alertas ALR marcadas llegan como filas sugeridas de hallazgos sin impacto; borrador del concepto (no usa «tiene antecedentes»); la fecha del
+  concepto la pone el sistema al completar. `components/CampoFecha.jsx` muestra dd/mm/aaaa y guarda AAAA-MM-DD (también lo usa `InputHoja`). En las listas de la hoja se oculta el «—» salvo en columnas
+  `*_ref` / `*_calificacion`.
+- Anexos (AN-09): los anexos 1 (catálogo) y 2 (delito vs cargo) salieron del Word del cliente (una sola plantilla, tipo de progreso 1; también se quitaron sus comentarios `anexo_catalogo`/`anexo_alertas`); quedan
+  como «Consulta interna» (`ConsultaInterna.jsx`). Falta mostrar el Anexo 2 junto a «Relación con el cargo».
+- Estado: sin probar en navegador real; V233–V248 pendientes de aplicar en cada base (reinicio del backend). Las filas «Sin novedad» sin soporte de los servicios #9, #10, #21, #26 y #32 se vaciaron el
+  2026-11-03; el servicio #49 conserva 13 sin tocar.

@@ -632,10 +632,9 @@ public class FormularioService {
         // información.
         Usuario profesionalEncargado = subproceso.getUsuarioAsignado();
 
-        // Resumen fijo de arriba del documento — siempre nombre completo + cédula, sin
-        // configuración; para cualquier otro dato del candidato, se arma columna por columna en
-        // la plantilla (ver FormularioColumna.campoCandidato).
-        List<CampoCandidatoValorResponse> datosCandidato = candidatoInfoService.resolver(candidato, null);
+        // Datos del evaluado que ve el analista (AC-08): una sola lista para académica, laboral y antecedentes. Para cualquier otro dato del
+        // candidato en el Word, se arma columna por columna en la plantilla (ver FormularioColumna.campoCandidato).
+        List<CampoCandidatoValorResponse> datosCandidato = candidatoInfoService.resolverParaAnalista(candidato);
 
         // Mismo criterio que el documento: un subproceso ya cerrado muestra el nombre del Word con
         // el que se completó (rutaWordCongelada), no el que esté activo ahora mismo — así
@@ -680,7 +679,11 @@ public class FormularioService {
                 servicio != null ? servicio.fechaParaMostrar() : null,
                 avisoCalculo,
                 avisosFormulario,
-                servicio != null && servicio.getCriticidadCargo() != null
+                servicio != null && servicio.getCriticidadCargo() != null,
+                servicio != null && servicio.getProceso() != null ? servicio.getProceso().getAniosPeriodoLaboral() : null,
+                servicio != null ? servicio.getFechaSolicitud() : null,
+                candidato != null ? candidatoInfoService.resolverTablasFijas(candidato).getOrDefault("inactividades", List.of()) : List.of(),
+                candidatoInfoService.declaroSinEstudios(candidato)
         );
     }
 

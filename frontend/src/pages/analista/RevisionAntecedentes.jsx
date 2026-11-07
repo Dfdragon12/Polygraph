@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import hallazgosService from '../../services/hallazgosService'
 import { borradorConcepto } from './conceptoBorrador'
+import { aTexto } from '../../components/CampoFecha'
 
 // AN-07 · Piezas de la Revisión del analista: las alertas marcadas en las consultas llegan como filas SUGERIDAS de «hallazgos sin impacto» (el analista escribe el
 // tratamiento) y el concepto del analista parte de un borrador armado por el sistema. Todo se guarda en las mismas columnas de siempre.
@@ -71,7 +72,7 @@ export function SugerenciasAlertas({ secciones, soloLectura, onAgregar }) {
   )
 }
 
-export function ConceptoAnalista({ secciones, nombreProfesional, soloLectura, onCampo }) {
+export function ConceptoAnalista({ secciones, nombreProfesional, soloLectura, onCampo, armarBorrador = null }) {
   const s = sec(secciones, 'concepto_analista')
   const hall = sec(secciones, 'hallazgos')
   const info = sec(secciones, 'informativos')
@@ -81,10 +82,10 @@ export function ConceptoAnalista({ secciones, nombreProfesional, soloLectura, on
   const texto = val('concepto')
   const [reemplazar, setReemplazar] = useState(false)
 
-  const armar = () => borradorConcepto(
+  const armar = () => (armarBorrador ? armarBorrador(secciones) : borradorConcepto(
     (hall?.filas ?? []).map(f => ({ ref: valorFila(hall, f, 'h_ref'), descripcion: valorFila(hall, f, 'h_descripcion'), fuente: valorFila(hall, f, 'h_fuente'), detalle: valorFila(hall, f, 'h_detalle'), puntos: valorFila(hall, f, 'h_puntos') })),
     (info?.filas ?? []).map(f => ({ situacion: valorFila(info, f, 'i_situacion') })).filter(a => tiene(a.situacion)),
-  )
+  ))
   const generar = () => {
     if (tiene(texto) && !reemplazar) { setReemplazar(true); return }
     poner('concepto', armar())
@@ -110,7 +111,7 @@ export function ConceptoAnalista({ secciones, nombreProfesional, soloLectura, on
       {texto.length >= max * 0.8 && <p className="text-xs text-amber-700" role="status">{texto.length} / {max}</p>}
       <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
         <div><dt className="text-xs text-gray-600">Profesional encargado</dt><dd className="bg-gray-100 rounded px-2 py-1">{val('analista_nombre') || nombreProfesional || '—'}</dd></div>
-        <div><dt className="text-xs text-gray-600">Fecha</dt><dd className="bg-gray-100 rounded px-2 py-1">{val('analista_fecha') || 'Se pone sola al marcar como completado'}</dd></div>
+        <div><dt className="text-xs text-gray-600">Fecha</dt><dd className="bg-gray-100 rounded px-2 py-1">{aTexto(val('analista_fecha')) || val('analista_fecha') || 'Se pone sola al marcar como completado'}</dd></div>
       </dl>
     </section>
   )

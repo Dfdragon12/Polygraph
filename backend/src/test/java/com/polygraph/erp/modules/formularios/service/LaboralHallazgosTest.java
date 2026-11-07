@@ -254,6 +254,15 @@ class LaboralHallazgosTest {
         assertThat(c.tablas().get("vinculaciones").get(0)).containsEntry("v_calificacion", "ALR-LAB-01");
     }
 
+    @Test
+    @DisplayName("LB-08: el Word del cliente no trae el catálogo (Anexo 1) y «Cómo leer este reporte» ya no lo nombra")
+    void elWordDelClienteNoTraeElCatalogo() throws Exception {
+        String texto = leer("word/document.xml").replaceAll("<[^>]+>", "");
+        assertThat(texto).doesNotContain("Anexo 1").doesNotContain("CATÁLOGO DE REFERENCIAS").doesNotContain("la empresa lo desconoce, o la alteración es evidente");
+        assertThat(texto).contains("un código del catálogo de Polygraph, que indica sus puntos");
+        assertThat(texto).contains("Los soportes de cada consulta se entregan como anexos");
+    }
+
     // ─────────── apoyo ───────────
 
     private static String leer(String entrada) throws Exception {

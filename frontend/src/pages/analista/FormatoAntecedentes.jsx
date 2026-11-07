@@ -17,6 +17,10 @@ import IdentidadContacto from './IdentidadContacto'
 import ProcesosJudiciales from './ProcesosJudiciales'
 import { SugerenciasAlertas, ConceptoAnalista } from './RevisionAntecedentes'
 import { DatosEvaluado, ValidacionEvaluado, DeclaracionEvaluado, precargarDeclaraciones } from './TemasFase1'
+import FormatoLaboral from './FormatoLaboral'
+import { esFormatoLaboral } from './fasesLaboral'
+import FormatoAcademica from './FormatoAcademica'
+import { esFormatoAcademica } from './fasesAcademica'
 import { FASES, TODOS_LOS_TEMAS, esFormatoAntecedentes, partesDelTema, estadoDeTemas, faltantesDeAntecedentes } from './fasesAntecedentes'
 
 // AN-01 · Antecedentes legales en 3 fases y 9 temas, como el formato en Word. Usa el mismo backend y el mismo guardado que el formulario genérico
@@ -31,17 +35,28 @@ export default function FormularioAnalista() {
   const { idServicioSubproceso } = useParams()
   const [datos, setDatos] = useState(null)
   const [generico, setGenerico] = useState(false)
+  const [laboral, setLaboral] = useState(false)
+  const [academica, setAcademica] = useState(false)
   useEffect(() => {
     setDatos(null)
     setGenerico(false)
+    setLaboral(false)
+    setAcademica(false)
     formulariosService.obtenerFormulario(idServicioSubproceso)
-      .then(r => (esFormatoAntecedentes(r.secciones) ? setDatos(r) : setGenerico(true)))
+      .then(r => {
+        if (esFormatoAntecedentes(r.secciones)) setDatos(r)
+        else if (esFormatoLaboral(r.secciones)) { setLaboral(true); setDatos(r) }   // LB-01
+        else if (esFormatoAcademica(r.secciones)) { setAcademica(true); setDatos(r) }   // AC-01
+        else setGenerico(true)
+      })
       .catch(() => setGenerico(true))
   }, [idServicioSubproceso])
   if (generico) return <Formulario />
   if (!datos) {
     return <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-8 w-8 border-4 border-primary-600 border-t-transparent" /></div>
   }
+  if (academica) return <FormatoAcademica key={idServicioSubproceso} inicial={datos} idServicioSubproceso={idServicioSubproceso} />
+  if (laboral) return <FormatoLaboral key={idServicioSubproceso} inicial={datos} idServicioSubproceso={idServicioSubproceso} />
   return <FormatoAntecedentes key={idServicioSubproceso} inicial={datos} idServicioSubproceso={idServicioSubproceso} />
 }
 

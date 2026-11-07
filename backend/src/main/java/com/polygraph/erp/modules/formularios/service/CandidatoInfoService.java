@@ -37,10 +37,18 @@ import java.util.Objects;
 public class CandidatoInfoService {
 
     private static final List<String> CAMPOS_POR_DEFECTO = List.of("NOMBRE_COMPLETO", "CEDULA");
+    /** AC-08 · Lo que el formulario del analista muestra del evaluado (identidad y contacto): UNA sola lista para académica, laboral y antecedentes. */
+    private static final List<String> CAMPOS_DEL_ANALISTA = List.of("NOMBRE_COMPLETO", "TIPO_DOCUMENTO", "CEDULA", "FECHA_EXPEDICION", "CIUDAD_EXPEDICION",
+            "FECHA_NACIMIENTO", "LUGAR_NACIMIENTO", "CIUDAD_NACIMIENTO", "CELULAR", "TELEFONO_FIJO", "EMAIL_PRINCIPAL", "CIUDAD_RESIDENCIA", "DIRECCION_RESIDENCIA", "BARRIO_RESIDENCIA", "RUT");
     private static final DateTimeFormatter FORMATO_FECHA = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     private final CiudadRepository ciudadRepository;
     private final HojaVidaEvaluadoRepository hojaVidaEvaluadoRepository;
+
+    /** Datos del evaluado para el formulario del analista (AC-08): lo del link, completado con la hoja de vida. */
+    public List<CampoCandidatoValorResponse> resolverParaAnalista(Candidato candidato) {
+        return resolver(candidato, String.join(",", CAMPOS_DEL_ANALISTA));
+    }
 
     /** camposCsv null/vacío = comportamiento de siempre (nombre completo + cédula) — se usa solo
      *  para el resumen fijo de arriba del documento. */
@@ -50,6 +58,11 @@ public class CandidatoInfoService {
                 .filter(Objects::nonNull)
                 .map(campo -> new CampoCandidatoValorResponse(campo.name(), campo.getEtiqueta(), valorDe(candidato, campo)))
                 .toList();
+    }
+
+    /** ¿El evaluado marcó «No tengo estudios para registrar» en su hoja de vida? (AC-02) */
+    public boolean declaroSinEstudios(Candidato candidato) {
+        return candidato != null && hojaVidaDe(candidato).map(HojaVidaEvaluado::getSinEstudios).map(Boolean::booleanValue).orElse(false);
     }
 
     /** Resuelve UNA columna de la plantilla marcada como dato del candidato (ver
@@ -114,8 +127,10 @@ public class CandidatoInfoService {
             case APELLIDOS -> val(candidato.getApellidos());
             case CEDULA -> val(candidato.getCedula());
             case TIPO_DOCUMENTO -> val(candidato.getTipoDocumento());
-            case FECHA_NACIMIENTO -> formatearFecha(candidato.getFechaNacimiento());
-            case LUGAR_NACIMIENTO -> val(candidato.getLugarNacimiento());
+            case FECHA_NACIMIENTO -> formatearFecha(candidato.getFechaNacimiento() != null ? candidato.getFechaNacimiento()
+                    : hojaVidaDe(candidato).map(HojaVidaEvaluado::getFechaNacimiento).orElse(null));
+            case LUGAR_NACIMIENTO -> primero(val(candidato.getLugarNacimiento()), val(hojaVidaDe(candidato).map(HojaVidaEvaluado::getLugarNacimiento).orElse(null)),
+                    nombreCiudad(candidato.getIdCiudadNacimiento()));
             case FECHA_EXPEDICION -> formatearFecha(candidato.getFechaExpedicion());
             case CIUDAD_EXPEDICION -> nombreCiudad(candidato.getIdCiudadExpedicion());
             case CIUDAD_NACIMIENTO -> nombreCiudad(candidato.getIdCiudadNacimiento());
@@ -229,6 +244,11 @@ public class CandidatoInfoService {
     private String nombreCiudad(Integer idCiudad) {
         if (idCiudad == null) return "";
         return ciudadRepository.findById(idCiudad).map(Ciudad::getNombreCiudad).orElse("");
+    }
+
+    private String primero(String... textos) {
+        for (String t : textos) if (t != null && !t.isBlank()) return t;
+        return "";
     }
 
     private String val(String s) {

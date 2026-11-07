@@ -56,7 +56,14 @@ public record FormularioResponse(
         // Avisos para quien diligencia que NO bloquean (docs/antecedentes, Prompt 6): texto y dónde.
         java.util.List<com.polygraph.erp.modules.riesgo.codigos.ModeloCodigos.AvisoFormulario> avisosFormulario,
         // NS-07: la solicitud trae la criticidad del cargo (la eligió el cliente): el campo de criticidad llega precargado y solo lo cambia el gestor.
-        boolean criticidadDeSolicitud
+        boolean criticidadDeSolicitud,
+        // LB-02: años del periodo validado que sugiere el tipo de estudio (null = sin sugerencia) y fecha de la solicitud (de dónde se cuenta hacia atrás).
+        Integer aniosPeriodoLaboral,
+        java.time.LocalDate fechaSolicitud,
+        // LB-04: los periodos sin empleo que el evaluado explicó en su hoja de vida (fecha_inicio, fecha_fin, actividad, justificacion, quien_confirma); solo lectura.
+        List<Map<String, String>> inactividadesDeclaradas,
+        // AC-02: el evaluado marcó «No tengo estudios para registrar».
+        boolean sinEstudiosDeclarado
 ) {
     /** valores solo aplica a secciones CAMPOS (idColumna -> valor); filas solo a secciones
      *  TABLA. El campo que no aplica llega vacío/null. orden: para intercalar en el mismo orden

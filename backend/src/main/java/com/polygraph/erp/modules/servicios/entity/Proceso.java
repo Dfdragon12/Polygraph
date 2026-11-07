@@ -57,6 +57,10 @@ public class Proceso {
     @Column(name = "requiere_hoja_vida", nullable = false)
     private Boolean requiereHojaVida = true;
 
+    /** Años hacia atrás que cubre la verificación laboral de este estudio (LB-02, V249); null = sin sugerencia. */
+    @Column(name = "anios_periodo_laboral")
+    private Integer aniosPeriodoLaboral;
+
     /** Puntos clave cortos para la tarjeta de la tienda — un punto por línea. */
     @Column(name = "puntos_clave", columnDefinition = "TEXT")
     private String puntosClave;

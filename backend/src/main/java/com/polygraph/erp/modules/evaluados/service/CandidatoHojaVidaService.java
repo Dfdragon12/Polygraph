@@ -52,6 +52,10 @@ public class CandidatoHojaVidaService {
         if (CandidatoInfoService.TABLAS_SOLO_LECTURA.contains(clave)) {
             throw new ApiException("Las declaraciones solo las responde el candidato desde su link.", HttpStatus.FORBIDDEN);
         }
+        // LB-02 / AC-02: la experiencia y los estudios son lo que declaró el evaluado; el analista los consulta pero no los cambia (los leen otros servicios del mismo candidato).
+        if (("experiencia_laboral".equals(clave) || "educacion".equals(clave)) && actor.getRol() == Rol.ANALISTA_INTERNO) {
+            throw new ApiException("Lo que declaró el evaluado (experiencia y estudios) lo declara él desde su link; el analista no lo modifica.", HttpStatus.FORBIDDEN);
+        }
         HojaVidaEvaluado hv = hojaVidaEvaluadoRepository.findByCandidato_IdCandidato(idCandidato)
                 .orElseGet(() -> hojaVidaEvaluadoRepository.save(HojaVidaEvaluado.builder()
                         .candidato(candidato).autorizacionDatos(false).completado(false).build()));
