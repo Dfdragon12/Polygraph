@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { formatearPrecio } from '../utils/catalogoDisplay'
+import { textoVigencia } from '../utils/planesTienda'
 
 function formatFecha(iso) {
   if (!iso) return null
@@ -91,12 +92,18 @@ export default function ComprobanteVista({ comprobante, volverA, volverLabel = '
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {comprobante.items.map((i) => {
+              {comprobante.items.map((i, idx) => {
                 const conDescuento = i.valorOriginal != null && i.valorOriginal > i.valorUnitario
                 const ahorroItem = conDescuento ? (i.valorOriginal - i.valorUnitario) * i.cantidad : 0
                 return (
-                  <tr key={i.idProceso}>
-                    <td className="py-2.5 text-gray-700">{i.nombreProceso}</td>
+                  <tr key={`${i.idProceso}-${i.unidadesPlan ?? 0}-${idx}`}>
+                    <td className="py-2.5 text-gray-700">
+                      {i.nombreProceso}
+                      {/* TP-07: la vigencia que se le mostró antes de pagar; solo sale en compras hechas con la vigencia encendida */}
+                      {i.vigenciaMeses != null && (
+                        <span className="block text-[11px] text-gray-500 mt-0.5">{textoVigencia(i.vigenciaMeses)}</span>
+                      )}
+                    </td>
                     <td className="py-2.5 text-right text-gray-600">{i.cantidad}</td>
                     <td className="py-2.5 text-right text-gray-600">
                       {conDescuento && (
@@ -162,6 +169,12 @@ export default function ComprobanteVista({ comprobante, volverA, volverLabel = '
           </div>
         )}
 
+        {Number(comprobante.montoIva) > 0 && (
+          <div className="space-y-1 border-t border-gray-100 pt-4 text-sm text-gray-600">
+            <div className="flex items-center justify-between"><span>Subtotal</span><span>{formatearPrecio(comprobante.montoSubtotal)}</span></div>
+            <div className="flex items-center justify-between"><span>IVA {Number(comprobante.ivaPorcentaje)} %</span><span>{formatearPrecio(comprobante.montoIva)}</span></div>
+          </div>
+        )}
         <div className="flex items-center justify-between border-t border-gray-100 pt-4">
           <span className="text-sm font-semibold text-gray-600">Total pagado</span>
           <span className="text-xl font-bold text-primary-700">{formatearPrecio(comprobante.montoTotal)}</span>

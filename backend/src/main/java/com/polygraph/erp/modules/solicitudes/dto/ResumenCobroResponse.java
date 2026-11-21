@@ -19,5 +19,8 @@ public record ResumenCobroResponse(
         BigDecimal valor,
         BigDecimal recargoCiudad,
         BigDecimal cupoDisponible,
-        BigDecimal cupoQuedara
+        BigDecimal cupoQuedara,
+        // TP-03 (pospago): IVA del servicio y del recargo, y el total que se descuenta del cupo (incluye IVA)
+        BigDecimal iva,
+        BigDecimal total
 ) {}

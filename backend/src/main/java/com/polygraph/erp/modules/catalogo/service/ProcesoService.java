@@ -43,6 +43,11 @@ public class ProcesoService {
     private final NotificacionService notificacionService;
     private final CalificacionProcesoService calificacionProcesoService;
     private final com.polygraph.erp.modules.solicitudes.service.SolicitudExtraService solicitudExtraService;
+    private final com.polygraph.erp.modules.tienda.service.PlanesTiendaService planesTiendaService;
+    private final com.polygraph.erp.modules.tienda.service.HistorialPreciosService historialPrecios;
+    private final com.polygraph.erp.modules.tienda.service.ParametrosTiendaService parametrosTienda;
+    private final com.polygraph.erp.modules.pagos.service.RecargoPendienteService recargoPendienteService;
+    private final com.polygraph.erp.modules.tienda.service.PrecioPospagoService precioPospagoService;
 
     @Transactional(readOnly = true)
     public List<ProcesoResponse> listarTodos() {
@@ -70,7 +75,49 @@ public class ProcesoService {
                         p.getFormatoSolicitud() != null ? p.getFormatoSolicitud().name() : null,
                         solicitudExtraService.admitePreguntas(p),
                         Boolean.TRUE.equals(p.getRequiereDireccion()),
-                        Boolean.TRUE.equals(p.getCiudadEsDePrueba())))
+                        Boolean.TRUE.equals(p.getCiudadEsDePrueba()),
+                        textoONull(p.getTituloComercial()),
+                        textoONull(p.getFrasePrincipal()),
+                        textoONull(p.getDescripcionCorta()),
+                        separarPuntosClave(p.getIncluye()),
+                        textoONull(p.getIdealPara()),
+                        textoONull(p.getUnidadSingular()),
+                        textoONull(p.getUnidadPlural()),
+                        !Boolean.FALSE.equals(p.getVisibleEnTienda()),
+                        !Boolean.FALSE.equals(p.getAplicaIva()),
+                        planesConCobertura(p),
+                        planesTiendaService.descuentoMaximo(planesTiendaService.planesDe(p))))
+                .toList();
+    }
+
+    /**
+     * TP-11: ofrecer en pospago, modo y precio propio (null = no cambia). Con el interruptor pospagoPlan100 encendido se valida ANTES de guardar:
+     * ofrecido → debe haber precio; PROPIO → mayor que 0; PLAN_100 → el plan de 100 debe tener precio. Si falla, no se guarda nada.
+     */
+    private void aplicarPrecioPospago(Proceso proceso, ProcesoRequest req) {
+        if (req.ofrecerPospago() == null && req.modoPrecioPospago() == null && req.precioPospagoPropio() == null) return;
+        precioPospagoService.validarAlGuardar(proceso, req.ofrecerPospago(), req.modoPrecioPospago(), req.precioPospagoPropio());
+        if (req.precioPospagoPropio() != null && (proceso.getPrecioPospagoPropio() == null
+                || req.precioPospagoPropio().compareTo(proceso.getPrecioPospagoPropio()) != 0)) {
+            historialPrecios.registrar(proceso.getIdProceso(), "Precio pospago propio", proceso.getPrecioPospagoPropio(), req.precioPospagoPropio());
+            proceso.setPrecioPospagoPropio(req.precioPospagoPropio().signum() == 0 ? null : req.precioPospagoPropio());
+        }
+        if (req.modoPrecioPospago() != null) proceso.setModoPrecioPospago(req.modoPrecioPospago());
+        if (req.ofrecerPospago() != null) proceso.setOfrecerPospago(req.ofrecerPospago());
+    }
+
+    /**
+     * Planes del servicio y, con coberturaPorSede encendido y un servicio con recargo de ciudad intermedia, el precio del paquete nacional
+     * (TP-08). Antecedentes y los demás servicios sin recargo no traen precio nacional.
+     */
+    private List<com.polygraph.erp.modules.tienda.dto.PlanPublicoResponse> planesConCobertura(Proceso p) {
+        var planes = planesTiendaService.planesDe(p);
+        if (planes.isEmpty() || !parametrosTienda.activo(com.polygraph.erp.modules.tienda.service.ParametrosTiendaService.COBERTURA_POR_SEDE)) return planes;
+        BigDecimal intermedio = recargoPendienteService.recargoIntermedio(p);
+        if (!com.polygraph.erp.modules.tienda.service.CalculadoraCobertura.admiteNacional(Boolean.TRUE.equals(p.getAplicaPrecioCiudad()), intermedio)) return planes;
+        BigDecimal factor = parametrosTienda.decimal("factorPrecioNacional");
+        return planes.stream()
+                .map(pl -> pl.conNacional(com.polygraph.erp.modules.tienda.service.CalculadoraCobertura.precioNacional(pl.precioUnitario(), intermedio, factor)))
                 .toList();
     }
 
@@ -92,7 +139,10 @@ public class ProcesoService {
                 .puntosClave(unirPuntosClave(req.puntosClave()))
                 .activo(true)
                 .build();
+        aplicarTextosComerciales(proceso, req);
         procesoRepository.save(proceso);
+        historialPrecios.registrar(proceso.getIdProceso(), "Precio plan 1", null, proceso.getValor());
+        historialPrecios.registrar(proceso.getIdProceso(), "Costo directo", null, proceso.getCostoDirecto());
         log.info("Proceso creado: {}", proceso.getNombreProceso());
         notificacionService.crearParaAdmins("CATALOGO", "Proceso creado",
                 "Se creó el proceso \"" + proceso.getNombreProceso() + "\"");
@@ -108,13 +158,24 @@ public class ProcesoService {
         proceso.setNombreProceso(req.nombreProceso());
         proceso.setDescripcion(req.descripcion());
         proceso.setClasificacion(clasificacion);
-        proceso.setValor(req.valor());
+        // null = no cambia: el precio se edita con los precios por plan (TP-04).
+        if (req.valor() != null && (proceso.getValor() == null || req.valor().compareTo(proceso.getValor()) != 0)) {
+            planesTiendaService.validarEscalera(req.valor(), tramosGuardados(id, null, null, null));
+            historialPrecios.registrar(id, "Precio plan 1", proceso.getValor(), req.valor());
+            proceso.setValor(req.valor());
+        }
+        BigDecimal costoAnterior = proceso.getCostoDirecto();
         if (req.diasHabilesEntrega() != null) proceso.setDiasHabilesEntrega(req.diasHabilesEntrega());
-        proceso.setAplicaPrecioCiudad(Boolean.TRUE.equals(req.aplicaPrecioCiudad()));
+        // Los recargos se exigen al guardarlos (guardarPreciosCiudad): el formulario manda casilla y recargos juntos, primero la casilla.
+        boolean aplicaCiudad = Boolean.TRUE.equals(req.aplicaPrecioCiudad());
+        proceso.setAplicaPrecioCiudad(aplicaCiudad);
         if (req.requiereHojaVida() != null) proceso.setRequiereHojaVida(req.requiereHojaVida());
         if (req.requiereDireccion() != null) proceso.setRequiereDireccion(req.requiereDireccion());
         if (req.ciudadEsDePrueba() != null) proceso.setCiudadEsDePrueba(req.ciudadEsDePrueba());
         proceso.setPuntosClave(unirPuntosClave(req.puntosClave()));
+        aplicarTextosComerciales(proceso, req);
+        historialPrecios.registrar(id, "Costo directo", costoAnterior, proceso.getCostoDirecto());
+        aplicarPrecioPospago(proceso, req);
         log.info("Proceso actualizado: {}", proceso.getNombreProceso());
         notificacionService.crearParaAdmins("CATALOGO", "Proceso actualizado",
                 "Se actualizó el proceso \"" + proceso.getNombreProceso() + "\"");
@@ -291,8 +352,31 @@ public class ProcesoService {
                 Boolean.TRUE.equals(p.getRequiereDireccion()), Boolean.TRUE.equals(p.getCiudadEsDePrueba()), listarPreciosCiudad(p.getIdProceso()),
                 separarPuntosClave(p.getPuntosClave()),
                 pesos.suma(), pesos.califica(), pesos.motivo(),
-                p.getCriticidadDefecto().name(), p.getCoberturaMinima()
+                p.getCriticidadDefecto().name(), p.getCoberturaMinima(),
+                textoONull(p.getTituloComercial()), textoONull(p.getFrasePrincipal()), textoONull(p.getDescripcionCorta()),
+                separarPuntosClave(p.getIncluye()), textoONull(p.getIdealPara()),
+                textoONull(p.getUnidadSingular()), textoONull(p.getUnidadPlural()),
+                p.getCostoDirecto(), !Boolean.FALSE.equals(p.getVisibleEnTienda()), !Boolean.FALSE.equals(p.getAplicaIva()),
+                !Boolean.FALSE.equals(p.getOfrecerPospago()), precioPospagoService.modo(p).name(), p.getPrecioPospagoPropio()
         );
+    }
+
+    /** TP-01: solo cambia lo que viene (null = no cambia); un texto vacío lo deja en blanco. */
+    private void aplicarTextosComerciales(Proceso p, ProcesoRequest req) {
+        if (req.tituloComercial() != null) p.setTituloComercial(textoONull(req.tituloComercial()));
+        if (req.frasePrincipal() != null) p.setFrasePrincipal(textoONull(req.frasePrincipal()));
+        if (req.descripcionCorta() != null) p.setDescripcionCorta(textoONull(req.descripcionCorta()));
+        if (req.incluye() != null) p.setIncluye(unirPuntosClave(req.incluye()));
+        if (req.idealPara() != null) p.setIdealPara(textoONull(req.idealPara()));
+        if (req.unidadSingular() != null) p.setUnidadSingular(textoONull(req.unidadSingular()));
+        if (req.unidadPlural() != null) p.setUnidadPlural(textoONull(req.unidadPlural()));
+        if (req.costoDirecto() != null) p.setCostoDirecto(req.costoDirecto());
+        if (req.visibleEnTienda() != null) p.setVisibleEnTienda(req.visibleEnTienda());
+        if (req.aplicaIva() != null) p.setAplicaIva(req.aplicaIva());
+    }
+
+    private static String textoONull(String t) {
+        return (t == null || t.isBlank()) ? null : t.trim();
     }
 
     // ---------- Puntos clave (bullets cortos para la tarjeta de la tienda) ----------
@@ -340,6 +424,7 @@ public class ProcesoService {
             throw new ApiException("Ya existe un tramo para esa cantidad mínima", HttpStatus.CONFLICT);
         }
         validarValorTramo(proceso, req.valorUnitario());
+        planesTiendaService.validarEscalera(proceso.getValor(), tramosGuardados(idProceso, null, req.cantidadMinima(), req.valorUnitario()));
         TramoPrecioProceso tramo = TramoPrecioProceso.builder()
                 .proceso(proceso)
                 .cantidadMinima(req.cantidadMinima())
@@ -358,6 +443,7 @@ public class ProcesoService {
             throw new ApiException("Ya existe un tramo para esa cantidad mínima", HttpStatus.CONFLICT);
         }
         validarValorTramo(tramo.getProceso(), req.valorUnitario());
+        planesTiendaService.validarEscalera(tramo.getProceso().getValor(), tramosGuardados(idProceso, idTramo, req.cantidadMinima(), req.valorUnitario()));
         tramo.setCantidadMinima(req.cantidadMinima());
         tramo.setValorUnitario(req.valorUnitario());
         log.info("Tramo de precio actualizado: id={}, proceso={}", idTramo, tramo.getProceso().getNombreProceso());
@@ -368,6 +454,16 @@ public class ProcesoService {
         TramoPrecioProceso tramo = findTramo(idTramo);
         log.info("Tramo de precio eliminado: id={}, proceso={}", idTramo, tramo.getProceso().getNombreProceso());
         tramoRepository.delete(tramo);
+    }
+
+    /** Tramos del proceso por cantidad mínima tal como quedarían: sin `excluirId` y con (cantidad, valor) si viene. */
+    private java.util.Map<Integer, BigDecimal> tramosGuardados(Integer idProceso, Integer excluirId, Integer cantidad, BigDecimal valor) {
+        java.util.Map<Integer, BigDecimal> m = new java.util.HashMap<>();
+        for (TramoPrecioProceso t : tramoRepository.findByProceso_IdProcesoOrderByCantidadMinimaAsc(idProceso)) {
+            if (!t.getIdTramo().equals(excluirId)) m.put(t.getCantidadMinima(), t.getValorUnitario());
+        }
+        if (cantidad != null) m.put(cantidad, valor);
+        return m;
     }
 
     private void validarValorTramo(Proceso proceso, BigDecimal valorUnitario) {
@@ -403,6 +499,11 @@ public class ProcesoService {
         if (!Boolean.TRUE.equals(proceso.getAplicaPrecioCiudad())) {
             throw new ApiException("Este proceso no tiene habilitado \"aplica precio por ciudad\"", HttpStatus.BAD_REQUEST);
         }
+        // TP-08: con la cobertura por sede encendida, un servicio con precio por ciudad necesita el recargo de ciudad intermedia y de municipio
+        if (parametrosTienda.activo(com.polygraph.erp.modules.tienda.service.ParametrosTiendaService.COBERTURA_POR_SEDE)) {
+            exigirRecargos(proceso.getNombreProceso(), items.stream().filter(it -> it.valor() != null && it.valor().signum() > 0)
+                    .map(PrecioCiudadRequest::nivelCiudad).collect(java.util.stream.Collectors.toSet()));
+        }
         precioCiudadRepository.deleteByProceso_IdProceso(idProceso);
         List<PrecioCiudadProceso> nuevos = items.stream()
                 .map(it -> PrecioCiudadProceso.builder()
@@ -414,6 +515,16 @@ public class ProcesoService {
         precioCiudadRepository.saveAll(nuevos);
         log.info("Precios por ciudad actualizados: proceso={}, niveles={}", proceso.getNombreProceso(), items.size());
         return listarPreciosCiudad(idProceso);
+    }
+
+    private void exigirRecargos(String servicio, java.util.Set<com.polygraph.erp.shared.enums.NivelCiudad> cargados) {
+        java.util.List<String> faltan = new java.util.ArrayList<>();
+        if (!cargados.contains(com.polygraph.erp.shared.enums.NivelCiudad.INTERMEDIA)) faltan.add("ciudad intermedia");
+        if (!cargados.contains(com.polygraph.erp.shared.enums.NivelCiudad.MUNICIPIO_SECUNDARIO)) faltan.add("municipio");
+        if (!faltan.isEmpty()) {
+            throw new ApiException("«" + servicio + "» tiene el precio por ciudad encendido y le falta el recargo de: " + String.join(" y ", faltan)
+                    + ". Cárgalo o apaga «precio por ciudad».", HttpStatus.BAD_REQUEST);
+        }
     }
 
     private ProcesoTipoProgreso findPaso(Integer id) {

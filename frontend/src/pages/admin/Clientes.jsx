@@ -9,6 +9,9 @@ import MenuAcciones from '../../components/ui/MenuAcciones'
 import CiudadSelect from '../../components/CiudadSelect'
 import BarrioSelect from '../../components/BarrioSelect'
 import ModalDocumentosCliente from '../../components/ModalDocumentosCliente'
+import { useConfigTienda } from '../../hooks/useConfigTienda'
+import ConvertirPospago from './ConvertirPospago'
+import ReportePospago from './ReportePospago'
 
 /* ─── Helpers ─── */
 
@@ -174,6 +177,8 @@ function Avatar({ nombre, apellido, rol, size = 'h-11 w-11 text-sm' }) {
 /* ─── Modal editar cliente ─── */
 function ModalEditar({ cliente, onClose, onGuardado }) {
   const idCampos = useId()
+  const config = useConfigTienda()
+  const modalidadBloqueada = config.altaPospagoControlada   // TP-13: pasar a pospago es «Convertir a pospago»
   const esNaturalOriginal = cliente.tipoPersona === 'NATURAL'
   const [form, setForm] = useState({
     tipoPersona:        cliente.tipoPersona,
@@ -239,11 +244,13 @@ function ModalEditar({ cliente, onClose, onGuardado }) {
           </div>
           <div>
             <label htmlFor={`${idCampos}-2`} className="block text-xs font-medium text-gray-600 mb-1">Modalidad de pago</label>
-            <select id={`${idCampos}-2`} name="tipoCliente" value={form.tipoCliente} onChange={handleChange}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
+            <select id={`${idCampos}-2`} name="tipoCliente" value={form.tipoCliente} onChange={handleChange} disabled={modalidadBloqueada}
+              aria-describedby={modalidadBloqueada ? `${idCampos}-2h` : undefined}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white disabled:bg-gray-100 disabled:text-gray-600">
               <option value="PREPAGO">Prepago</option>
               <option value="POSPAGO">Pospago</option>
             </select>
+            {modalidadBloqueada && <p id={`${idCampos}-2h`} className="mt-1 text-[11px] text-gray-600">Para pasar a pospago usa «Convertir a pospago».</p>}
           </div>
         </div>
         {(form.tipoPersona !== cliente.tipoPersona || form.tipoCliente !== cliente.tipoCliente) && (
@@ -686,6 +693,14 @@ export default function Clientes() {
 
   const [editando, setEditando] = useState(null)
   const [documentosDe, setDocumentosDe] = useState(null)
+  const config = useConfigTienda()
+  const [convirtiendo, setConvirtiendo] = useState(null)   // TP-13
+  const [verReporte, setVerReporte] = useState(false)
+  const [pendientesPospago, setPendientesPospago] = useState(0)
+  useEffect(() => {
+    if (!config.altaPospagoControlada) { setPendientesPospago(0); return }
+    api.get('/clientes/pospago/reporte').then((r) => setPendientesPospago(r.data.filter((f) => !f.cumpleTodo).length)).catch(() => setPendientesPospago(0))
+  }, [config.altaPospagoControlada])
   const [usuariosDe, setUsuariosDe] = useState(null)
 
   // Prefiere el resultado del buscador global (Ctrl+K) — llega como /admin/clientes?q=nombre.
@@ -795,6 +810,13 @@ export default function Clientes() {
           <p className="text-sm text-gray-500 mt-0.5">Gestión y validaciones de cuentas cliente</p>
         </div>
       </div>
+
+      {config.altaPospagoControlada && pendientesPospago > 0 && (
+        <div role="status" className="mb-4 bg-amber-50 border border-amber-200 text-amber-900 text-sm px-4 py-3 rounded-lg flex flex-wrap items-center justify-between gap-2">
+          <span>{pendientesPospago} cliente{pendientesPospago !== 1 ? 's' : ''} pospago {pendientesPospago !== 1 ? 'tienen' : 'tiene'} requisitos pendientes de la lista de verificación. Siguen operando con su cupo.</span>
+          <button type="button" onClick={() => setVerReporte(true)} className="font-semibold underline">Ver reporte</button>
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg flex items-center justify-between">
@@ -940,6 +962,11 @@ export default function Clientes() {
                       <MenuAcciones opciones={[
                         { label: 'Documentos', icono: <IconDocumento />, onClick: () => setDocumentosDe(c) },
                         { label: 'Editar', icono: <IconLapiz />, onClick: () => setEditando(c) },
+                        // TP-13: una sola opción, solo para personas jurídicas
+                        config.altaPospagoControlada && c.tipoPersona === 'JURIDICA' && {
+                          label: c.tipoCliente === 'PREPAGO' ? 'Convertir a pospago' : 'Requisitos pospago',
+                          icono: <IconDocumento />, onClick: () => setConvirtiendo(c),
+                        },
                         {
                           label: c.estado === 'ACTIVO' ? 'Desactivar' : 'Activar',
                           icono: <IconPower />,
@@ -968,6 +995,16 @@ export default function Clientes() {
           onClose={() => setEditando(null)}
           onGuardado={() => { cargar(); mostrarToast('Cliente actualizado correctamente') }}
         />
+      )}
+
+      {convirtiendo && (
+        <ConvertirPospago cliente={convirtiendo} onClose={() => setConvirtiendo(null)}
+          onAbrirDocumentos={(cl) => setDocumentosDe(cl)}
+          onAprobado={(msg) => { cargar(); mostrarToast(msg) }} />
+      )}
+      {verReporte && (
+        <ReportePospago onClose={() => setVerReporte(false)}
+          onVer={(id) => { const cl = clientes.find((x) => x.idCliente === id); if (cl) { setVerReporte(false); setConvirtiendo(cl) } }} />
       )}
 
       {documentosDe && (

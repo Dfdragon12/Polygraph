@@ -6,6 +6,14 @@ import { alCambiarTexto } from '../../../utils/texto'
 import { Modal, ConfirmModal } from '../../../components/ui/Modal'
 import MenuAcciones from '../../../components/ui/MenuAcciones'
 import Paginacion, { usePaginacion } from '../../../components/ui/Paginacion'
+import TarjetasPlanes from '../../../components/tienda/TarjetasPlanes'
+import { TextosCliente, BeneficiosPorPlan, PreciosPorPlan, HistorialPrecios, useAnalisisPrecios, UNIDADES_PLAN } from './SeccionesTienda'
+import PlanesTienda from './PlanesTienda'
+import ListaPospago from './ListaPospago'
+import SeccionPrecioPospago from './SeccionPrecioPospago'
+import ImportarPrecios from './ImportarPrecios'
+import LimpiezaCatalogo from './LimpiezaCatalogo'
+import { useConfigTienda } from '../../../hooks/useConfigTienda'
 
 /* ─── Paleta dinámica de colores para clasificaciones ─── */
 const PALETA = [
@@ -151,139 +159,6 @@ function ModalConfirmacion({ progreso, impacto, cargando, onConfirmar, onCancela
   )
 }
 
-/* ─── Precios por volumen de un proceso — solo disponible al editar (el proceso ya debe existir) ─── */
-function SeccionTramos({ proceso, onCambio }) {
-  const [tramos, setTramos] = useState(proceso.tramosPrecio ?? [])
-  const [agregando, setAgregando] = useState(false)
-  const [nuevoTramo, setNuevoTramo] = useState({ cantidadMinima: '', valorUnitario: '' })
-  const [editandoId, setEditandoId] = useState(null)
-  const [edicion, setEdicion] = useState({ cantidadMinima: '', valorUnitario: '' })
-  const [guardando, setGuardando] = useState(false)
-  const [error, setError] = useState(null)
-
-  const ordenar = (lista) => [...lista].sort((a, b) => a.cantidadMinima - b.cantidadMinima)
-
-  const crear = async () => {
-    setGuardando(true); setError(null)
-    try {
-      const { data } = await api.post(`/catalogo/procesos/${proceso.idProceso}/tramos`, {
-        cantidadMinima: Number(nuevoTramo.cantidadMinima),
-        valorUnitario: Number(nuevoTramo.valorUnitario),
-      })
-      setTramos(prev => ordenar([...prev, data]))
-      setNuevoTramo({ cantidadMinima: '', valorUnitario: '' })
-      setAgregando(false)
-      onCambio?.()
-    } catch (err) {
-      setError(mensajeErrorValidacion(err))
-    } finally { setGuardando(false) }
-  }
-
-  const actualizar = async (idTramo) => {
-    setGuardando(true); setError(null)
-    try {
-      const { data } = await api.put(`/catalogo/procesos/${proceso.idProceso}/tramos/${idTramo}`, {
-        cantidadMinima: Number(edicion.cantidadMinima),
-        valorUnitario: Number(edicion.valorUnitario),
-      })
-      setTramos(prev => ordenar(prev.map(t => t.idTramo === idTramo ? data : t)))
-      setEditandoId(null)
-      onCambio?.()
-    } catch (err) {
-      setError(mensajeErrorValidacion(err))
-    } finally { setGuardando(false) }
-  }
-
-  const eliminar = async (idTramo) => {
-    setError(null)
-    try {
-      await api.delete(`/catalogo/procesos/${proceso.idProceso}/tramos/${idTramo}`)
-      setTramos(prev => prev.filter(t => t.idTramo !== idTramo))
-      onCambio?.()
-    } catch (err) {
-      setError(mensajeErrorValidacion(err))
-    }
-  }
-
-  return (
-    <div className="rounded-xl border border-gray-200 overflow-hidden">
-      <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
-        <div>
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Precios por volumen</p>
-          <p className="text-xs text-gray-400 mt-0.5">Descuento automático al comprar cantidades grandes</p>
-        </div>
-        {!agregando && (
-          <button type="button" onClick={() => setAgregando(true)}
-            className="text-xs font-medium text-primary-600 hover:text-primary-800">+ Agregar tramo</button>
-        )}
-      </div>
-      <div className="p-4">
-        {error && <div className="bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2 rounded-lg mb-2">{error}</div>}
-
-        {tramos.length === 0 && !agregando && (
-          <p className="text-xs text-gray-400">Sin tramos configurados — siempre se cobra el valor base.</p>
-        )}
-
-        {(tramos.length > 0 || agregando) && (
-          <div className="grid grid-cols-[1fr_1fr_auto] gap-x-3 gap-y-1.5 items-center">
-            <span className="text-xs font-medium text-gray-400">Cantidad mínima</span>
-            <span className="text-xs font-medium text-gray-400">Valor unitario</span>
-            <span />
-
-            {tramos.map(t => (
-              editandoId === t.idTramo ? (
-                <Fragment key={t.idTramo}>
-                  <input aria-label="Cantidad mínima del tramo" type="number" min={2} value={edicion.cantidadMinima} autoFocus
-                    onChange={e => setEdicion(p => ({ ...p, cantidadMinima: e.target.value }))}
-                    placeholder="Cant. mín" className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm" />
-                  <input aria-label="Valor unitario" type="number" min={0} step="0.01" value={edicion.valorUnitario}
-                    onChange={e => setEdicion(p => ({ ...p, valorUnitario: e.target.value }))}
-                    placeholder="Valor unitario" className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm" />
-                  <div className="flex items-center gap-2 whitespace-nowrap">
-                    <button type="button" disabled={guardando} onClick={() => actualizar(t.idTramo)}
-                      className="text-xs font-medium text-primary-600 hover:text-primary-800">Guardar</button>
-                    <button type="button" onClick={() => setEditandoId(null)} className="text-xs text-gray-400">Cancelar</button>
-                  </div>
-                </Fragment>
-              ) : (
-                <Fragment key={t.idTramo}>
-                  <span className="text-sm text-gray-700 bg-gray-50 rounded-lg px-3 py-2">Desde <strong>{t.cantidadMinima}</strong> und.</span>
-                  <span className="text-sm font-semibold text-primary-700 bg-gray-50 rounded-lg px-3 py-2">{fmtValor(t.valorUnitario)} c/u</span>
-                  <div className="flex items-center gap-3 px-1 whitespace-nowrap">
-                    <button type="button"
-                      onClick={() => { setEditandoId(t.idTramo); setEdicion({ cantidadMinima: String(t.cantidadMinima), valorUnitario: String(t.valorUnitario) }) }}
-                      className="text-xs text-primary-600 hover:underline">Editar</button>
-                    <button type="button" onClick={() => eliminar(t.idTramo)} className="text-xs text-red-500 hover:underline">Eliminar</button>
-                  </div>
-                </Fragment>
-              )
-            ))}
-
-            {agregando && (
-              <Fragment>
-                <input aria-label="Cantidad mínima del nuevo tramo" type="number" min={2} value={nuevoTramo.cantidadMinima} autoFocus
-                  onChange={e => setNuevoTramo(p => ({ ...p, cantidadMinima: e.target.value }))}
-                  placeholder="Ej: 20" className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm" />
-                <input aria-label="Valor unitario" type="number" min={0} step="0.01" value={nuevoTramo.valorUnitario}
-                  onChange={e => setNuevoTramo(p => ({ ...p, valorUnitario: e.target.value }))}
-                  placeholder="Valor unitario" className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm" />
-                <div className="flex items-center gap-2 whitespace-nowrap">
-                  <button type="button" disabled={guardando || !nuevoTramo.cantidadMinima || !nuevoTramo.valorUnitario} onClick={crear}
-                    className="text-xs font-medium text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50 px-3 py-1.5 rounded-lg">
-                    Guardar
-                  </button>
-                  <button type="button" onClick={() => { setAgregando(false); setNuevoTramo({ cantidadMinima: '', valorUnitario: '' }) }}
-                    className="text-xs text-gray-400">Cancelar</button>
-                </div>
-              </Fragment>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
 const NIVELES_CIUDAD = [
   { valor: 'PRINCIPAL',            etiqueta: 'Principal' },
   { valor: 'INTERMEDIA',           etiqueta: 'Intermedia / municipio principal' },
@@ -325,13 +200,25 @@ function FormProceso({ proceso, clasificaciones, clasificacionDefaultId, onClose
     nombreProceso:       proceso?.nombreProceso ?? '',
     descripcion:         proceso?.descripcion  ?? '',
     idClasificacion:     proceso?.clasificacion?.idClasificacion ?? clasificacionDefaultId ?? '',
-    valor:               proceso?.valor != null ? String(proceso.valor) : '',
     diasHabilesEntrega:  proceso?.diasHabilesEntrega != null ? String(proceso.diasHabilesEntrega) : '5',
     aplicaPrecioCiudad:  proceso?.aplicaPrecioCiudad ?? false,
     requiereHojaVida:    proceso?.requiereHojaVida ?? true,
     requiereDireccion:   proceso?.requiereDireccion ?? false,
     ciudadEsDePrueba:    proceso?.ciudadEsDePrueba ?? false,
     puntosClave:         (proceso?.puntosClave ?? []).join('\n'),
+    tituloComercial:     proceso?.tituloComercial ?? '',
+    frasePrincipal:      proceso?.frasePrincipal ?? '',
+    descripcionCorta:    proceso?.descripcionCorta ?? '',
+    incluye:             (proceso?.incluye ?? []).join('\n'),
+    idealPara:           proceso?.idealPara ?? '',
+    unidadSingular:      proceso?.unidadSingular ?? '',
+    unidadPlural:        proceso?.unidadPlural ?? '',
+    costoDirecto:        proceso?.costoDirecto != null ? String(proceso.costoDirecto) : '',
+    visibleEnTienda:     proceso?.visibleEnTienda ?? true,
+    aplicaIva:           proceso?.aplicaIva ?? true,
+    ofrecerPospago:      proceso?.ofrecerPospago ?? true,
+    modoPrecioPospago:   proceso?.modoPrecioPospago ?? 'PLAN_100',
+    precioPospagoPropio: proceso?.precioPospagoPropio != null ? String(proceso.precioPospagoPropio) : '',
     preciosCiudad:       Object.fromEntries(NIVELES_CIUDAD.map(n => {
       const existente = proceso?.preciosCiudad?.find(p => p.nivelCiudad === n.valor)
       return [n.valor, existente ? String(existente.valor) : '']
@@ -340,24 +227,78 @@ function FormProceso({ proceso, clasificaciones, clasificacionDefaultId, onClose
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState(null)
 
+  const set = (campo, valor) => setForm(p => ({ ...p, [campo]: valor }))
+  const [precios, setPrecios] = useState({ 1: '', 5: '', 20: '', 100: '', 200: '' })
+  const [beneficios, setBeneficios] = useState([])
+  const config = useConfigTienda()
+  const conIva = config.cobroConIva
+  const analisis = useAnalisisPrecios(precios, form.costoDirecto)
+
+  // Al editar se cargan los precios y beneficios que ya tiene el servicio; el análisis (margen, descuentos) lo calcula el backend.
+  useEffect(() => {
+    if (!proceso) return
+    api.get(`/catalogo/procesos/${proceso.idProceso}/precios-plan`).then(r => {
+      setPrecios(prev => {
+        const nuevo = { ...prev }
+        r.data.planes.forEach(f => { nuevo[f.unidades] = f.precioUnitario != null ? String(f.precioUnitario) : '' })
+        return nuevo
+      })
+    }).catch(() => {})
+    api.get(`/catalogo/procesos/${proceso.idProceso}/beneficios`).then(r => setBeneficios(r.data.map(b => ({ texto: b.texto, desdeUnidades: b.desdeUnidades })))).catch(() => {})
+  }, [proceso])
+
   const handleSubmit = async (e) => {
     e.preventDefault(); setGuardando(true); setError(null)
+    const lineasIncluye = form.incluye.split('\n').map(l => l.trim()).filter(Boolean)
+    if (lineasIncluye.length > 6) {
+      setError('«Qué incluye» admite máximo 6 líneas.'); setGuardando(false); return
+    }
     const payload = {
       nombreProceso:      form.nombreProceso,
       descripcion:        form.descripcion || null,
       idClasificacion:    Number(form.idClasificacion),
-      valor:              form.valor !== '' ? Number(form.valor) : null,
       diasHabilesEntrega: form.diasHabilesEntrega !== '' ? Number(form.diasHabilesEntrega) : null,
       aplicaPrecioCiudad: form.aplicaPrecioCiudad,
       requiereHojaVida:   form.requiereHojaVida,
       requiereDireccion:  form.requiereDireccion,
       ciudadEsDePrueba:   form.ciudadEsDePrueba,
       puntosClave:        form.puntosClave.split('\n').map(l => l.trim()).filter(Boolean),
+      tituloComercial:    form.tituloComercial,
+      frasePrincipal:     form.frasePrincipal,
+      descripcionCorta:   form.descripcionCorta,
+      incluye:            lineasIncluye,
+      idealPara:          form.idealPara,
+      unidadSingular:     form.unidadSingular,
+      unidadPlural:       form.unidadPlural,
+      costoDirecto:       form.costoDirecto !== '' ? Number(form.costoDirecto) : null,
+      visibleEnTienda:    form.visibleEnTienda,
+      aplicaIva:          form.aplicaIva,
+      ofrecerPospago:     form.ofrecerPospago,
+      modoPrecioPospago:  form.modoPrecioPospago,
+      precioPospagoPropio: form.modoPrecioPospago === 'PROPIO' && form.precioPospagoPropio !== '' ? Number(form.precioPospagoPropio) : null,
+    }
+    // Solo los planes visibles: un plan oculto no se toca. El precio del plan de 1 unidad es el precio base del servicio.
+    const entradas = (analisis?.planes?.map(f => f.unidades) ?? UNIDADES_PLAN)
+      .map(u => ({ unidades: u, precioUnitario: precios[u] !== '' ? Number(precios[u]) : null }))
+    const hayPrecioBase = precios[1] !== ''
+    // TP-08: con la cobertura por sede encendida, un servicio con precio por ciudad necesita el recargo de ciudad intermedia y de municipio.
+    if (config.coberturaPorSede && form.aplicaPrecioCiudad && !(Number(form.preciosCiudad.INTERMEDIA) > 0 && Number(form.preciosCiudad.MUNICIPIO_SECUNDARIO) > 0)) {
+      setError('Con «precio por ciudad» encendido debes cargar el recargo de ciudad intermedia y el de municipio (mayores a 0), o apagar la casilla.'); setGuardando(false); return
     }
     try {
-      const idProceso = proceso
-        ? (await api.put(`/catalogo/procesos/${proceso.idProceso}`, payload)).data.idProceso
-        : (await api.post('/catalogo/procesos', payload)).data.idProceso
+      let idProceso
+      if (proceso) {
+        idProceso = proceso.idProceso
+        // Primero los precios: si la escalera no es válida el backend responde 400 y no se guarda nada.
+        if (hayPrecioBase) await api.put(`/catalogo/procesos/${idProceso}/precios-plan`, { precios: entradas })
+        await api.put(`/catalogo/procesos/${idProceso}`, payload)
+      } else {
+        idProceso = (await api.post('/catalogo/procesos', { ...payload, valor: hayPrecioBase ? Number(precios[1]) : null })).data.idProceso
+        if (hayPrecioBase) await api.put(`/catalogo/procesos/${idProceso}/precios-plan`, { precios: entradas })
+      }
+      await api.put(`/catalogo/procesos/${idProceso}/beneficios`, {
+        beneficios: beneficios.filter(b => b.texto.trim()).map(b => ({ texto: b.texto.trim(), desdeUnidades: b.desdeUnidades })),
+      })
 
       if (form.aplicaPrecioCiudad) {
         const items = NIVELES_CIUDAD
@@ -372,6 +313,24 @@ function FormProceso({ proceso, clasificaciones, clasificacionDefaultId, onClose
       setError(mensajeErrorValidacion(err))
     } finally { setGuardando(false) }
   }
+
+  // Vista previa de las tarjetas como las verá el cliente. Precios, ahorro y paquete vienen del backend.
+  const clasifSel = clasificaciones.find(c => String(c.idClasificacion) === String(form.idClasificacion))
+  const servicioPrevia = {
+    categoria: clasifSel?.nombre,
+    titulo: form.tituloComercial.trim() || form.nombreProceso || 'Nombre del servicio',
+    frasePrincipal: form.frasePrincipal,
+    descripcionCorta: form.descripcionCorta,
+    incluye: form.incluye.split('\n').map(l => l.trim()).filter(Boolean),
+    idealPara: form.idealPara,
+    unidadSingular: form.unidadSingular,
+    unidadPlural: form.unidadPlural,
+    diasHabilesEntrega: form.diasHabilesEntrega !== '' ? Number(form.diasHabilesEntrega) : null,
+  }
+  const planesPrevia = (analisis?.planes ?? []).filter(f => f.precioUnitario != null).map(f => ({
+    ...f,
+    beneficios: beneficios.filter(b => b.texto.trim() && b.desdeUnidades <= f.unidades).map(b => b.texto.trim()),
+  }))
 
   return (
     <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
@@ -426,16 +385,6 @@ function FormProceso({ proceso, clasificaciones, clasificacionDefaultId, onClose
                   className="w-24 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
                 <span className="text-xs text-gray-400">días hábiles</span>
               </div>
-            </div>
-            {/* Valor base — editable */}
-            <div>
-              <label htmlFor={`${idCampos}-6`} className="block text-xs font-medium text-gray-600 mb-1">
-                Valor base (COP)
-              </label>
-              <input id={`${idCampos}-6`} type="number" min={0} step="0.01" value={form.valor}
-                onChange={e => setForm(p => ({ ...p, valor: e.target.value }))}
-                placeholder="Ej: 150000"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
             </div>
           </div>
 
@@ -493,47 +442,14 @@ function FormProceso({ proceso, clasificaciones, clasificacionDefaultId, onClose
             </span>
           </label>
 
-          {/* Valor calculado — solo lectura */}
-          {proceso ? (
-            proceso.valorCalculado != null ? (
-              <div className="bg-primary-50 border border-primary-200 rounded-xl px-4 py-3.5 flex items-center gap-4">
-                <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center flex-shrink-0">
-                  <svg className="h-5 w-5 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 11h.01M12 11h.01M15 11h.01M4 19h16a2 2 0 002-2V7a2 2 0 00-2-2H4a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                  </svg>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-primary-500 uppercase tracking-wider mb-0.5">Valor calculado desde subprocesos</p>
-                  <p className="text-xl font-bold text-primary-800 leading-tight">
-                    {fmtValor(proceso.valorCalculado)}
-                  </p>
-                  <p className="text-xs text-primary-400 mt-0.5">Suma de los {proceso.totalPasos} subproceso{proceso.totalPasos !== 1 ? 's' : ''} habilitados asignados</p>
-                </div>
-              </div>
-            ) : (
-              <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center gap-3">
-                <svg className="h-5 w-5 text-amber-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <div>
-                  <p className="text-xs font-semibold text-amber-600 uppercase tracking-wider mb-0.5">Valor calculado desde subprocesos</p>
-                  <p className="text-xs text-amber-600">Este proceso no tiene subprocesos con valor asignado. Configura los subprocesos para ver el cálculo automático.</p>
-                </div>
-              </div>
-            )
-          ) : (
-            <div className="bg-gray-50 border border-dashed border-gray-300 rounded-xl px-4 py-3 flex items-center gap-3">
-              <svg className="h-5 w-5 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 11h.01M12 11h.01M15 11h.01M4 19h16a2 2 0 002-2V7a2 2 0 00-2-2H4a2 2 0 00-2 2v10a2 2 0 002 2z" />
-              </svg>
-              <div>
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-0.5">Valor calculado desde subprocesos</p>
-                <p className="text-xs text-gray-400">Se calculará automáticamente una vez que asignes subprocesos a este proceso.</p>
-              </div>
-            </div>
-          )}
         </div>
       </div>
+
+      {!form.aplicaPrecioCiudad && Object.values(form.preciosCiudad).some(v => Number(v) > 0) && (
+        <p role="alert" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          Este servicio tiene recargos por ciudad guardados, pero la casilla «Aplica precio por ciudad» está apagada: esos recargos NO se están aplicando.
+        </p>
+      )}
 
       {form.aplicaPrecioCiudad && (
         <CamposPreciosCiudad
@@ -542,13 +458,39 @@ function FormProceso({ proceso, clasificaciones, clasificacionDefaultId, onClose
         />
       )}
 
-      {proceso ? (
-        <SeccionTramos proceso={proceso} onCambio={() => onGuardado()} />
-      ) : (
-        <div className="rounded-xl border border-dashed border-gray-300 px-4 py-3 text-xs text-gray-400">
-          Podrás configurar precios por volumen (descuento por cantidad) después de crear el proceso.
-        </div>
+      <TextosCliente form={form} set={set} />
+
+      <BeneficiosPorPlan beneficios={beneficios} onChange={setBeneficios} />
+
+      {config.pospagoPlan100 && (
+        <SeccionPrecioPospago form={form} set={set} precioPlan100={precios[100]} costoDirecto={form.costoDirecto} conIva={conIva} servicio={servicioPrevia} />
       )}
+
+      <PreciosPorPlan precios={precios} onPrecio={(u, v) => setPrecios(p => ({ ...p, [u]: v }))}
+        costoDirecto={form.costoDirecto} onCosto={(v) => set('costoDirecto', v)} analisis={analisis}
+        referenciaInterna={proceso?.valorCalculado != null ? { valor: proceso.valorCalculado, total: proceso.totalPasos } : null} />
+
+      <div className="flex flex-wrap gap-x-8 gap-y-2">
+        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+          <input type="checkbox" checked={form.visibleEnTienda} onChange={e => set('visibleEnTienda', e.target.checked)}
+            className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+          Visible en la tienda
+        </label>
+        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+          <input type="checkbox" checked={form.aplicaIva} onChange={e => set('aplicaIva', e.target.checked)}
+            className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+          Aplica IVA
+        </label>
+      </div>
+
+      <div className="rounded-xl border border-gray-200 overflow-hidden">
+        <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Vista previa para el cliente</p>
+        </div>
+        <div className="p-4"><TarjetasPlanes servicio={servicioPrevia} planes={planesPrevia} conIva={conIva} mostrarVigencia={config.vigenciaPorPlan} /></div>
+      </div>
+
+      {proceso && <HistorialPrecios idProceso={proceso.idProceso} />}
 
       <div className="flex justify-end gap-3 pt-1">
         <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancelar</button>
@@ -1498,6 +1440,8 @@ export default function Catalogo() {
   const [procesos,         setProcesos]         = useState([])
   const [cargandoProcesos, setCargandoProcesos] = useState(true)
   const [modalCrearProceso,    setModalCrearProceso]    = useState(false)
+  const [importandoPrecios,    setImportandoPrecios]    = useState(false)
+  const [limpiandoCatalogo,    setLimpiandoCatalogo]    = useState(false)
   const [editandoProceso,      setEditandoProceso]      = useState(null)
   const [configurandoProceso,  setConfigurandoProceso]  = useState(null)
   const [documentandoProceso,  setDocumentandoProceso]  = useState(null)
@@ -1665,6 +1609,8 @@ export default function Catalogo() {
     { id: 'procesos',        label: 'Procesos',        count: procesos.length        },
     { id: 'progresos',       label: 'Subprocesos',     count: progresos.length       },
     { id: 'clasificaciones', label: 'Clasificaciones', count: clasificaciones.length },
+    { id: 'planes',          label: 'Planes de la tienda', count: null          },
+    { id: 'pospago',         label: 'Lista pospago',   count: null          },
   ]
 
   return (
@@ -1678,7 +1624,9 @@ export default function Catalogo() {
               : 'Catálogo'}
           </h2>
           <p className="text-sm text-gray-500 mt-0.5">
-            {pestana === 'progresos'
+            {pestana === 'planes'
+              ? 'Planes, IVA e interruptores de la tienda prepago'
+              : pestana === 'progresos'
               ? 'Subprocesos disponibles para asignar a procesos'
               : pestana === 'clasificaciones'
               ? 'Tipos de proceso disponibles en el sistema'
@@ -1695,6 +1643,18 @@ export default function Catalogo() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
               </svg>
               Clasificaciones
+            </button>
+          )}
+          {pestana === 'procesos' && (
+            <button onClick={() => setImportandoPrecios(true)}
+              className="inline-flex items-center gap-2 border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+              Importar precios (JSON)
+            </button>
+          )}
+          {pestana === 'procesos' && (
+            <button onClick={() => setLimpiandoCatalogo(true)}
+              className="inline-flex items-center gap-2 border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+              Limpieza del catálogo
             </button>
           )}
           {pestana === 'procesos' && clasificacionActiva && (
@@ -1730,11 +1690,13 @@ export default function Catalogo() {
                 : 'text-gray-500 hover:text-gray-700 hover:bg-white/60'
             }`}>
             {p.label}
-            <span className={`inline-flex items-center justify-center h-5 min-w-[22px] px-1.5 rounded-full text-xs font-semibold ${
-              pestana === p.id ? 'bg-primary-100 text-primary-700' : 'bg-gray-200/80 text-gray-500'
-            }`}>
-              {p.count}
-            </span>
+            {p.count != null && (
+              <span className={`inline-flex items-center justify-center h-5 min-w-[22px] px-1.5 rounded-full text-xs font-semibold ${
+                pestana === p.id ? 'bg-primary-100 text-primary-700' : 'bg-gray-200/80 text-gray-500'
+              }`}>
+                {p.count}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -1769,6 +1731,10 @@ export default function Catalogo() {
             <Paginacion pagina={pagProcesos.pagina} total={pagProcesos.total} porPagina={pagProcesos.porPagina} onChange={pagProcesos.setPagina} />
           </>
         )
+      ) : pestana === 'planes' ? (
+        <PlanesTienda onToast={mostrarToast} />
+      ) : pestana === 'pospago' ? (
+        <ListaPospago />
       ) : pestana === 'progresos' ? (
         <>
           <BarraFiltros
@@ -1808,15 +1774,22 @@ export default function Catalogo() {
       )}
 
       {/* ── Modales procesos ── */}
+      {limpiandoCatalogo && (
+        <LimpiezaCatalogo onClose={() => setLimpiandoCatalogo(false)} onAplicada={(msg) => { mostrarToast(msg); cargarProcesos() }} />
+      )}
+      {importandoPrecios && (
+        <ImportarPrecios onClose={() => setImportandoPrecios(false)}
+          onImportado={(msg) => { mostrarToast(msg); cargarProcesos() }} />
+      )}
       {modalCrearProceso && (
-        <Modal titulo="Nuevo proceso" ancho="max-w-2xl" onClose={() => setModalCrearProceso(false)}>
+        <Modal titulo="Nuevo proceso" ancho="max-w-4xl" onClose={() => setModalCrearProceso(false)}>
           <FormProceso proceso={null} clasificaciones={clasificaciones}
             clasificacionDefaultId={clasificacionDefaultId}
             onClose={() => setModalCrearProceso(false)} onGuardado={cargarProcesos} />
         </Modal>
       )}
       {editandoProceso && (
-        <Modal titulo={`Editar — ${editandoProceso.nombreProceso}`} ancho="max-w-2xl" onClose={() => setEditandoProceso(null)}>
+        <Modal titulo={`Editar — ${editandoProceso.nombreProceso}`} ancho="max-w-4xl" onClose={() => setEditandoProceso(null)}>
           <FormProceso proceso={editandoProceso} clasificaciones={clasificaciones}
             clasificacionDefaultId={clasificacionDefaultId}
             onClose={() => setEditandoProceso(null)} onGuardado={cargarProcesos} />

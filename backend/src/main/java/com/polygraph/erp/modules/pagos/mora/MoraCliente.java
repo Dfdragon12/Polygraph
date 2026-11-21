@@ -25,8 +25,15 @@ public final class MoraCliente {
     }
 
     public static Resultado calcular(List<Factura> facturas, LocalDate hoy) {
+        return calcular(facturas, hoy, 0);
+    }
+
+    /**
+     * TP-14: en mora = al menos una factura sin pagar vencida hace MÁS de {@code diasGracia} días (con 0, la regla de siempre: venció ayer o antes).
+     */
+    public static Resultado calcular(List<Factura> facturas, LocalDate hoy, int diasGracia) {
         List<Factura> vencidas = facturas.stream()
-                .filter(f -> !f.pagada() && f.vencimiento() != null && f.vencimiento().isBefore(hoy))
+                .filter(f -> !f.pagada() && f.vencimiento() != null && f.vencimiento().plusDays(Math.max(0, diasGracia)).isBefore(hoy))
                 .sorted((a, b) -> a.vencimiento().compareTo(b.vencimiento()))
                 .toList();
         if (vencidas.isEmpty()) return Resultado.SIN_MORA;

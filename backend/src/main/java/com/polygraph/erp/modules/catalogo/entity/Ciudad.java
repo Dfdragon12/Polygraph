@@ -36,4 +36,9 @@ public class Ciudad {
 
     @Column(name = "pendiente_confirmacion", nullable = false)
     private Boolean pendienteConfirmacion;
+
+    /** TP-08: ciudad sede (hoy Bogotá y Medellín): sin recargo por ciudad en el paquete por sede. */
+    @Builder.Default
+    @Column(name = "es_sede", nullable = false)
+    private Boolean esSede = false;
 }

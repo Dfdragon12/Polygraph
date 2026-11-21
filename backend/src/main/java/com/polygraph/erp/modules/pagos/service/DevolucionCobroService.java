@@ -1,7 +1,10 @@
 package com.polygraph.erp.modules.pagos.service;
 
 import com.polygraph.erp.modules.clientes.repository.ClientePospagoRepository;
+import com.polygraph.erp.modules.pagos.entity.LotePrepago;
 import com.polygraph.erp.modules.pagos.repository.LotePrepagoRepository;
+import com.polygraph.erp.modules.tienda.service.CalculadoraVigencia;
+import com.polygraph.erp.modules.tienda.service.ParametrosTiendaService;
 import com.polygraph.erp.modules.pagos.repository.MovimientoCreditoPospagoRepository;
 import com.polygraph.erp.modules.pagos.repository.SaldoServicioClienteRepository;
 import com.polygraph.erp.modules.servicios.entity.Servicio;
@@ -31,6 +34,8 @@ public class DevolucionCobroService {
     private final MovimientoCreditoPospagoRepository movimientoRepository;
     private final ClientePospagoRepository clientePospagoRepository;
     private final SaldoServicioClienteService saldoService;
+    private final RecargoPendienteService recargos;
+    private final ParametrosTiendaService parametros;
 
     /** @return true si devolvió algo ahora; false si ya estaba devuelto o no hay nada que devolver (p. ej. pospago ya facturado). */
     @Transactional
@@ -38,21 +43,52 @@ public class DevolucionCobroService {
         if (servicio.getCobroDevueltoEn() != null || servicio.getCliente() == null) return false;
         var cliente = servicio.getCliente();
         LocalDateTime ahora = LocalDateTime.now();
-        if (cliente.getTipoCliente() == TipoCliente.PREPAGO && servicio.getProceso() != null) {
-            if (saldoRepository.devolverUna(cliente.getIdCliente(), servicio.getProceso().getIdProceso(), ahora) == 0) {
+        // TP-12: un cliente pospago que gastó una unidad de su bolsa prepago también la recupera (coberturaConsumo la marca)
+        boolean usoBolsa = cliente.getTipoCliente() == TipoCliente.PREPAGO || servicio.getCoberturaConsumo() != null;
+        if (usoBolsa && servicio.getProceso() != null) {
+            var lote = servicio.getIdLotePrepago() != null ? loteRepository.findById(servicio.getIdLotePrepago()).orElse(null) : null;
+            LocalDateTime ahoraBogota = LocalDateTime.now(ParametrosTiendaService.ZONA);
+            // TP-09: si el lote de donde salió la unidad ya venció, la unidad vuelve en un lote de devolución de 1 unidad (mismo precio y cobertura)
+            // que vence a diasExtraDevolucionVencida días; el lote vencido no se toca (esa unidad SÍ se usó).
+            boolean loteVencido = lote != null && (lote.getFechaVencida() != null
+                    || CalculadoraVigencia.vencido(lote.getFechaVencimiento(), ahoraBogota));
+            // TP-08: una unidad del paquete nacional no tiene contador: solo vive en su lote
+            boolean nacional = "NACIONAL".equals(servicio.getCoberturaConsumo());
+            int idProceso = servicio.getProceso().getIdProceso();
+            int filas;
+            if (nacional) filas = lote != null ? 1 : 0;
+            else if (loteVencido) filas = saldoRepository.devolverUnaEnLoteNuevo(cliente.getIdCliente(), idProceso, ahora);
+            else filas = saldoRepository.devolverUna(cliente.getIdCliente(), idProceso, ahora);
+            if (filas == 0) {
                 log.warn("Cancelación de {}: no hay unidad consumida que devolver (cliente {})", servicio.getIdServicio(), cliente.getIdCliente());
                 return false;
             }
-            if (servicio.getIdLotePrepago() != null) {
-                loteRepository.findById(servicio.getIdLotePrepago()).ifPresent(l -> {
-                    if (l.getCantidadConsumida() > 0) { l.setCantidadConsumida(l.getCantidadConsumida() - 1); loteRepository.save(l); }
-                });
+            if (loteVencido) {
+                int dias = parametros.entero("diasExtraDevolucionVencida");
+                loteRepository.save(LotePrepago.builder().cliente(cliente).proceso(servicio.getProceso()).cobertura(lote.getCobertura())
+                        .cantidadComprada(1).cantidadConsumida(0).valorUnitario(lote.getValorUnitario()).valorOriginal(lote.getValorOriginal())
+                        .nombreDescuentoAplicado(lote.getNombreDescuentoAplicado()).fechaCompra(ahoraBogota)
+                        .fechaVencimiento(CalculadoraVigencia.finDelDia(ahoraBogota.toLocalDate().plusDays(dias))).origen("DEVOLUCION").build());
+                log.info("Lote vencido {}: la unidad vuelve en un lote de devolución que vence en {} días", lote.getIdLote(), dias);
+            } else if (lote != null && lote.getCantidadConsumida() > 0) {
+                lote.setCantidadConsumida(lote.getCantidadConsumida() - 1);   // vuelve a SU mismo lote, con su vencimiento original
+                loteRepository.save(lote);
             }
+            // Si se alcanzó a pagar el recargo por ciudad, se reversa (como crédito en la próxima compra); el que seguía pendiente se descarta.
+            if (cliente.getTipoCliente() == TipoCliente.PREPAGO) recargos.reversarPorCancelacion(cliente, servicio.getCandidato(), servicio.getProceso());
+            else anularCargoPospago(servicio, cliente, ahora);   // el recargo de un cliente pospago va al cupo: vuelve al cupo
             servicio.setCobroDevueltoEn(ahora);
             log.info("Unidad devuelta a la bolsa: servicio={}, cliente={}, lote={}", servicio.getIdServicio(), cliente.getIdCliente(), servicio.getIdLotePrepago());
             return true;
         }
         if (cliente.getTipoCliente() == TipoCliente.POSPAGO) {
+            return anularCargoPospago(servicio, cliente, ahora);
+        }
+        return false;
+    }
+
+    /** Anula el cargo de la solicitud (no se factura) y devuelve su valor al cupo. @return true si devolvió algo ahora. */
+    private boolean anularCargoPospago(Servicio servicio, com.polygraph.erp.modules.clientes.entity.Cliente cliente, LocalDateTime ahora) {
             var mov = movimientoRepository.findFirstByServicio_IdServicioOrderByFechaGeneradoDesc(servicio.getIdServicio()).orElse(null);
             if (mov == null) { servicio.setCobroDevueltoEn(ahora); return false; }
             if (mov.getAnuladoEn() != null) return false;
@@ -70,8 +106,6 @@ public class DevolucionCobroService {
             servicio.setCobroDevueltoEn(ahora);
             log.info("Cupo devuelto: servicio={}, cliente={}, monto={}", servicio.getIdServicio(), cliente.getIdCliente(), mov.getMontoTotal());
             return true;
-        }
-        return false;
     }
 
     /** Se revirtió la cancelación: se cobra otra vez lo que se había devuelto. Sin saldo o sin cupo, no se puede revertir (409). */
@@ -79,11 +113,17 @@ public class DevolucionCobroService {
     public void volverACobrar(Servicio servicio) {
         if (servicio.getCobroDevueltoEn() == null || servicio.getCliente() == null) return;
         var cliente = servicio.getCliente();
-        if (cliente.getTipoCliente() == TipoCliente.PREPAGO && servicio.getProceso() != null) {
-            var unidad = saldoService.descontar(cliente.getIdCliente(), servicio.getProceso());
+        if ((cliente.getTipoCliente() == TipoCliente.PREPAGO || servicio.getCoberturaConsumo() != null) && servicio.getProceso() != null) {
+            // la misma bolsa de donde salió (TP-08); sin dato, la de siempre
+            var unidad = saldoService.descontar(cliente.getIdCliente(), servicio.getProceso(),
+                    servicio.getCoberturaConsumo() != null ? servicio.getCoberturaConsumo() : "LOCAL");
             servicio.setIdLotePrepago(unidad.idLote());
+            servicio.setCoberturaConsumo(unidad.cobertura());
+            if (servicio.getCandidato() != null) recargos.registrarSiAplica(cliente, servicio.getCandidato(), servicio.getProceso(),
+                    servicio.getCandidato().getIdCiudadResidencia(), "Recargo restablecido al revertir la cancelación", unidad.cobertura());
             servicio.setValorUnitarioPrepago(unidad.valorUnitario());
-        } else if (cliente.getTipoCliente() == TipoCliente.POSPAGO) {
+        }
+        if (cliente.getTipoCliente() == TipoCliente.POSPAGO) {
             var mov = movimientoRepository.findFirstByServicio_IdServicioOrderByFechaGeneradoDesc(servicio.getIdServicio()).orElse(null);
             if (mov != null && mov.getAnuladoEn() != null) {
                 var p = clientePospagoRepository.findByIdCliente(cliente.getIdCliente()).orElse(null);

@@ -25,6 +25,11 @@ public class OrdenCompraController {
         return ResponseEntity.status(HttpStatus.CREATED).body(ordenCompraService.crearOrden(request, auth.getName()));
     }
 
+    @PostMapping("/cotizar")
+    public ResponseEntity<CotizacionOrdenResponse> cotizar(@Valid @RequestBody CrearOrdenRequest request, Authentication auth) {
+        return ResponseEntity.ok(ordenCompraService.cotizar(request, auth.getName()));
+    }
+
     @PostMapping("/validar-cupon")
     public ResponseEntity<ValidarCuponResponse> validarCupon(@Valid @RequestBody CrearOrdenRequest request, Authentication auth) {
         return ResponseEntity.ok(ordenCompraService.validarCupon(request, auth.getName()));

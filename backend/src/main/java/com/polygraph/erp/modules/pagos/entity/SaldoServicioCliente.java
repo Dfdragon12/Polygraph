@@ -38,6 +38,11 @@ public class SaldoServicioCliente {
     @Column(name = "cantidad_disponible", nullable = false)
     private Integer cantidadDisponible;
 
+    /** TP-07: unidades que vencieron sin usarse. disponible = comprada - consumida - vencida. */
+    @Builder.Default
+    @Column(name = "cantidad_vencida", nullable = false)
+    private Integer cantidadVencida = 0;
+
     @Column(name = "fecha_actualizacion", nullable = false)
     private LocalDateTime fechaActualizacion;
 }

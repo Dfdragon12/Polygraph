@@ -14,5 +14,6 @@ public record EstadoCuentaClienteResponse(
         BigDecimal limiteCredito,        // solo pospago
         BigDecimal creditoDisponible,    // solo pospago
         String estadoMora,               // solo pospago
-        Boolean requiereAprobacion       // solo pospago
+        Boolean requiereAprobacion,      // solo pospago
+        Integer diaCorte                 // solo pospago (TP-13): día del mes del corte de facturación
 ) {}

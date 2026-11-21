@@ -11,6 +11,8 @@ public record MovimientoCreditoPospagoResponse(
         String nombreCiudad,
         BigDecimal montoBase,
         BigDecimal montoRecargoCiudad,
+        BigDecimal montoIvaBase,
+        BigDecimal montoIvaRecargo,
         BigDecimal montoTotal,
         LocalDateTime fechaGenerado
 ) {}

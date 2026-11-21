@@ -50,6 +50,10 @@ public class Servicio {
     @Column(name = "valor_unitario_prepago", precision = 15, scale = 2)
     private java.math.BigDecimal valorUnitarioPrepago;
 
+    /** TP-08: de qué bolsa salió la unidad prepago (LOCAL = por sede, NACIONAL). Null = solicitud anterior o pospago. La devolución al cancelar vuelve a esa bolsa. */
+    @Column(name = "cobertura_consumo", length = 20)
+    private String coberturaConsumo;
+
     /** NS-04: cuándo se le devolvió al cliente lo que costó esta solicitud al cancelarla (null = no devuelto). Evita devolver dos veces. */
     @Column(name = "cobro_devuelto_en")
     private java.time.LocalDateTime cobroDevueltoEn;

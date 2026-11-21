@@ -46,6 +46,15 @@ public class FacturaPospago {
     @Column(name = "monto_total", precision = 15, scale = 2, nullable = false)
     private BigDecimal montoTotal;
 
+    /** TP-03: suma sin IVA de los movimientos facturados y su IVA; monto_total = subtotal + IVA. */
+    @Builder.Default
+    @Column(name = "monto_subtotal", precision = 15, scale = 2, nullable = false)
+    private BigDecimal montoSubtotal = BigDecimal.ZERO;
+
+    @Builder.Default
+    @Column(name = "monto_iva", precision = 15, scale = 2, nullable = false)
+    private BigDecimal montoIva = BigDecimal.ZERO;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "estado", nullable = false, length = 20)
     private EstadoFacturaPospago estado;

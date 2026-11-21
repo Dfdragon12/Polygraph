@@ -10,6 +10,8 @@ public record FacturaPospagoResponse(
         String referencia,
         LocalDate fechaCorte,
         LocalDate fechaVencimiento,
+        BigDecimal montoSubtotal,
+        BigDecimal montoIva,
         BigDecimal montoTotal,
         String estado,
         LocalDateTime fechaGeneracion,

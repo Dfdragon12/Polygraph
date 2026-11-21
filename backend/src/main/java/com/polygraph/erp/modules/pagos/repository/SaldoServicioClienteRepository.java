@@ -19,7 +19,7 @@ public interface SaldoServicioClienteRepository extends JpaRepository<SaldoServi
      */
     @Modifying(flushAutomatically = true)
     @Query("update SaldoServicioCliente s set s.cantidadConsumida = s.cantidadConsumida + 1, s.cantidadDisponible = s.cantidadDisponible - 1, s.fechaActualizacion = :ahora "
-            + "where s.cliente.idCliente = :idCliente and s.proceso.idProceso = :idProceso and s.cantidadComprada - s.cantidadConsumida >= 1")
+            + "where s.cliente.idCliente = :idCliente and s.proceso.idProceso = :idProceso and s.cantidadComprada - s.cantidadConsumida - s.cantidadVencida >= 1")
     int descontarUna(@Param("idCliente") Integer idCliente, @Param("idProceso") Integer idProceso, @Param("ahora") java.time.LocalDateTime ahora);
 
     /** Devuelve 1 unidad a la bolsa (cancelación): lo contrario de descontarUna; no baja de 0 consumidas. */
@@ -27,6 +27,18 @@ public interface SaldoServicioClienteRepository extends JpaRepository<SaldoServi
     @Query("update SaldoServicioCliente s set s.cantidadConsumida = s.cantidadConsumida - 1, s.cantidadDisponible = s.cantidadDisponible + 1, s.fechaActualizacion = :ahora "
             + "where s.cliente.idCliente = :idCliente and s.proceso.idProceso = :idProceso and s.cantidadConsumida >= 1")
     int devolverUna(@Param("idCliente") Integer idCliente, @Param("idProceso") Integer idProceso, @Param("ahora") java.time.LocalDateTime ahora);
+
+    /** TP-07: pasa `n` unidades de disponibles a vencidas (no baja de 0 disponibles). */
+    @Modifying(flushAutomatically = true)
+    @Query("update SaldoServicioCliente s set s.cantidadVencida = s.cantidadVencida + :n, s.cantidadDisponible = s.cantidadDisponible - :n, s.fechaActualizacion = :ahora "
+            + "where s.cliente.idCliente = :idCliente and s.proceso.idProceso = :idProceso and s.cantidadComprada - s.cantidadConsumida - s.cantidadVencida >= :n")
+    int vencerUnidades(@Param("idCliente") Integer idCliente, @Param("idProceso") Integer idProceso, @Param("n") int n, @Param("ahora") java.time.LocalDateTime ahora);
+
+    /** TP-09: la unidad devuelta de un lote ya vencido vuelve en un lote de devolución: una unidad más comprada y disponible. */
+    @Modifying(flushAutomatically = true)
+    @Query("update SaldoServicioCliente s set s.cantidadComprada = s.cantidadComprada + 1, s.cantidadDisponible = s.cantidadDisponible + 1, s.fechaActualizacion = :ahora "
+            + "where s.cliente.idCliente = :idCliente and s.proceso.idProceso = :idProceso")
+    int devolverUnaEnLoteNuevo(@Param("idCliente") Integer idCliente, @Param("idProceso") Integer idProceso, @Param("ahora") java.time.LocalDateTime ahora);
 
     // Existe una bolsa para este cliente solo tras una compra aprobada (ver comentario de la
     // entidad) — se usa como señal de "ya compró" para AuthService.resolverPuedeSolicitar.

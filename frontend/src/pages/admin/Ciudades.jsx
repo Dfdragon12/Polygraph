@@ -312,7 +312,7 @@ function BarraFiltros({ busqueda, onBusqueda, filtro, onFiltro, total, pendiente
   )
 }
 
-function TablaCiudades({ ciudades, cargando, onClasificar, onConfirmar, onEliminar, onVerBarrios }) {
+function TablaCiudades({ ciudades, cargando, onClasificar, onSede, onConfirmar, onEliminar, onVerBarrios }) {
   const [editandoId, setEditandoId] = useState(null)
 
   if (cargando) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-4 border-primary-600 border-t-transparent" /></div>
@@ -328,7 +328,7 @@ function TablaCiudades({ ciudades, cargando, onClasificar, onConfirmar, onElimin
       <table className="table-stack min-w-full divide-y divide-gray-100">
         <thead className="bg-gray-50">
           <tr>
-            {['Ciudad / Municipio', 'Departamento', 'Cód. DANE ciudad', 'Cód. DANE depto', 'Nivel logístico', 'Estado', '···'].map(h => (
+            {['Ciudad / Municipio', 'Departamento', 'Cód. DANE ciudad', 'Cód. DANE depto', 'Nivel logístico', 'Sede', 'Estado', '···'].map(h => (
               <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>
             ))}
           </tr>
@@ -362,6 +362,14 @@ function TablaCiudades({ ciudades, cargando, onClasificar, onConfirmar, onElimin
                       {badge.etiqueta}
                     </span>
                   )}
+                </td>
+                <td className="px-4 py-3">
+                  <label className="inline-flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                    <input type="checkbox" checked={Boolean(c.esSede)} onChange={() => onSede(c)}
+                      aria-label={`${c.nombreCiudad}: ciudad sede (sin recargo en el paquete por sede)`}
+                      className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+                    {c.esSede ? 'Sede' : '—'}
+                  </label>
                 </td>
                 <td className="px-4 py-3">
                   {c.pendienteConfirmacion ? (
@@ -464,6 +472,15 @@ export default function Ciudades() {
     } catch { setError('Error al clasificar la ciudad.') }
   }
 
+  // TP-08: una ciudad sede no paga recargo en el paquete por sede. Se marca o desmarca sin tocar su nivel.
+  const cambiarSede = async (ciudad) => {
+    try {
+      const data = await ciudadService.clasificar(ciudad.idCiudad, ciudad.nivelCiudad, !ciudad.esSede)
+      setCiudades(prev => prev.map(c => c.idCiudad === ciudad.idCiudad ? data : c))
+      setToast({ mensaje: `"${ciudad.nombreCiudad}" ${data.esSede ? 'ahora es ciudad sede' : 'ya no es ciudad sede'}`, tipo: 'exito' })
+    } catch { setError('No se pudo cambiar la ciudad sede.') }
+  }
+
   const confirmar = async (ciudad) => {
     if (!ciudad.codigoDaneCiudad || !ciudad.codigoDaneDepto) {
       setConfirmandoDane(ciudad)
@@ -557,7 +574,7 @@ export default function Ciudades() {
       />
 
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        <TablaCiudades ciudades={ciudadesPagina} cargando={cargando} onClasificar={clasificar} onConfirmar={confirmar}
+        <TablaCiudades ciudades={ciudadesPagina} cargando={cargando} onClasificar={clasificar} onSede={cambiarSede} onConfirmar={confirmar}
           onEliminar={setAEliminar} onVerBarrios={setVerBarriosDe} />
         {!cargando && ciudadesVisibles.length > 0 && (
           <Paginacion pagina={pagina} total={ciudadesVisibles.length} porPagina={POR_PAGINA} onChange={setPagina} />

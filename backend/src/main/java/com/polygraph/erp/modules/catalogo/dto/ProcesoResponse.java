@@ -26,5 +26,20 @@ public record ProcesoResponse(
         boolean                       calificaRiesgo,
         String                        motivoNoCalifica,
         String                        criticidadDefecto,
-        BigDecimal                    coberturaMinima
+        BigDecimal                    coberturaMinima,
+        // TP-01: textos comerciales y datos de tienda (costoDirecto solo lo ve el admin)
+        String                        tituloComercial,
+        String                        frasePrincipal,
+        String                        descripcionCorta,
+        List<String>                  incluye,
+        String                        idealPara,
+        String                        unidadSingular,
+        String                        unidadPlural,
+        BigDecimal                    costoDirecto,
+        boolean                       visibleEnTienda,
+        boolean                       aplicaIva,
+        // TP-11
+        boolean                       ofrecerPospago,
+        String                        modoPrecioPospago,
+        BigDecimal                    precioPospagoPropio
 ) {}

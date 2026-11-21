@@ -44,7 +44,8 @@ class DevolucionCobroServiceTest {
         lotes = mock(LotePrepagoRepository.class);
         movimientos = mock(MovimientoCreditoPospagoRepository.class);
         pospagos = mock(ClientePospagoRepository.class);
-        servicio = new DevolucionCobroService(saldos, lotes, movimientos, pospagos, mock(SaldoServicioClienteService.class));
+        servicio = new DevolucionCobroService(saldos, lotes, movimientos, pospagos, mock(SaldoServicioClienteService.class),
+                mock(RecargoPendienteService.class), mock(com.polygraph.erp.modules.tienda.service.ParametrosTiendaService.class));
     }
 
     private Servicio solicitud(TipoCliente tipo, Long lote) {

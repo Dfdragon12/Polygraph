@@ -66,6 +66,8 @@ public class ClienteAdminService {
     private final FacturaPospagoRepository facturaPospagoRepository;
     private final SaldoServicioClienteRepository saldoServicioClienteRepository;
     private final com.polygraph.erp.modules.pagos.service.BolsaPrepagoService bolsaPrepagoService;
+    private final com.polygraph.erp.modules.tienda.service.ParametrosTiendaService parametrosTienda;
+    private final com.polygraph.erp.modules.pagos.service.MoraService moraService;
     private final UsuarioRepository usuarioRepository;
     private final UsuariosIntenosRepository empleadoRepository;
     private final CiudadRepository ciudadRepository;
@@ -109,12 +111,13 @@ public class ClienteAdminService {
                     pospago != null ? pospago.getLimiteCredito() : BigDecimal.ZERO,
                     pospago != null ? pospago.getCreditoDisponible() : BigDecimal.ZERO,
                     pospago != null && pospago.getEstadoMora() != null ? pospago.getEstadoMora().name() : null,
-                    pospago != null ? pospago.getRequiereAprobacion() : null);
+                    pospago != null ? pospago.getRequiereAprobacion() : null,
+                    pospago != null ? pospago.getDiaCorte() : null);
         }
         int totalUnidades = bolsaPrepagoService.saldoPorServicio(cliente.getIdCliente()).totalDisponible();
         return new EstadoCuentaClienteResponse(
                 cliente.getIdCliente(), cliente.getNit(), nombre, "PREPAGO", totalUnidades,
-                null, null, null, null);
+                null, null, null, null, null);
     }
 
     public ClienteAdminResponse actualizar(Integer id, ActualizarClienteAdminRequest req) {
@@ -231,6 +234,10 @@ public class ClienteAdminService {
      *  revisarle el crédito antes de que pueda solicitar (misma regla que un cliente pospago
      *  nuevo, ver "Cliente pospago requiere estudio de crédito previo" en CLAUDE.md). */
     private void cambiarTipoCliente(Cliente cliente, ActualizarClienteAdminRequest req) {
+        // TP-13: con el alta controlada encendida la modalidad de pago NO se cambia desde Editar: pasar a pospago es «Convertir a pospago»
+        if (parametrosTienda.activo(com.polygraph.erp.modules.tienda.service.ParametrosTiendaService.ALTA_POSPAGO_CONTROLADA)) {
+            throw new ApiException("La modalidad de pago no se cambia desde Editar. Para pasar a pospago usa «Convertir a pospago».", HttpStatus.CONFLICT);
+        }
         TipoCliente nuevoTipo;
         try {
             nuevoTipo = TipoCliente.valueOf(req.tipoCliente());
@@ -251,7 +258,9 @@ public class ClienteAdminService {
                         HttpStatus.CONFLICT);
             }
         } else {
-            if (bolsaPrepagoService.saldoPorServicio(cliente.getIdCliente()).totalDisponible() > 0) {
+            // TP-12: con pospagoPlan100 encendido el cliente pasa a pospago CON sus unidades: se gastan primero y después empieza a usar el cupo.
+            if (!parametrosTienda.activo(com.polygraph.erp.modules.tienda.service.ParametrosTiendaService.POSPAGO_PLAN_100)
+                    && bolsaPrepagoService.saldoPorServicio(cliente.getIdCliente()).totalDisponible() > 0) {
                 throw new ApiException(
                         "Este cliente todavía tiene saldo prepago sin usar. Debe consumirlo (o coordinarlo de otra forma) antes de cambiarlo a pospago.",
                         HttpStatus.CONFLICT);
@@ -302,10 +311,42 @@ public class ClienteAdminService {
             pospago.setLimiteCredito(req.limiteCredito());
             pospago.setCreditoDisponible(disponibleAnterior.add(delta));
         }
-        if (req.estadoMora() != null) pospago.setEstadoMora(req.estadoMora());
-        if (req.requiereAprobacion() != null) pospago.setRequiereAprobacion(req.requiereAprobacion());
+        boolean levantoSuspension = false;
+        if (req.estadoMora() != null) {
+            if (!parametrosTienda.activo(com.polygraph.erp.modules.tienda.service.ParametrosTiendaService.MORA_AUTOMATICA)) {
+                pospago.setEstadoMora(req.estadoMora());
+            } else if (req.estadoMora() == EstadoMora.SUSPENDIDO) {
+                // TP-14: suspender es una decisión del administrador y exige un motivo escrito
+                if (req.motivoSuspension() == null || req.motivoSuspension().isBlank()) {
+                    throw new ApiException("El motivo de la suspensión es obligatorio.", HttpStatus.BAD_REQUEST);
+                }
+                if (pospago.getEstadoMora() != EstadoMora.SUSPENDIDO) {
+                    pospago.setEstadoMora(EstadoMora.SUSPENDIDO);
+                    pospago.setMotivoSuspension(req.motivoSuspension().trim());
+                    var autenticacion = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+                    pospago.setSuspendidoPor(autenticacion != null ? autenticacion.getName() : null);
+                    pospago.setSuspendidoEn(java.time.LocalDateTime.now());
+                }
+            } else if (pospago.getEstadoMora() == EstadoMora.SUSPENDIDO && req.estadoMora() == EstadoMora.NORMAL) {
+                pospago.setEstadoMora(EstadoMora.NORMAL);   // levantar la suspensión; abajo se recalcula con las facturas
+                pospago.setMotivoSuspension(null);
+                pospago.setSuspendidoPor(null);
+                pospago.setSuspendidoEn(null);
+                levantoSuspension = true;
+            } else if (req.estadoMora() != pospago.getEstadoMora()) {
+                throw new ApiException("«Al día» y «En mora» los calcula la plataforma con las facturas. Solo puedes suspender o levantar una suspensión.",
+                        HttpStatus.BAD_REQUEST);
+            }
+        }
+        // TP-13: con el alta controlada encendida, la aprobación sale de la lista de verificación (estudio de crédito incluido), no de esta casilla
+        if (req.requiereAprobacion() != null && (!req.requiereAprobacion()
+                || !parametrosTienda.activo(com.polygraph.erp.modules.tienda.service.ParametrosTiendaService.ALTA_POSPAGO_CONTROLADA))) {   // levantar la marca siempre se puede
+            pospago.setRequiereAprobacion(req.requiereAprobacion());
+        }
+        if (req.diaCorte() != null) pospago.setDiaCorte(req.diaCorte());
         pospago.setUltimaRevisionCredito(LocalDate.now());
         clientePospagoRepository.save(pospago);
+        if (levantoSuspension) moraService.sincronizar(id);   // si debe facturas vencidas, vuelve a «En mora» y no a «Al día»
 
         String nombre = nombreCliente(cliente);
         log.info("Crédito pospago actualizado: cliente={}, limiteCredito={}, estadoMora={}",

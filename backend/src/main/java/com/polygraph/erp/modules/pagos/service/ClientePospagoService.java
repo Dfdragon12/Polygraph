@@ -67,6 +67,8 @@ public class ClientePospagoService {
     private final RecargoPendienteService recargoPendienteService;
     private final UsuarioRepository usuarioRepository;
     private final NotificacionRepository notificacionRepository;
+    private final com.polygraph.erp.modules.tienda.service.IvaService ivaService;
+    private final com.polygraph.erp.modules.tienda.service.PrecioPospagoService precioPospagoService;
 
     // ---------- Resolución desde el usuario autenticado (portal cliente) ----------
 
@@ -98,12 +100,22 @@ public class ClientePospagoService {
         return usuario.getIdCliente();
     }
 
-    private record CostoServicio(BigDecimal montoBase, BigDecimal montoRecargo, BigDecimal montoTotal) {}
+    /** montoTotal = base + recargo + IVA de cada uno (TP-03): es lo que baja del cupo y lo que se factura. */
+    private record CostoServicio(BigDecimal montoBase, BigDecimal montoRecargo, BigDecimal ivaBase, BigDecimal ivaRecargo, BigDecimal montoTotal) {}
 
     @Transactional(readOnly = true)
     public void validarCreditoDisponible(Cliente cliente, Proceso proceso, Integer idCiudad) {
+        validarCreditoDisponible(cliente, proceso, idCiudad, false);
+    }
+
+    /**
+     * usaBolsa=true: la unidad sale de la bolsa prepago que el cliente tenía antes de pasar a pospago, así que del cupo solo se necesita el recargo
+     * por ciudad (con su IVA), si aplica (TP-12).
+     */
+    @Transactional(readOnly = true)
+    public void validarCreditoDisponible(Cliente cliente, Proceso proceso, Integer idCiudad, boolean usaBolsa) {
         ClientePospago pospago = obtenerPospago(cliente.getIdCliente());
-        CostoServicio costo = calcularCosto(proceso, idCiudad);
+        CostoServicio costo = calcularCosto(proceso, idCiudad, true, usaBolsa, null);
 
         BigDecimal disponible = pospago.getCreditoDisponible() != null ? pospago.getCreditoDisponible() : BigDecimal.ZERO;
         if (disponible.compareTo(costo.montoTotal()) < 0) {
@@ -116,10 +128,36 @@ public class ClientePospagoService {
 
     @Transactional
     public void descontarCredito(Cliente cliente, Servicio servicio, Proceso proceso, Integer idCiudad) {
-        ClientePospago pospago = obtenerPospago(cliente.getIdCliente());
-        CostoServicio costo = calcularCosto(proceso, idCiudad);
+        descontarCredito(cliente, servicio, proceso, idCiudad, true);
+    }
+
+    /** cobrarRecargo=false: en una solicitud con varios servicios solo uno lleva el recargo por ciudad (el mayor), TP-08. */
+    @Transactional
+    public void descontarCredito(Cliente cliente, Servicio servicio, Proceso proceso, Integer idCiudad, boolean cobrarRecargo) {
+        descontarCredito(cliente, servicio, proceso, idCiudad, cobrarRecargo, false, null);
+    }
+
+    /**
+     * Descuenta del cupo lo que cuesta la solicitud, recalculado AQUÍ con el catálogo de hoy (el valor que mande el frontend no se usa), y guarda en el
+     * cargo servicio, precio, recargo, IVA, total y origen del precio: si el catálogo cambia después, el cargo no cambia (TP-12).
+     * La fila del cupo se lee con bloqueo y se vuelve a comprobar el saldo: dos solicitudes simultáneas no pueden superar el cupo.
+     * usaBolsa: la unidad salió de la bolsa prepago; solo se cobra el recargo. cobertura: la bolsa de donde salió (una unidad NACIONAL no paga recargo).
+     */
+    @Transactional
+    public void descontarCredito(Cliente cliente, Servicio servicio, Proceso proceso, Integer idCiudad, boolean cobrarRecargo,
+                                 boolean usaBolsa, String cobertura) {
+        ClientePospago pospago = clientePospagoRepository.bloquearPorIdCliente(cliente.getIdCliente())
+                .orElseThrow(() -> new ApiException(
+                        "Tu cuenta pospago todavía no tiene un cupo de crédito asignado. Contacta a tu gestor.", HttpStatus.FORBIDDEN));
+        CostoServicio costo = calcularCosto(proceso, idCiudad, cobrarRecargo, usaBolsa, cobertura);
 
         BigDecimal disponible = pospago.getCreditoDisponible() != null ? pospago.getCreditoDisponible() : BigDecimal.ZERO;
+        if (disponible.compareTo(costo.montoTotal()) < 0) {
+            throw new ApiException("No tienes cupo disponible para solicitar '" + proceso.getNombreProceso() + "'. "
+                    + "Contacta a tu gestor para ampliar tu límite de crédito.", HttpStatus.PAYMENT_REQUIRED);
+        }
+        if (usaBolsa && costo.montoTotal().signum() == 0) return;   // unidad de la bolsa y sin recargo: no hay nada que cobrar ni facturar
+
         pospago.setCreditoDisponible(disponible.subtract(costo.montoTotal()));
         clientePospagoRepository.save(pospago);
 
@@ -128,23 +166,29 @@ public class ClientePospagoService {
                 .servicio(servicio)
                 .montoBase(costo.montoBase())
                 .montoRecargoCiudad(costo.montoRecargo())
+                .montoIvaBase(costo.ivaBase())
+                .montoIvaRecargo(costo.ivaRecargo())
                 .montoTotal(costo.montoTotal())
+                .origenPrecio(usaBolsa ? "BOLSA" : precioPospagoService.codigoOrigen(proceso))
                 .fechaGenerado(LocalDateTime.now())
                 .build());
-        log.info("Crédito pospago descontado: cliente={}, servicio={}, monto={}",
-                cliente.getIdCliente(), servicio.getIdServicio(), costo.montoTotal());
+        log.info("Crédito pospago descontado: cliente={}, servicio={}, monto={}, origen={}",
+                cliente.getIdCliente(), servicio.getIdServicio(), costo.montoTotal(), usaBolsa ? "BOLSA" : precioPospagoService.codigoOrigen(proceso));
     }
 
-    private CostoServicio calcularCosto(Proceso proceso, Integer idCiudad) {
-        if (proceso.getValor() == null) {
-            throw new ApiException(
-                    "El proceso '" + proceso.getNombreProceso() + "' no tiene un precio definido para clientes pospago",
-                    HttpStatus.BAD_REQUEST);
-        }
-        BigDecimal montoBase = proceso.getValor();
+    private CostoServicio calcularCosto(Proceso proceso, Integer idCiudad, boolean cobrarRecargo, boolean usaBolsa, String cobertura) {
+        // TP-11: el precio pospago sale de un solo lugar (PrecioPospagoService): plan de 100 o precio propio; apagado, el precio base de siempre.
+        // Con la unidad de la bolsa prepago no se cobra el servicio (TP-12).
+        BigDecimal montoBase = usaBolsa ? BigDecimal.ZERO : precioPospagoService.precioParaCobrar(proceso);
         Ciudad ciudad = idCiudad != null ? ciudadRepository.findById(idCiudad).orElse(null) : null;
-        BigDecimal montoRecargo = recargoPendienteService.calcular(proceso, ciudad);
-        return new CostoServicio(montoBase, montoRecargo, montoBase.add(montoRecargo));
+        BigDecimal montoRecargo = !cobrarRecargo ? BigDecimal.ZERO
+                : (cobertura == null || "LOCAL".equals(cobertura)) ? recargoPendienteService.calcular(proceso, ciudad)
+                : recargoPendienteService.calcular(proceso, ciudad, cobertura);
+        BigDecimal pct = ivaService.porcentaje();
+        boolean aplicaIva = !Boolean.FALSE.equals(proceso.getAplicaIva());
+        BigDecimal ivaBase = com.polygraph.erp.modules.tienda.service.IvaCalculadora.iva(montoBase, pct, aplicaIva);
+        BigDecimal ivaRecargo = com.polygraph.erp.modules.tienda.service.IvaCalculadora.iva(montoRecargo, pct, aplicaIva);
+        return new CostoServicio(montoBase, montoRecargo, ivaBase, ivaRecargo, montoBase.add(montoRecargo).add(ivaBase).add(ivaRecargo));
     }
 
     private ClientePospago obtenerPospago(Integer idCliente) {
@@ -254,6 +298,7 @@ public class ClientePospagoService {
         }
 
         BigDecimal montoTotal = pendientes.stream().map(MovimientoCreditoPospago::getMontoTotal).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal montoIva = pendientes.stream().map(m -> m.getMontoIvaBase().add(m.getMontoIvaRecargo())).reduce(BigDecimal.ZERO, BigDecimal::add);
         LocalDateTime ahora = LocalDateTime.now();
 
         FacturaPospago factura = FacturaPospago.builder()
@@ -262,6 +307,8 @@ public class ClientePospagoService {
                 .fechaCorte(ahora.toLocalDate())
                 .fechaVencimiento(fechaVencimiento)
                 .montoTotal(montoTotal)
+                .montoSubtotal(montoTotal.subtract(montoIva))
+                .montoIva(montoIva)
                 .estado(EstadoFacturaPospago.PENDIENTE)
                 .fechaGeneracion(ahora)
                 .generadaPor(admin)
@@ -395,6 +442,8 @@ public class ClientePospagoService {
                 ciudad != null ? ciudad.getNombreCiudad() : null,
                 m.getMontoBase(),
                 m.getMontoRecargoCiudad(),
+                m.getMontoIvaBase(),
+                m.getMontoIvaRecargo(),
                 m.getMontoTotal(),
                 m.getFechaGenerado());
     }
@@ -406,6 +455,8 @@ public class ClientePospagoService {
                 f.getReferencia(),
                 f.getFechaCorte(),
                 f.getFechaVencimiento(),
+                f.getMontoSubtotal(),
+                f.getMontoIva(),
                 f.getMontoTotal(),
                 f.getEstado().name(),
                 f.getFechaGeneracion(),

@@ -6,6 +6,18 @@ const pagosService = {
     return data
   },
 
+  /** Subtotal, IVA y total por línea, calculados por el backend (los mismos que se cobran). */
+  async cotizar(items, codigoCupon = null) {
+    const { data } = await api.post('/client/ordenes/cotizar', { items, codigoCupon: codigoCupon || null })
+    return data
+  },
+
+  /** { cobroConIva, ivaPorcentaje }: para rotular precios con «+ IVA». */
+  async obtenerConfiguracionTienda() {
+    const { data } = await api.get('/tienda/configuracion')
+    return data
+  },
+
   async validarCupon(items, codigoCupon) {
     const { data } = await api.post('/client/ordenes/validar-cupon', { items, codigoCupon })
     return data

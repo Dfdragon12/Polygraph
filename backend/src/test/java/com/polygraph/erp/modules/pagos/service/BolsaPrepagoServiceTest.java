@@ -68,7 +68,8 @@ class BolsaPrepagoServiceTest {
     void todasLasPantallasCoinciden() {
         when(saldos.findByCliente_IdCliente(1)).thenReturn(List.of(saldo(1, 10, "Antecedentes", 20, 2, 18), saldo(1, 11, "Poligrafía", 40, 6, 34)));
         when(saldos.findByCliente_IdClienteAndProceso_IdProceso(1, 10)).thenReturn(Optional.of(saldo(1, 10, "Antecedentes", 20, 2, 18)));
-        var servicio = new SaldoServicioClienteService(saldos, bolsa, mock(com.polygraph.erp.modules.pagos.repository.LotePrepagoRepository.class));
+        var servicio = new SaldoServicioClienteService(saldos, bolsa, mock(com.polygraph.erp.modules.pagos.repository.LotePrepagoRepository.class),
+                java.time.Clock.systemUTC(), mock(com.polygraph.erp.modules.tienda.service.ParametrosTiendaService.class));
         int dashboard = servicio.totalDisponible(1);                                               // Dashboard y Gestión de cuentas
         int comprarServicios = servicio.obtenerSaldos(1).stream().mapToInt(s -> s.cantidadDisponible()).sum();
         int nuevaSolicitud = bolsa.disponible(1, 10) + bolsa.disponible(1, 11 );

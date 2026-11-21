@@ -17,5 +17,11 @@ public record ActualizarPospagoRequest(
 
         EstadoMora estadoMora,
 
-        Boolean requiereAprobacion
+        Boolean requiereAprobacion,
+
+        // TP-13: día del mes del corte de facturación (1 a 28); null = no cambia
+        @jakarta.validation.constraints.Min(1) @jakarta.validation.constraints.Max(28) Integer diaCorte,
+
+        // TP-14: obligatorio al suspender
+        @jakarta.validation.constraints.Size(max = 1000) String motivoSuspension
 ) {}

@@ -35,8 +35,9 @@ public class PagoAplicacionService {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void alPagoAprobado(PagoAprobadoEvent evento) {
-        levantarRestriccionPorDeuda(evento.idCliente());
+        // TP-14: primero se registra el pago de la factura y DESPUÉS se recalcula la mora: así el cliente vuelve a «Al día» en el momento
         marcarFacturaPospagoPagadaSiAplica(evento.idPago());
+        levantarRestriccionPorDeuda(evento.idCliente());
     }
 
     private void marcarFacturaPospagoPagadaSiAplica(UUID idPago) {

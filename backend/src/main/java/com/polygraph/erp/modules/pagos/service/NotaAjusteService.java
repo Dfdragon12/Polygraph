@@ -154,6 +154,10 @@ public class NotaAjusteService {
     private void revertirSaldoOrden(OrdenCompra orden) {
         List<OrdenCompraItem> items = ordenCompraItemRepository.findByOrdenCompra_IdOrdenCompra(orden.getIdOrdenCompra());
         for (OrdenCompraItem item : items) {
+            if ("NACIONAL".equals(item.getCobertura())) {   // TP-08: el paquete nacional vive solo en su lote, sin contador
+                retirarLotes(item);
+                continue;
+            }
             SaldoServicioCliente saldo = saldoServicioClienteRepository
                     .findByCliente_IdClienteAndProceso_IdProceso(orden.getCliente().getIdCliente(), item.getProceso().getIdProceso())
                     .orElseThrow(() -> new ApiException(
@@ -165,20 +169,24 @@ public class NotaAjusteService {
                         HttpStatus.CONFLICT);
             }
             // El lote de esta compra también pierde las unidades; si la bolsa ya gastó unidades de este lote (FIFO), no se puede devolver completo
-            var lote = lotePrepagoRepository.findByItem_IdItem(item.getIdItem()).orElse(null);
-            if (lote != null) {
-                if (lote.restante() < item.getCantidad()) {
-                    throw new ApiException("Ya se usaron unidades de '" + item.getProceso().getNombreProceso() + "' de esta compra — no se puede generar la nota crédito completa",
-                            HttpStatus.CONFLICT);
-                }
-                lote.setCantidadComprada(lote.getCantidadComprada() - item.getCantidad());
-                if (lote.getCantidadComprada() > 0) lotePrepagoRepository.save(lote); else lotePrepagoRepository.delete(lote);
-            }
+            retirarLotes(item);
             saldo.setCantidadDisponible(saldo.getCantidadDisponible() - item.getCantidad());
             saldo.setCantidadComprada(saldo.getCantidadComprada() - item.getCantidad());
             saldo.setFechaActualizacion(LocalDateTime.now());
             saldoServicioClienteRepository.save(saldo);
         }
+    }
+
+    /** Quita los lotes de la compra (uno por paquete). Si ya se usó o venció alguna unidad de alguno, no se puede devolver completo. */
+    private void retirarLotes(OrdenCompraItem item) {
+        var lotes = lotePrepagoRepository.findByItem_IdItem(item.getIdItem());
+        for (var l : lotes) {
+            if (l.restante() < l.getCantidadComprada()) {
+                throw new ApiException("Ya se usaron unidades de '" + item.getProceso().getNombreProceso() + "' de esta compra — no se puede generar la nota crédito completa",
+                        HttpStatus.CONFLICT);
+            }
+        }
+        lotePrepagoRepository.deleteAll(lotes);
     }
 
     private void notificar(TipoNotaAjuste tipo, NotaAjuste nota, Cliente cliente) {

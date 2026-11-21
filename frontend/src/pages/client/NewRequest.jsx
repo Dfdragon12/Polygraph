@@ -5,6 +5,7 @@ import solicitudService from '../../services/solicitudService'
 import dashboardService from '../../services/dashboardService'
 import pospagoService from '../../services/pospagoService'
 import { useAuth } from '../../hooks/useAuth'
+import api from '../../services/api'
 import CiudadSelect from '../../components/CiudadSelect'
 import { ETIQUETA_NIVEL_CIUDAD } from '../../utils/recargoCiudad'
 import { validarEvaluado, rotuloCiudad, CRITICIDADES } from '../../utils/validarEvaluado'
@@ -84,7 +85,7 @@ function Lupa() {
 }
 
 // Costo (NS-11): lo calcula el servidor (ResumenCobroService) con las mismas reglas con las que luego descuenta; aquí solo se muestra.
-function BloqueCosto({ proceso, ciudad, resumen, cargando }) {
+function BloqueCosto({ proceso, ciudad, resumen, cargando, aviso }) {
   if (!proceso) return null
   const linkCompra = `/cliente/comprar-servicios?idProceso=${proceso.idProceso}`
   if (!resumen) return <p className="text-sm text-gray-500">{cargando ? 'Calculando…' : 'No se pudo calcular el costo. Vuelve a intentarlo.'}</p>
@@ -96,13 +97,21 @@ function BloqueCosto({ proceso, ciudad, resumen, cargando }) {
     <div className="space-y-3">
       {esPos ? (
         <dl className="divide-y divide-gray-100 rounded-lg border border-gray-200 text-sm">
-          <div className="flex items-center justify-between px-4 py-2.5"><dt className="text-gray-700">Valor del servicio</dt><dd className="font-medium text-gray-900">{formatearPrecio(resumen.valor)}</dd></div>
+          {resumen.disponiblesAhora != null ? (
+            <div className="flex items-center justify-between px-4 py-2.5"><dt className="text-gray-700">Servicio</dt><dd className="font-medium text-gray-900">1 {resumen.servicio} de tu bolsa (sin cupo)</dd></div>
+          ) : (
+            <div className="flex items-center justify-between px-4 py-2.5"><dt className="text-gray-700">Valor del servicio</dt><dd className="font-medium text-gray-900">{formatearPrecio(resumen.valor)}</dd></div>
+          )}
           {recargo > 0 && (
             <div className="flex items-center justify-between px-4 py-2.5 bg-sky-50/60">
               <dt className="text-sky-900">Recargo por ciudad{ciudad ? ` — ${ciudad.nombreCiudad} (${ETIQUETA_NIVEL_CIUDAD[ciudad.nivelCiudad]})` : ''}</dt>
               <dd className="font-medium text-sky-900">+ {formatearPrecio(recargo)}</dd>
             </div>
           )}
+          {Number(resumen.iva) > 0 && (
+            <div className="flex items-center justify-between px-4 py-2.5"><dt className="text-gray-700">IVA</dt><dd className="font-medium text-gray-900">+ {formatearPrecio(resumen.iva)}</dd></div>
+          )}
+          <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50"><dt className="font-semibold text-gray-800">Total de la solicitud</dt><dd className="font-semibold text-gray-900">{formatearPrecio(resumen.total)}</dd></div>
           <div className="flex items-center justify-between px-4 py-2.5"><dt className="text-gray-700">Cupo disponible</dt><dd className="font-medium text-gray-900">{formatearPrecio(resumen.cupoDisponible)}</dd></div>
           <div className="flex items-center justify-between px-4 py-2.5"><dt className="text-gray-700">Quedará</dt><dd className={`font-semibold ${resumen.alcanza ? 'text-gray-900' : 'text-red-700'}`}>{resumen.alcanza ? formatearPrecio(resumen.cupoQuedara) : 'No alcanza'}</dd></div>
         </dl>
@@ -117,7 +126,12 @@ function BloqueCosto({ proceso, ciudad, resumen, cargando }) {
         {resumen.mensaje}
         {!esPos && !resumen.alcanza && <>{' '}<a href={linkCompra} className="font-semibold underline">Cómpralo en Comprar Servicios</a> antes de enviar la solicitud.</>}
       </p>
-      {!esPos && recargo > 0 && <p className="text-xs text-gray-600">El recargo por ciudad ({formatearPrecio(recargo)}) no se cobra ahora: se suma automáticamente a tu próxima compra en Comprar Servicios.</p>}
+      {!esPos && recargo > 0 && (
+        <p className="text-xs text-gray-600">
+          Recargo por ciudad: {formatearPrecio(recargo)}{aviso?.aplica && Number(aviso.iva) > 0 ? ` + IVA ${formatearPrecio(aviso.iva)} = ${formatearPrecio(aviso.total)}` : ''}.
+          {' '}No se cobra ahora: se suma automáticamente a tu próxima compra en Comprar Servicios.
+        </p>
+      )}
     </div>
   )
 }
@@ -164,6 +178,13 @@ function NewRequest() {
       .catch((e) => setCupo({ error: e.response?.data?.mensaje || 'No se pudo consultar tu cupo de crédito.' }))
   }, [esPospago])
 
+  // TP-11: el cliente pospago ve la lista de precios pospago (solo lo que se le ofrece), no el precio prepago.
+  const [preciosPospago, setPreciosPospago] = useState(null)
+  useEffect(() => {
+    if (!esPospago) return
+    api.get('/catalogo/pospago/precios').then((r) => setPreciosPospago(r.data)).catch(() => setPreciosPospago(null))
+  }, [esPospago])
+
   useEffect(() => {
     Promise.allSettled([
       catalogoService.listarServicios().then((data) => setCatalogo(data)),
@@ -180,10 +201,18 @@ function NewRequest() {
   const catalogoDisponible = useMemo(() => {
     if (esPospago) {
       const disponible = cupo?.creditoDisponible
-      return catalogo.map((s) => ({
+      const lista = preciosPospago ? new Map(preciosPospago.map((f) => [f.idProceso, f])) : null
+      return catalogo.filter((s) => !lista || lista.has(s.idProceso)).map((s0) => {
+        const f = lista?.get(s0.idProceso)
+        const s = f ? { ...s0, valor: f.precio, pospagoIva: Number(f.iva) } : s0
+        // Un cliente que pasó de prepago con unidades en su bolsa las gasta primero: del cupo solo sale el recargo (lo calcula el servidor).
+        const enBolsa = saldos.find((x) => x.idProceso === s.idProceso)?.cantidadDisponible ?? 0
+        return {
         ...s,
-        bloqueo: !s.valor ? 'SIN_PRECIO' : (cupo && (disponible == null || Number(s.valor) > Number(disponible)) ? 'SIN_CUPO' : null),
-      }))
+        enBolsa,
+        bloqueo: enBolsa > 0 ? null : !s.valor ? 'SIN_PRECIO' : (cupo && (disponible == null || Number(s.valor) > Number(disponible)) ? 'SIN_CUPO' : null),
+      }
+      })
     }
     return catalogo.flatMap((s) => {
       const sd = saldos.find((x) => x.idProceso === s.idProceso)
@@ -191,7 +220,7 @@ function NewRequest() {
       const disponibles = sd.cantidadDisponible ?? 0
       return [{ ...s, disponibles, comprados: sd.cantidadComprada, consumidos: sd.cantidadConsumida ?? 0, bloqueo: disponibles < 1 ? 'AGOTADO' : null }]
     })
-  }, [catalogo, saldos, esPospago, cupo])
+  }, [catalogo, saldos, esPospago, cupo, preciosPospago])
   // Mismo cálculo de la bolsa que el resto de la plataforma (BolsaPrepagoService): informativo, el servidor vuelve a validar al enviar.
   const totalDisponible = useMemo(() => saldos.reduce((t, sd) => t + (sd.cantidadDisponible ?? 0), 0), [saldos])
 
@@ -298,6 +327,16 @@ function NewRequest() {
     return () => { vigente = false }
   }, [enConfirmacion, serviciosSeleccionados, evaluado.idCiudad])
   const ciudadSeleccionada = ciudades.find((c) => c.idCiudad === evaluado.idCiudad)
+
+  // TP-08: aviso de recargo apenas se elige la ciudad (paso 2). Lo calcula el servidor; sin interruptor o sin recargo no devuelve aviso.
+  const [avisoRecargo, setAvisoRecargo] = useState(null)
+  useEffect(() => {
+    if (!serviciosSeleccionados.length || !evaluado.idCiudad) { setAvisoRecargo(null); return undefined }
+    let vigente = true
+    solicitudService.recargoCiudad(serviciosSeleccionados[0], evaluado.idCiudad)
+      .then((r) => { if (vigente) setAvisoRecargo(r) }).catch(() => { if (vigente) setAvisoRecargo(null) })
+    return () => { vigente = false }
+  }, [serviciosSeleccionados, evaluado.idCiudad])
 
   // Lo extra de la poligrafía tal como lo verá el poligrafista (misma pieza que la ficha del candidato)
   const resumenExtra = {
@@ -493,14 +532,17 @@ function NewRequest() {
 
                             <div className="mt-3 flex flex-wrap items-center gap-1.5">
                               {esPospago ? (
-                                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-900 text-white">{s.valor ? formatearPrecio(s.valor) : 'Sin precio'}</span>
+                                <>
+                                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-900 text-white">{s.valor ? `${formatearPrecio(s.valor)}${s.pospagoIva > 0 ? ' + IVA' : ''}` : 'Sin precio'}</span>
+                                {s.enBolsa > 0 && <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-800">{s.enBolsa} en tu bolsa: se usan primero</span>}
+                                </>
                               ) : agotado ? (
                                 <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-800">Agotado</span>
                               ) : (
                                 <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-900 text-white">{s.disponibles} disponible{s.disponibles !== 1 ? 's' : ''}</span>
                               )}
                               {!esPospago && <span className="text-xs text-gray-600">Usados {s.consumidos} de {s.comprados}</span>}
-                              <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">{s.diasHabilesEntrega || 5} días hábiles</span>
+                              <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">{s.diasHabilesEntrega || 5} {(s.diasHabilesEntrega || 5) === 1 ? 'día hábil' : 'días hábiles'}</span>
                               {s.admitePreguntasPoligrafia && <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-primary-100 text-primary-800">Poligrafía</span>}
                             </div>
 
@@ -621,6 +663,11 @@ function NewRequest() {
                     <CiudadSelect value={evaluado.idCiudad} soloConfirmadas
                       onChange={(idCiudad) => setEvaluado({ ...evaluado, idCiudad })} className={errorDe('idCiudad') ? `${inputCls} border-red-500` : inputCls} />
                     {errorDe('idCiudad') && <p className="mt-1 text-[11px] font-medium text-red-600">{errorDe('idCiudad')}</p>}
+                    {avisoRecargo?.mensaje && (
+                      <p role="status" className={`mt-2 rounded-lg border px-3 py-2 text-xs ${avisoRecargo.aplica ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
+                        {avisoRecargo.mensaje}
+                      </p>
+                    )}
                   </div>
                   {pideDireccion && (
                     <div className="sm:col-span-2">
@@ -709,7 +756,7 @@ function NewRequest() {
               </div>
 
               <Seccion titulo="Costo y forma de pago">
-                <BloqueCosto proceso={procesoElegido} ciudad={ciudadSeleccionada} resumen={resumenCobro} cargando={cargandoResumen} />
+                <BloqueCosto proceso={procesoElegido} ciudad={ciudadSeleccionada} resumen={resumenCobro} cargando={cargandoResumen} aviso={avisoRecargo} />
               </Seccion>
 
               {error && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700" role="alert">{error}</div>}

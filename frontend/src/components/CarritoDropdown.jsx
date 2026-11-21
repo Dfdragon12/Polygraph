@@ -1,5 +1,8 @@
 import { useId, useEffect, useRef, useState } from 'react'
 import { useCarrito } from '../hooks/useCarrito'
+import { claveDe } from '../context/CarritoContext'
+import { useConfigTienda } from '../hooks/useConfigTienda'
+import { itemsParaApi, nombreCobertura, recargoMinimo, unidadDe, vigenciaCorta } from '../utils/planesTienda'
 import pagosService from '../services/pagosService'
 import catalogoService from '../services/catalogoService'
 import dashboardService from '../services/dashboardService'
@@ -67,7 +70,7 @@ function IconoBolsa({ className = 'h-4 w-4' }) {
  *  servicios donde el saldo ya llegó a cero (candidatos claros a recompra) y que no estén ya en el
  *  carrito. Deliberadamente chips compactos, no la tarjeta completa del catálogo (esa vive en la
  *  pestaña Servicios) — acá es un empujón rápido, no una segunda vitrina. */
-function SugerenciasAlPagar({ idsEnCarrito, onAgregar }) {
+function SugerenciasAlPagar({ idsEnCarrito, onAgregar, soloConPlanes }) {
   const [sugerencias, setSugerencias] = useState([])
   const [agregados, setAgregados] = useState(() => new Set())
 
@@ -75,7 +78,7 @@ function SugerenciasAlPagar({ idsEnCarrito, onAgregar }) {
     Promise.all([dashboardService.obtenerBolsaServicios(), catalogoService.listarServicios()])
       .then(([bolsa, catalogo]) => {
         const idsEnCero = new Set(bolsa.filter((s) => s.cantidadDisponible === 0).map((s) => s.idProceso))
-        setSugerencias(catalogo.filter((s) => idsEnCero.has(s.idProceso) && s.valor))
+        setSugerencias(catalogo.filter((s) => idsEnCero.has(s.idProceso) && s.valor && (!soloConPlanes || (s.visibleEnTienda !== false && s.planes?.length > 0))))
       })
       .catch(() => setSugerencias([]))
   }, [])
@@ -114,11 +117,59 @@ function SugerenciasAlPagar({ idsEnCarrito, onAgregar }) {
   )
 }
 
+/** Detalle de una línea por plan: plan, unidades, cobertura y vigencia (estas dos solo con su interruptor encendido). */
+function DetallePlan({ i, config }) {
+  const unidad = unidadDe(i, i.unidadesPlan)
+  const verCobertura = config.coberturaPorSede && recargoMinimo(i) != null
+  return (
+    <div className="text-xs text-gray-600 mt-0.5 space-y-0.5">
+      <p>{i.nombrePlan} · {i.unidadesPlan} {unidad}{i.cantidadPaquetes > 1 ? ` × ${i.cantidadPaquetes}` : ''}</p>
+      {verCobertura && <p>{nombreCobertura(i.cobertura)}</p>}
+      <p>{formatearPrecio(i.precioUnitario)} por {i.unidadSingular || 'unidad'}{config.cobroConIva ? ' + IVA' : ''}</p>
+      {config.vigenciaPorPlan && <p>Vigencia: {vigenciaCorta(i.vigenciaMeses)}</p>}
+    </div>
+  )
+}
+
+function LineaPlanModal({ i, linea, config, onQuitar, deshabilitado }) {
+  return (
+    <li className="group rounded-xl border border-gray-100 bg-gray-50/50 px-3 py-2.5 flex items-start gap-3">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm text-gray-800 font-medium break-words">{i.nombreProceso}</p>
+        <DetallePlan i={i} config={config} />
+      </div>
+      <span className="font-semibold text-gray-800 flex-shrink-0 text-sm">{linea ? formatearPrecio(linea.subtotal) : '…'}</span>
+      <button type="button" onClick={onQuitar} disabled={deshabilitado} aria-label={`Quitar ${i.nombreProceso} ${i.nombrePlan} del carrito`}
+        className="flex-shrink-0 text-gray-400 hover:text-red-500 disabled:opacity-30 transition-colors">
+        <IconoBasura className="h-4 w-4" />
+      </button>
+    </li>
+  )
+}
+
+function LineaPlanDropdown({ i, linea, config, onQuitar }) {
+  return (
+    <li className="group px-4 py-3 flex items-start justify-between gap-3 hover:bg-primary-50/30 transition-colors">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm text-gray-800 font-medium break-words">{i.nombreProceso}</p>
+        <DetallePlan i={i} config={config} />
+        <button type="button" onClick={onQuitar} aria-label={`Quitar ${i.nombreProceso} ${i.nombrePlan} del carrito`}
+          className="mt-1.5 text-gray-400 hover:text-red-500 transition-colors"><IconoBasura className="h-4 w-4" /></button>
+      </div>
+      <p className="text-sm font-semibold text-gray-800 flex-shrink-0 whitespace-nowrap">{linea ? formatearPrecio(linea.subtotal) : '…'}</p>
+    </li>
+  )
+}
+
 function ModalConfirmarCompra({ onClose, onConfirmar, procesando, codigoCupon, onCambiarCupon, recargosPendientes }) {
   const idCampos = useId()
-  const { items, total, precioUnitario, agregarItem, quitarItem } = useCarrito()
+  const { items, total, precioUnitario, agregarItem, agregarPlan, quitarItem } = useCarrito()
+  const config = useConfigTienda()
+  const hayPlanes = items.some((i) => i.unidadesPlan)
   const [cupon, setCupon] = useState({ estado: 'idle', mensaje: null, montoDescuento: 0, totalConDescuento: null })
   const [verDetalleRecargos, setVerDetalleRecargos] = useState(false)
+  // Subtotal / IVA / Total calculados por el backend (con el mismo código con que se crea la orden).
+  const [cotizacion, setCotizacion] = useState(null)
   const tokenRef = useRef(0)
   const idsEnCarrito = new Set(items.map((i) => i.idProceso))
 
@@ -140,7 +191,7 @@ function ModalConfirmarCompra({ onClose, onConfirmar, procesando, codigoCupon, o
     const miToken = ++tokenRef.current
     const timer = setTimeout(async () => {
       try {
-        const itemsReq = items.map((i) => ({ idProceso: i.idProceso, cantidad: i.cantidad }))
+        const itemsReq = itemsParaApi(items)
         const res = await pagosService.validarCupon(itemsReq, codigo)
         if (tokenRef.current !== miToken) return
         setCupon({
@@ -163,11 +214,30 @@ function ModalConfirmarCompra({ onClose, onConfirmar, procesando, codigoCupon, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [codigoCupon])
 
+  useEffect(() => {
+    if (items.length === 0) return undefined
+    let vigente = true
+    const timer = setTimeout(async () => {
+      try {
+        const itemsReq = itemsParaApi(items)
+        const res = await pagosService.cotizar(itemsReq, cupon.estado === 'valido' ? codigoCupon.trim() : null)
+        if (vigente) setCotizacion(res)
+      } catch {
+        if (vigente) setCotizacion(null)
+      }
+    }, 250)
+    return () => { vigente = false; clearTimeout(timer) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, cupon.estado])
+
+  const conIva = Boolean(cotizacion?.cobroConIva)
+
   // Sin cupón, el total con recargos pendientes se calcula en el cliente; con cupón, se usa el
   // total ya calculado por el backend (que también los incluye — ver OrdenCompraService.validarCupon).
   const totalMostrado = cupon.estado === 'valido' && cupon.totalConDescuento != null
     ? cupon.totalConDescuento
-    : total + montoRecargosPendientes
+    : hayPlanes && cotizacion ? cotizacion.total : total + montoRecargosPendientes
+  const subtotalMostrado = hayPlanes && cotizacion ? cotizacion.subtotal - cotizacion.recargosSubtotal : total
 
   return (
     <Modal titulo="Confirmar compra" subtitulo="Revisa tu pedido antes de pagar"
@@ -175,6 +245,10 @@ function ModalConfirmarCompra({ onClose, onConfirmar, procesando, codigoCupon, o
       <div className="p-6 space-y-4">
         <ul className="space-y-2">
           {items.map((i, idx) => {
+            if (i.unidadesPlan) {
+              return <LineaPlanModal key={claveDe(i)} i={i} linea={cotizacion?.lineas?.[idx]} config={config} deshabilitado={procesando}
+                onQuitar={() => quitarItem(claveDe(i))} />
+            }
             const unitario = precioUnitario(i)
             const conDescuento = unitario < i.valorBase
             return (
@@ -202,7 +276,8 @@ function ModalConfirmarCompra({ onClose, onConfirmar, procesando, codigoCupon, o
           })}
         </ul>
 
-        <SugerenciasAlPagar idsEnCarrito={idsEnCarrito} onAgregar={agregarItem} />
+        <SugerenciasAlPagar idsEnCarrito={idsEnCarrito} soloConPlanes={config.tiendaPorPlanes}
+          onAgregar={(srv) => config.tiendaPorPlanes ? agregarPlan(srv, srv.planes.find((p) => p.unidades === 1) ?? srv.planes[0]) : agregarItem(srv, 1)} />
 
         {montoRecargosPendientes !== 0 && (
           <div className={`rounded-lg border px-3 py-2.5 text-xs space-y-1.5 ${
@@ -278,11 +353,36 @@ function ModalConfirmarCompra({ onClose, onConfirmar, procesando, codigoCupon, o
           )}
         </div>
 
+        {conIva ? (
+          <div className="rounded-xl border border-primary-100 bg-gradient-to-br from-primary-50 to-white px-4 py-3.5 space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-500">Subtotal</span>
+              <span className="font-medium text-gray-600">{formatearPrecio(cotizacion.subtotal - cotizacion.recargosSubtotal)}</span>
+            </div>
+            {cotizacion.recargosSubtotal > 0 && (
+              <div className="flex items-center justify-between text-sm text-red-600">
+                <span>Recargos por ciudad pendientes</span>
+                <span className="font-medium">{formatearPrecio(cotizacion.recargosSubtotal)}</span>
+              </div>
+            )}
+            {cupon.estado === 'valido' && (
+              <p className="text-xs text-green-600">Descuento del código incluido en los precios.</p>
+            )}
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-500">IVA {Number(cotizacion.ivaPorcentaje)} %</span>
+              <span className="font-medium text-gray-600">{formatearPrecio(cotizacion.iva)}</span>
+            </div>
+            <div className="flex items-center justify-between border-t border-primary-100 pt-2">
+              <span className="text-sm font-semibold text-gray-700">Total a pagar</span>
+              <span className="text-xl font-bold text-primary-700">{formatearPrecio(cotizacion.total)}</span>
+            </div>
+          </div>
+        ) : (
         <div className="rounded-xl border border-primary-100 bg-gradient-to-br from-primary-50 to-white px-4 py-3.5 space-y-2">
           <div className="flex items-center justify-between text-sm">
             <span className="text-gray-500">Subtotal</span>
             <span className={`text-gray-600 ${cupon.estado === 'valido' ? 'line-through decoration-gray-300' : 'font-medium'}`}>
-              {formatearPrecio(total)}
+              {formatearPrecio(subtotalMostrado)}
             </span>
           </div>
           {montoRecargosPendientes !== 0 && (
@@ -304,6 +404,7 @@ function ModalConfirmarCompra({ onClose, onConfirmar, procesando, codigoCupon, o
             <span className="text-xl font-bold text-primary-700">{formatearPrecio(totalMostrado)}</span>
           </div>
         </div>
+        )}
 
         <p className="text-xs text-gray-400">
           El total final (con descuentos aplicados) se confirma al procesar el pago. Serás redirigido a Wompi para completarlo de forma segura.
@@ -328,6 +429,10 @@ function ModalConfirmarCompra({ onClose, onConfirmar, procesando, codigoCupon, o
 /** Ícono de carrito del header que despliega el resumen de compra — el carrito ya no vive fijo en la página. */
 export default function CarritoDropdown() {
   const { items, quitarItem, vaciarCarrito, total, totalItems, precioUnitario } = useCarrito()
+  const config = useConfigTienda()
+  const hayPlanes = items.some((i) => i.unidadesPlan)
+  // Con planes, subtotales y total salen de la cotización del backend (no se multiplican aquí).
+  const [cotDrop, setCotDrop] = useState(null)
   const [abierto, setAbierto] = useState(false)
   const [modalConfirmar, setModalConfirmar] = useState(false)
   const [procesando, setProcesando] = useState(false)
@@ -348,10 +453,17 @@ export default function CarritoDropdown() {
 
   const carritoVacio = items.length === 0
 
+  useEffect(() => {
+    if (!abierto || !hayPlanes) return undefined
+    let vigente = true
+    pagosService.cotizar(itemsParaApi(items), null).then((r) => { if (vigente) setCotDrop(r) }).catch(() => { if (vigente) setCotDrop(null) })
+    return () => { vigente = false }
+  }, [abierto, hayPlanes, items])
+
   const confirmarCompra = async () => {
     setProcesando(true)
     try {
-      const itemsReq = items.map((i) => ({ idProceso: i.idProceso, cantidad: i.cantidad }))
+      const itemsReq = itemsParaApi(items)
       const orden = await pagosService.crearOrden(itemsReq, codigoCupon)
       const pago = await pagosService.iniciarPago(orden.idOrdenCompra)
       vaciarCarrito()
@@ -412,6 +524,10 @@ export default function CarritoDropdown() {
             <>
               <ul className="divide-y divide-gray-50 max-h-72 overflow-y-auto">
                 {items.map((i, idx) => {
+                  if (i.unidadesPlan) {
+                    return <LineaPlanDropdown key={claveDe(i)} i={i} linea={cotDrop?.lineas?.[idx]} config={config}
+                      onQuitar={() => quitarItem(claveDe(i))} />
+                  }
                   const unitario = precioUnitario(i)
                   const conDescuento = unitario < i.valorBase
                   return (
@@ -464,7 +580,7 @@ export default function CarritoDropdown() {
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-500">Total a pagar</span>
                   <span className="text-lg font-bold text-primary-700">
-                    {formatearPrecio(total + (recargosPendientes?.montoTotal ?? 0))}
+                    {hayPlanes ? (cotDrop ? formatearPrecio(cotDrop.total) : '…') : formatearPrecio(total + (recargosPendientes?.montoTotal ?? 0))}
                   </span>
                 </div>
                 <button onClick={() => { setModalConfirmar(true); setAbierto(false) }}

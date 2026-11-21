@@ -100,7 +100,8 @@ public class CiudadService {
                 .orElseThrow(() -> new ApiException("Ciudad no encontrada", HttpStatus.NOT_FOUND));
         ciudad.setNivelCiudad(req.nivelCiudad());
         ciudad.setPendienteConfirmacion(false);
-        log.info("Ciudad clasificada: {} ({}) -> {}", ciudad.getNombreCiudad(), ciudad.getDepartamento(), req.nivelCiudad());
+        if (req.esSede() != null) ciudad.setEsSede(req.esSede());
+        log.info("Ciudad clasificada: {} ({}) -> {}, sede={}", ciudad.getNombreCiudad(), ciudad.getDepartamento(), req.nivelCiudad(), ciudad.getEsSede());
         return CiudadResponse.from(ciudad, repository.estaEnUso(id));
     }
 

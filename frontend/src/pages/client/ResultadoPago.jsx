@@ -240,6 +240,12 @@ export default function ResultadoPago() {
           </div>
         )}
 
+        {Number(orden.montoIva) > 0 && (
+          <div className="space-y-1 border-t border-gray-100 pt-3 text-sm text-gray-600">
+            <div className="flex items-center justify-between"><span>Subtotal</span><span>{formatearPrecio(orden.montoSubtotal)}</span></div>
+            <div className="flex items-center justify-between"><span>IVA {Number(orden.ivaPorcentaje)} %</span><span>{formatearPrecio(orden.montoIva)}</span></div>
+          </div>
+        )}
         <div className="flex items-center justify-between border-t border-gray-100 pt-3">
           <span className="text-sm font-semibold text-gray-600">Total</span>
           <span className="text-lg font-bold text-primary-700">{formatearPrecio(orden.montoTotal)}</span>

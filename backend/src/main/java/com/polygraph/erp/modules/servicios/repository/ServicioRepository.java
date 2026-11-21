@@ -107,6 +107,13 @@ public interface ServicioRepository extends JpaRepository<Servicio, Integer>, Jp
 
     // ── Gráficas del tablero del gestor (conteos agrupados, sin traer los servicios) ──
 
+    /** TP-14: cuántas solicitudes (servicios no cancelados) hizo un cliente entre dos fechas, ambas incluidas. */
+    @Query("SELECT COUNT(s) FROM Servicio s WHERE s.cliente.idCliente = :idCliente AND s.fechaSolicitud >= :desde AND s.fechaSolicitud <= :hasta "
+            + "AND s.estado <> com.polygraph.erp.shared.enums.EstadoServicio.CANCELADO")
+    long contarNoCanceladosEntre(@org.springframework.data.repository.query.Param("idCliente") Integer idCliente,
+                                 @org.springframework.data.repository.query.Param("desde") java.time.LocalDate desde,
+                                 @org.springframework.data.repository.query.Param("hasta") java.time.LocalDate hasta);
+
     /** [fechaSolicitud, cantidad] de los servicios de sus clientes desde una fecha. */
     @Query("SELECT s.fechaSolicitud, COUNT(s) FROM Servicio s WHERE s.cliente.idGestor = :idGestor "
             + "AND s.fechaSolicitud >= :desde GROUP BY s.fechaSolicitud")

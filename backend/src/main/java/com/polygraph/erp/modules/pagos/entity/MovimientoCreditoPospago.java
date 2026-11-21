@@ -40,6 +40,19 @@ public class MovimientoCreditoPospago {
     @Column(name = "monto_recargo_ciudad", precision = 15, scale = 2, nullable = false)
     private BigDecimal montoRecargoCiudad;
 
+    /** TP-03: IVA del servicio y del recargo por ciudad (cada uno redondeado a pesos). monto_total los incluye. */
+    @Builder.Default
+    @Column(name = "monto_iva_base", precision = 15, scale = 2, nullable = false)
+    private BigDecimal montoIvaBase = BigDecimal.ZERO;
+
+    @Builder.Default
+    @Column(name = "monto_iva_recargo", precision = 15, scale = 2, nullable = false)
+    private BigDecimal montoIvaRecargo = BigDecimal.ZERO;
+
+    /** TP-12: PLAN_100, PROPIO, BASE o BOLSA; null en cargos anteriores. */
+    @Column(name = "origen_precio", length = 20)
+    private String origenPrecio;
+
     @Column(name = "monto_total", precision = 15, scale = 2, nullable = false)
     private BigDecimal montoTotal;
 

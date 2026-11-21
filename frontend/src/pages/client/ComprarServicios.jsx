@@ -5,6 +5,9 @@ import catalogoService from '../../services/catalogoService'
 import pagosService from '../../services/pagosService'
 import dashboardService from '../../services/dashboardService'
 import { useCarrito } from '../../hooks/useCarrito'
+import { useConfigTienda } from '../../hooks/useConfigTienda'
+import { TarjetaServicioPlanes, PaginaServicioPlanes, vendibleEnTienda } from './tienda/TiendaPlanes'
+import { tituloDe } from '../../utils/planesTienda'
 import { useAuth } from '../../hooks/useAuth'
 import { useFavoritos } from '../../hooks/useFavoritos'
 import { metaCategoria, ordenarCategorias, formatearPrecio } from '../../utils/catalogoDisplay'
@@ -78,7 +81,7 @@ function IconoCheck({ className = 'h-3.5 w-3.5' }) {
 }
 
 /* ─── Tarjeta de servicio, estilo "plan de precios" — título, desde + precio grande, CTA, puntos clave ─── */
-function TarjetaServicioCompra({ servicio, meta, onAgregar, onVistaPrevia, onVerOfertas, favorito, onToggleFavorito }) {
+function TarjetaServicioCompra({ conIva, servicio, meta, onAgregar, onVistaPrevia, onVerOfertas, favorito, onToggleFavorito }) {
   const sinPrecio = !servicio.valor
   const tieneOferta = servicio.tramosPrecio?.length > 0
   const puntos = servicio.puntosClave?.length ? servicio.puntosClave.slice(0, 4) : null
@@ -119,7 +122,7 @@ function TarjetaServicioCompra({ servicio, meta, onAgregar, onVistaPrevia, onVer
       {!sinPrecio && <p className="text-xs text-gray-400 mt-3">desde</p>}
       <p className={`font-extrabold text-gray-900 leading-none ${sinPrecio ? 'text-base mt-3' : 'text-4xl'}`}>
         {formatearPrecio(servicio.valor)}
-        {!sinPrecio && <span className="block text-xs font-normal text-gray-400 mt-1">por unidad</span>}
+        {!sinPrecio && <span className="block text-xs font-normal text-gray-400 mt-1">por unidad{conIva ? ' + IVA' : ''}</span>}
       </p>
 
       {sinPrecio ? (
@@ -239,7 +242,7 @@ function ModalVistaPrevia({ servicio, subprocesos, cargando, onClose, favorito, 
 }
 
 /* ─── Modal de ofertas actuales — una tarjetica por cada paquete de volumen disponible ─── */
-function ModalOfertas({ servicio, onClose, onAgregar }) {
+function ModalOfertas({ conIva, servicio, onClose, onAgregar }) {
   const opciones = [
     { cantidad: 1, precio: servicio.valor, esBase: true, key: 'base' },
     ...[...(servicio.tramosPrecio ?? [])]
@@ -262,7 +265,7 @@ function ModalOfertas({ servicio, onClose, onAgregar }) {
                 </p>
                 <p className="text-xl font-extrabold text-gray-900 leading-none">
                   {formatearPrecio(o.precio)}
-                  <span className="text-xs font-normal text-gray-400"> / und</span>
+                  <span className="text-xs font-normal text-gray-400"> / und{conIva ? ' + IVA' : ''}</span>
                 </p>
                 {ahorro > 0 && (
                   <p className="text-xs font-medium text-green-600">Ahorras {formatearPrecio(ahorro)} por unidad</p>
@@ -357,7 +360,7 @@ function GridClasificaciones({ categorias, porCategoria, totalFavoritos, onSelec
 
 /* ─── Pestaña: catálogo ─── */
 function TabCatalogo({ onToast }) {
-  const [servicios, setServicios] = useState([])
+  const [serviciosApi, setServicios] = useState([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
   // null = viendo la grilla de clasificaciones (landing); 'FAVORITOS' o un código de clasificación = viendo esa lista
@@ -368,7 +371,12 @@ function TabCatalogo({ onToast }) {
   const [ofertasAbiertas, setOfertasAbiertas] = useState(null)
   const [subprocesosCache, setSubprocesosCache] = useState({})
   const [cargandoPrevia, setCargandoPrevia] = useState(false)
-  const { agregarItem } = useCarrito()
+  // Interruptores de la tienda: con el cobro con IVA los precios se rotulan «+ IVA»; con tiendaPorPlanes se vende por planes (TP-06).
+  const config = useConfigTienda()
+  const conIva = config.cobroConIva
+  const porPlanes = config.tiendaPorPlanes
+  const [servicioAbierto, setServicioAbierto] = useState(null)   // idProceso de la página del servicio abierta
+  const { agregarItem, agregarPlan } = useCarrito()
   const { esFavorito, toggleFavorito } = useFavoritos()
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -380,6 +388,14 @@ function TabCatalogo({ onToast }) {
       .catch(() => setError('No se pudo cargar el catálogo. Intenta nuevamente.'))
       .finally(() => setCargando(false))
   }, [])
+
+  // Con la tienda por planes solo se ven los servicios visibles y con precio base (y por lo tanto, con planes).
+  const servicios = useMemo(() => (porPlanes ? serviciosApi.filter(vendibleEnTienda) : serviciosApi), [serviciosApi, porPlanes])
+
+  const comprarPlan = (servicio, plan, cobertura) => {
+    agregarPlan(servicio, plan, cobertura)
+    onToast(`${plan.nombre} de ${tituloDe(servicio)} agregado al carrito`)
+  }
 
   const agregarAlCarrito = (servicio, cantidad) => {
     agregarItem(servicio, cantidad)
@@ -398,10 +414,12 @@ function TabCatalogo({ onToast }) {
     if (!idProceso) return
 
     const servicio = servicios.find((s) => s.idProceso === Number(idProceso))
-    if (servicio) agregarAlCarrito(servicio, 1)
+    // Tienda por planes: se abre la página del servicio para que elija el plan; la actual lo agrega directo.
+    if (servicio && porPlanes) setServicioAbierto(servicio.idProceso)
+    else if (servicio) agregarAlCarrito(servicio, 1)
     setSearchParams({}, { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [servicios])
+  }, [servicios, porPlanes])
 
   const abrirVistaPrevia = (servicio) => {
     setVistaPrevia(servicio)
@@ -427,6 +445,11 @@ function TabCatalogo({ onToast }) {
         <p className="text-red-500 text-sm">{error}</p>
       </div>
     )
+  }
+
+  const abierto = porPlanes && servicioAbierto != null ? servicios.find((s) => s.idProceso === servicioAbierto) : null
+  if (abierto) {
+    return <PaginaServicioPlanes servicio={abierto} config={config} onVolver={() => setServicioAbierto(null)} onComprar={comprarPlan} />
   }
 
   const porCategoriaTotal = servicios.reduce((acc, s) => {
@@ -584,8 +607,12 @@ function TabCatalogo({ onToast }) {
                       </div>
                     )}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {itemsCat.map((servicio) => (
-                        <TarjetaServicioCompra key={servicio.idProceso} servicio={servicio} meta={meta}
+                      {itemsCat.map((servicio) => porPlanes ? (
+                        <TarjetaServicioPlanes key={servicio.idProceso} servicio={servicio} conIva={conIva}
+                          favorito={esFavorito(servicio.idProceso)} onToggleFavorito={toggleFavorito}
+                          onVerPlanes={(s) => setServicioAbierto(s.idProceso)} />
+                      ) : (
+                        <TarjetaServicioCompra key={servicio.idProceso} conIva={conIva} servicio={servicio} meta={meta}
                           onAgregar={agregarAlCarrito}
                           onVistaPrevia={abrirVistaPrevia}
                           onVerOfertas={setOfertasAbiertas}
@@ -615,6 +642,7 @@ function TabCatalogo({ onToast }) {
 
       {ofertasAbiertas && (
         <ModalOfertas
+          conIva={conIva}
           servicio={ofertasAbiertas}
           onClose={() => setOfertasAbiertas(null)}
           onAgregar={agregarAlCarrito}
@@ -628,6 +656,7 @@ function TabCatalogo({ onToast }) {
 const POR_PAGINA_HISTORIAL = 10
 
 function TabHistorial({ onToast }) {
+  const config = useConfigTienda()
   const navigate = useNavigate()
   const [ordenes, setOrdenes] = useState([])
   const [cargando, setCargando] = useState(true)
@@ -704,7 +733,28 @@ function TabHistorial({ onToast }) {
                   <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{o.referencia}</td>
                   <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{formatFecha(o.fechaCreacion)}</td>
                   <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
-                    {o.items.length} servicio{o.items.length !== 1 ? 's' : ''}
+                    {o.items.some((i) => i.unidadesPlan) ? (
+                      <ul className="space-y-1.5 whitespace-normal">
+                        {o.items.map((i, idx) => (
+                          <li key={idx} className="text-xs leading-snug">
+                            <span className="block font-medium text-gray-800">{i.nombreProceso}</span>
+                            <span className="block text-gray-600">
+                              Plan de {i.unidadesPlan}{i.cantidadPaquetes > 1 ? ` × ${i.cantidadPaquetes}` : ''}
+                              {config.coberturaPorSede ? ` · ${i.cobertura === 'NACIONAL' ? 'Paquete nacional' : 'Paquete por sede'}` : ''}
+                              {' · '}{formatearPrecio(i.valorUnitario)} c/u
+                            </span>
+                            <span className="block text-gray-600">
+                              Subtotal {formatearPrecio(i.subtotal)} · IVA {formatearPrecio(i.iva ?? 0)} · Total {formatearPrecio(Number(i.subtotal) + Number(i.iva ?? 0))}
+                            </span>
+                            {config.vigenciaPorPlan && i.fechaVencimiento && (
+                              <span className="block text-amber-700">Vence el {formatFecha(`${i.fechaVencimiento}T12:00:00`)}</span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <>{o.items.length} servicio{o.items.length !== 1 ? 's' : ''}</>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right font-semibold text-gray-800 whitespace-nowrap">
                     {formatearPrecio(o.montoTotal)}
@@ -765,6 +815,7 @@ function TabHistorial({ onToast }) {
 
 /* ─── Pestaña: saldo disponible (lo que ya compraste y te queda) ─── */
 function TabSaldo() {
+  const config = useConfigTienda()
   const [saldos, setSaldos] = useState([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
@@ -815,6 +866,8 @@ function TabSaldo() {
               <th className="px-4 py-3 text-right">Comprado</th>
               <th className="px-4 py-3 text-right">Consumido</th>
               <th className="px-4 py-3 text-right">Disponible</th>
+              {config.coberturaPorSede && <th className="px-4 py-3 text-right">Por sede / nacional</th>}
+              {config.vigenciaPorPlan && <th className="px-4 py-3 text-left">Vencimiento</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
@@ -830,6 +883,14 @@ function TabSaldo() {
                     {s.cantidadDisponible}
                   </span>
                 </td>
+                {config.coberturaPorSede && (
+                  <td className="px-4 py-3 text-right text-gray-600">{s.cantidadDisponible - (s.disponibleNacional ?? 0)} / {s.disponibleNacional ?? 0}</td>
+                )}
+                {config.vigenciaPorPlan && (
+                  <td className="px-4 py-3 text-gray-600">
+                    {s.proximoVencimiento ? `${s.unidadesQueVencen} ${s.unidadesQueVencen === 1 ? 'vence' : 'vencen'} el ${formatFecha(`${s.proximoVencimiento}T12:00:00`)}` : 'No vencen'}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

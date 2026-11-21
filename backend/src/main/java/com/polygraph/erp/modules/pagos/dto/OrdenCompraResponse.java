@@ -26,5 +26,10 @@ public record OrdenCompraResponse(
         String codigoCuponAplicado,
         String nombreDescuentoAplicado,
         BigDecimal montoDescuentoTotal,
-        BigDecimal montoRecargosPendientes
+        BigDecimal montoRecargosPendientes,
+        // TP-03: subtotal sin IVA, IVA (líneas + recargos), la parte del IVA de los recargos y el porcentaje usado
+        BigDecimal montoSubtotal,
+        BigDecimal montoIva,
+        BigDecimal montoIvaRecargos,
+        BigDecimal ivaPorcentaje
 ) {}

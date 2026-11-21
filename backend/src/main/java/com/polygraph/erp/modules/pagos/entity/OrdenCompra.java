@@ -35,8 +35,29 @@ public class OrdenCompra {
     @Column(name = "referencia", nullable = false, unique = true, length = 50)
     private String referencia;
 
+    /** Lo que se cobra y se envía a la pasarela: subtotal + IVA (TP-03). */
     @Column(name = "monto_total", precision = 15, scale = 2, nullable = false)
     private BigDecimal montoTotal;
+
+    /** Suma de las líneas y los recargos, sin IVA. */
+    @Builder.Default
+    @Column(name = "monto_subtotal", precision = 15, scale = 2, nullable = false)
+    private BigDecimal montoSubtotal = BigDecimal.ZERO;
+
+    /** IVA total (líneas + recargos). */
+    @Builder.Default
+    @Column(name = "monto_iva", precision = 15, scale = 2, nullable = false)
+    private BigDecimal montoIva = BigDecimal.ZERO;
+
+    /** Parte del IVA que corresponde a los recargos por ciudad. */
+    @Builder.Default
+    @Column(name = "monto_iva_recargos", precision = 15, scale = 2, nullable = false)
+    private BigDecimal montoIvaRecargos = BigDecimal.ZERO;
+
+    /** Porcentaje usado (snapshot); 0 si el cobro con IVA estaba apagado. */
+    @Builder.Default
+    @Column(name = "iva_porcentaje", precision = 5, scale = 2, nullable = false)
+    private BigDecimal ivaPorcentaje = BigDecimal.ZERO;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "estado", nullable = false, length = 20)

@@ -35,7 +35,8 @@ class LotesPrepagoTest {
         saldos = mock(SaldoServicioClienteRepository.class);
         lotes = mock(LotePrepagoRepository.class);
         var bolsa = new BolsaPrepagoService(saldos, mock(OrdenCompraItemRepository.class));
-        servicio = new SaldoServicioClienteService(saldos, bolsa, lotes);
+        servicio = new SaldoServicioClienteService(saldos, bolsa, lotes, java.time.Clock.fixed(java.time.Instant.parse("2026-10-30T15:00:00Z"),
+                java.time.ZoneOffset.UTC), mock(com.polygraph.erp.modules.tienda.service.ParametrosTiendaService.class));
     }
 
     private LotePrepago lote(long id, int comprada, int consumida, String valor, int dia) {
@@ -95,12 +96,12 @@ class LotesPrepagoTest {
         saldo(0, 0);
         var item = OrdenCompraItem.builder().idItem(7L).cantidad(20).valorUnitario(new BigDecimal("38000")).valorOriginal(new BigDecimal("40000"))
                 .nombreDescuentoAplicado("Volumen").build();
-        when(lotes.findByItem_IdItem(7L)).thenReturn(Optional.empty());
+        when(lotes.existsByItem_IdItem(7L)).thenReturn(false);
         servicio.acreditar(Cliente.builder().idCliente(1).build(), proceso, 20, item);
         org.mockito.Mockito.verify(lotes).save(org.mockito.ArgumentMatchers.argThat((LotePrepago l) ->
                 l.getCantidadComprada() == 20 && l.getCantidadConsumida() == 0 && l.getValorUnitario().compareTo(new BigDecimal("38000")) == 0));
 
-        when(lotes.findByItem_IdItem(7L)).thenReturn(Optional.of(lote(9, 20, 0, "38000", 1)));
+        when(lotes.existsByItem_IdItem(7L)).thenReturn(true);
         servicio.acreditar(Cliente.builder().idCliente(1).build(), proceso, 20, item);
         org.mockito.Mockito.verify(lotes, org.mockito.Mockito.times(1)).save(any(LotePrepago.class));
     }

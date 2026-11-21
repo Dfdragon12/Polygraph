@@ -1,13 +1,19 @@
 import { createContext, useState, useEffect, useRef } from 'react'
 import { resolverPrecioUnitario } from '../utils/catalogoDisplay'
+import { tituloDe } from '../utils/planesTienda'
 import { useAuth } from '../hooks/useAuth'
+import { useConfigTienda } from '../hooks/useConfigTienda'
 
 const CarritoContext = createContext(null)
 
 const claveStorage = (idUsuario) => idUsuario ? `carrito-cliente-${idUsuario}` : null
 
+/** Identifica una línea del carrito: la tienda actual tiene una por servicio; la tienda por planes, una por servicio + plan + cobertura. */
+export const claveDe = (item) => item.clave ?? String(item.idProceso)
+
 export function CarritoProvider({ children }) {
   const { usuario } = useAuth()
+  const config = useConfigTienda()
   // El objeto de sesión (login) trae "id", no "idUsuario" (ese nombre solo lo usan las entidades
   // completas en otras pantallas) — con el nombre equivocado esto nunca guardaba nada.
   const idUsuario = usuario?.id ?? null
@@ -39,12 +45,22 @@ export function CarritoProvider({ children }) {
     localStorage.setItem(clave, JSON.stringify(items))
   }, [items])
 
+  // Si el interruptor tiendaPorPlanes cambió desde que se armó el carrito, las líneas del otro modelo ya no son válidas
+  // (el backend las rechazaría): se descartan en vez de dejar un carrito que no se puede pagar.
+  useEffect(() => {
+    if (!config.cargada) return
+    setItems((prev) => {
+      const validos = prev.filter((i) => Boolean(i.unidadesPlan) === config.tiendaPorPlanes)
+      return validos.length === prev.length ? prev : validos
+    })
+  }, [config.cargada, config.tiendaPorPlanes])
+
   const agregarItem = (proceso, cantidad = 1) => {
     setItems((prev) => {
-      const existente = prev.find((i) => i.idProceso === proceso.idProceso)
+      const existente = prev.find((i) => !i.unidadesPlan && i.idProceso === proceso.idProceso)
       if (existente) {
         return prev.map((i) =>
-          i.idProceso === proceso.idProceso ? { ...i, cantidad: i.cantidad + cantidad } : i
+          i === existente ? { ...i, cantidad: i.cantidad + cantidad } : i
         )
       }
       return [...prev, {
@@ -57,21 +73,55 @@ export function CarritoProvider({ children }) {
     })
   }
 
-  const quitarItem = (idProceso) => {
-    setItems((prev) => prev.filter((i) => i.idProceso !== idProceso))
+  /**
+   * Tienda por planes: agrega UN paquete del plan (o suma otro si ya está). `plan` viene del backend con su precio por unidad
+   * vigente; el backend lo vuelve a calcular al pagar y gana si difiere.
+   */
+  const agregarPlan = (servicio, plan, cobertura = 'LOCAL') => {
+    const clave = `${servicio.idProceso}:${plan.unidades}:${cobertura}`
+    setItems((prev) => {
+      const existente = prev.find((i) => i.clave === clave)
+      if (existente) {
+        return prev.map((i) => i === existente
+          ? { ...i, cantidadPaquetes: i.cantidadPaquetes + 1, cantidad: i.cantidad + plan.unidades }
+          : i)
+      }
+      return [...prev, {
+        clave,
+        idProceso: servicio.idProceso,
+        nombreProceso: tituloDe(servicio),
+        unidadSingular: servicio.unidadSingular,
+        unidadPlural: servicio.unidadPlural,
+        unidadesPlan: plan.unidades,
+        nombrePlan: plan.nombre,
+        cantidadPaquetes: 1,
+        cantidad: plan.unidades,
+        cobertura,
+        precioUnitario: plan.precioUnitario,
+        vigenciaMeses: plan.vigenciaMeses ?? null,
+        valorBase: plan.precioUnitario,
+        tramosPrecio: [],
+      }]
+    })
+  }
+
+  const quitarItem = (clave) => {
+    setItems((prev) => prev.filter((i) => claveDe(i) !== String(clave)))
   }
 
   const vaciarCarrito = () => setItems([])
 
-  /** Precio unitario vigente del ítem según su cantidad actual (aplica tramos de volumen si hay). Los descuentos dinámicos solo se ven reflejados al pagar — el backend siempre recalcula. */
-  const precioUnitario = (item) => resolverPrecioUnitario(item.valorBase, item.tramosPrecio, item.cantidad)
+  /** Precio unitario vigente del ítem. Plan: el fijo del plan. Tienda actual: aplica tramos de volumen según la cantidad. Los descuentos dinámicos solo se ven reflejados al pagar — el backend siempre recalcula. */
+  const precioUnitario = (item) => item.unidadesPlan
+    ? item.precioUnitario
+    : resolverPrecioUnitario(item.valorBase, item.tramosPrecio, item.cantidad)
 
   const totalItems = items.reduce((acc, i) => acc + i.cantidad, 0)
   const total = items.reduce((acc, i) => acc + precioUnitario(i) * i.cantidad, 0)
 
   return (
     <CarritoContext.Provider value={{
-      items, agregarItem, quitarItem,
+      items, agregarItem, agregarPlan, quitarItem,
       vaciarCarrito, precioUnitario, totalItems, total,
     }}>
       {children}

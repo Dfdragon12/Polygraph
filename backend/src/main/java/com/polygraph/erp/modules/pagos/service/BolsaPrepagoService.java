@@ -49,8 +49,9 @@ public class BolsaPrepagoService {
 
     static SaldoServicio fila(SaldoServicioCliente s) {
         int comprado = orCero(s.getCantidadComprada()), consumido = orCero(s.getCantidadConsumida());
+        // TP-07: las unidades vencidas ya no se pueden usar; salen del disponible (y no cuentan como «usadas»)
         return new SaldoServicio(s.getProceso().getIdProceso(), s.getProceso().getNombreProceso(), comprado, consumido, 0,
-                calcularDisponible(comprado, consumido, 0));
+                calcularDisponible(comprado, consumido, orCero(s.getCantidadVencida())));
     }
 
     public static int calcularDisponible(int comprado, int consumido, int reservado) {

@@ -11,10 +11,13 @@ public record CiudadResponse(
         String codigoDaneDepto,
         NivelCiudad nivelCiudad,
         Boolean pendienteConfirmacion,
-        Boolean enUso
+        Boolean enUso,
+        /** TP-08: ciudad sede (sin recargo en el paquete por sede). */
+        Boolean esSede
 ) {
     public static CiudadResponse from(Ciudad c, boolean enUso) {
         return new CiudadResponse(c.getIdCiudad(), c.getNombreCiudad(), c.getDepartamento(),
-                c.getCodigoDaneCiudad(), c.getCodigoDaneDepto(), c.getNivelCiudad(), c.getPendienteConfirmacion(), enUso);
+                c.getCodigoDaneCiudad(), c.getCodigoDaneDepto(), c.getNivelCiudad(), c.getPendienteConfirmacion(), enUso,
+                Boolean.TRUE.equals(c.getEsSede()));
     }
 }

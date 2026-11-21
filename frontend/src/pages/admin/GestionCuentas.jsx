@@ -1,4 +1,5 @@
 import { useId, useEffect, useRef, useState } from 'react'
+import { useConfigTienda } from '../../hooks/useConfigTienda'
 import gestionCuentasService from '../../services/gestionCuentasService'
 import pospagoService from '../../services/pospagoService'
 import Toast from '../../components/Toast'
@@ -115,6 +116,10 @@ function ModalDetallePospago({ idCliente, nombreCliente, onClose, onCambio, onTo
   const [limiteCredito, setLimiteCredito] = useState('')
   const [estadoMora, setEstadoMora] = useState('NORMAL')
   const [requiereAprobacion, setRequiereAprobacion] = useState(false)
+  const config = useConfigTienda()
+  const [diaCorte, setDiaCorte] = useState('')
+  const [motivoSuspension, setMotivoSuspension] = useState('')
+  const [suspendiendo, setSuspendiendo] = useState(false)
   const [guardando, setGuardando] = useState(false)
   const [errorForm, setErrorForm] = useState(null)
 
@@ -126,6 +131,7 @@ function ModalDetallePospago({ idCliente, nombreCliente, onClose, onCambio, onTo
           setLimiteCredito(fila.limiteCredito != null ? String(fila.limiteCredito) : '0')
           setEstadoMora(fila.estadoMora ?? 'NORMAL')
           setRequiereAprobacion(!!fila.requiereAprobacion)
+          setDiaCorte(fila.diaCorte != null ? String(fila.diaCorte) : '')
         }
       })
       .catch(() => {})
@@ -144,13 +150,33 @@ function ModalDetallePospago({ idCliente, nombreCliente, onClose, onCambio, onTo
     setGuardando(true)
     try {
       await gestionCuentasService.adminActualizarPospago(idCliente, {
-        limiteCredito: monto, estadoMora, requiereAprobacion,
+        limiteCredito: monto, ...(config.moraAutomatica ? {} : { estadoMora }), requiereAprobacion,
+        ...(config.altaPospagoControlada && diaCorte !== '' ? { diaCorte: Number(diaCorte) } : {}),
       })
       onToast(`Crédito de ${nombreCliente} actualizado`, 'exito')
       onCambio()
       cargar()
     } catch (err) {
       setErrorForm(mensajeError(err, 'No se pudo actualizar el crédito.'))
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  // TP-14: con la mora automática el estado «Al día» / «En mora» lo calcula la plataforma; el administrador solo suspende (con motivo) o levanta.
+  const cambiarSuspension = async (suspender) => {
+    setErrorForm(null)
+    if (suspender && !motivoSuspension.trim()) { setErrorForm('Escribe el motivo de la suspensión.'); return }
+    setGuardando(true)
+    try {
+      await gestionCuentasService.adminActualizarPospago(idCliente, suspender
+        ? { estadoMora: 'SUSPENDIDO', motivoSuspension: motivoSuspension.trim() } : { estadoMora: 'NORMAL' })
+      onToast(suspender ? `${nombreCliente} suspendido` : `Suspensión de ${nombreCliente} levantada`, 'exito')
+      setSuspendiendo(false); setMotivoSuspension('')
+      onCambio()
+      cargar()
+    } catch (err) {
+      setErrorForm(mensajeError(err, 'No se pudo cambiar la suspensión.'))
     } finally {
       setGuardando(false)
     }
@@ -185,6 +211,31 @@ function ModalDetallePospago({ idCliente, nombreCliente, onClose, onCambio, onTo
           </div>
 
           <div className="grid grid-cols-2 gap-4">
+            {config.moraAutomatica ? (
+              <div>
+                <p className="block text-xs font-medium text-gray-600 mb-1">Estado de mora</p>
+                <p className="text-sm font-semibold text-gray-800">{estadoMora === 'EN_MORA' ? 'En mora' : estadoMora === 'SUSPENDIDO' ? 'Suspendido' : 'Al día'}</p>
+                <p className="text-[11px] text-gray-500 mt-0.5">«Al día» y «En mora» los calcula la plataforma con las facturas.</p>
+                {estadoMora === 'SUSPENDIDO' ? (
+                  <button type="button" onClick={() => cambiarSuspension(false)} disabled={guardando}
+                    className="mt-2 text-xs font-semibold text-primary-700 underline disabled:opacity-60">Levantar suspensión</button>
+                ) : !suspendiendo ? (
+                  <button type="button" onClick={() => setSuspendiendo(true)}
+                    className="mt-2 text-xs font-semibold text-red-700 underline">Suspender…</button>
+                ) : (
+                  <div className="mt-2 space-y-1.5">
+                    <label htmlFor={`${idCampos}-m`} className="block text-xs font-medium text-gray-700">Motivo de la suspensión (obligatorio)</label>
+                    <textarea id={`${idCampos}-m`} rows={2} value={motivoSuspension} onChange={(e) => setMotivoSuspension(e.target.value)}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                    <div className="flex gap-3">
+                      <button type="button" onClick={() => cambiarSuspension(true)} disabled={guardando}
+                        className="text-xs font-semibold text-red-700 underline disabled:opacity-60">Confirmar suspensión</button>
+                      <button type="button" onClick={() => { setSuspendiendo(false); setMotivoSuspension('') }} className="text-xs text-gray-600">Cancelar</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
             <div>
               <label htmlFor={`${idCampos}-2`} className="block text-xs font-medium text-gray-600 mb-1">Estado de mora</label>
               <select id={`${idCampos}-2`} value={estadoMora} onChange={(e) => setEstadoMora(e.target.value)}
@@ -194,13 +245,22 @@ function ModalDetallePospago({ idCliente, nombreCliente, onClose, onCambio, onTo
                 <option value="SUSPENDIDO">Suspendido</option>
               </select>
             </div>
-            <div className="flex items-end pb-2.5">
-              <label className="flex items-center gap-2 text-xs text-gray-600">
-                <input type="checkbox" checked={requiereAprobacion} onChange={(e) => setRequiereAprobacion(e.target.checked)}
-                  className="h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
-                Requiere estudio de crédito
-              </label>
-            </div>
+            )}
+            {config.altaPospagoControlada ? (
+              <div>
+                <label htmlFor={`${idCampos}-3`} className="block text-xs font-medium text-gray-600 mb-1">Día de corte (1 a 28)</label>
+                <input id={`${idCampos}-3`} type="number" min="1" max="28" value={diaCorte} onChange={(e) => setDiaCorte(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
+              </div>
+            ) : (
+              <div className="flex items-end pb-2.5">
+                <label className="flex items-center gap-2 text-xs text-gray-600">
+                  <input type="checkbox" checked={requiereAprobacion} onChange={(e) => setRequiereAprobacion(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+                  Requiere estudio de crédito
+                </label>
+              </div>
+            )}
           </div>
 
           <div className="flex justify-end gap-3 pt-1">

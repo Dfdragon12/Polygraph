@@ -60,6 +60,9 @@ public class OrdenCompraService {
     private final DescuentoService descuentoService;
     private final RecargoPendienteService recargoPendienteService;
     private final NotificacionService notificacionService;
+    private final com.polygraph.erp.modules.tienda.service.PlanesTiendaService planesTiendaService;
+    private final com.polygraph.erp.modules.tienda.service.ParametrosTiendaService parametrosTienda;
+    private final com.polygraph.erp.modules.tienda.service.IvaService ivaService;
 
     public OrdenCompraResponse crearOrden(CrearOrdenRequest request, String emailUsuario) {
         Usuario usuario = resolverUsuario(emailUsuario);
@@ -81,11 +84,19 @@ public class OrdenCompraService {
 
         Descuento cupon = descuentoService.validarCupon(request.codigoCupon(), cliente.getIdCliente());
 
+        // Todo el cálculo (precios, IVA por línea, recargos) se hace antes de guardar nada.
+        Cotizacion cot = cotizar(cliente, itemsReq, cupon);
+
         OrdenCompra orden = OrdenCompra.builder()
                 .cliente(cliente)
                 .usuario(usuario)
                 .referencia(referencia)
-                .montoTotal(BigDecimal.ZERO)
+                .montoTotal(cot.total())
+                .montoSubtotal(cot.subtotal())
+                .montoIva(cot.iva())
+                .montoIvaRecargos(cot.ivaRecargos())
+                .ivaPorcentaje(cot.porcentaje())
+                .montoRecargosPendientes(cot.recargos())
                 .estado(EstadoOrdenCompra.PENDIENTE)
                 .modoSimulado(pasarelaPago.esModoSimulado())
                 .descuentoCupon(cupon)
@@ -94,8 +105,64 @@ public class OrdenCompraService {
                 .build();
         orden = ordenCompraRepository.save(orden);
 
-        BigDecimal montoTotal = BigDecimal.ZERO;
         List<OrdenCompraItem> items = new java.util.ArrayList<>();
+        for (LineaCotizada l : cot.lineas()) {
+            items.add(OrdenCompraItem.builder()
+                    .ordenCompra(orden)
+                    .proceso(l.proceso())
+                    .cantidad(l.linea().cantidad())
+                    .unidadesPlan(l.linea().unidadesPlan())
+                    .cantidadPaquetes(l.linea().cantidadPaquetes())
+                    .cobertura(l.linea().cobertura())
+                    .vigenciaMeses(vigenciaMeses(l.proceso(), l.linea().unidadesPlan()))
+                    .valorOriginal(l.valorOriginal())
+                    .valorUnitario(l.valorUnitario())
+                    .subtotal(l.subtotal())
+                    .montoIva(l.iva())
+                    .nombreDescuentoAplicado(l.nombreDescuento())
+                    .build());
+        }
+        ordenCompraItemRepository.saveAll(items);
+
+        log.info("Orden de compra creada: id={}, cliente={}, subtotal={}, iva={}, total={}",
+                orden.getIdOrdenCompra(), cliente.getIdCliente(), cot.subtotal(), cot.iva(), cot.total());
+        return construirRespuesta(orden, items);
+    }
+
+    /** Cuánto costaría hoy un carrito: subtotal, IVA y total por línea y en conjunto. No guarda nada. */
+    @Transactional(readOnly = true)
+    public CotizacionOrdenResponse cotizar(CrearOrdenRequest request, String emailUsuario) {
+        Cliente cliente = resolverCliente(resolverUsuario(emailUsuario));
+        List<ItemCarritoRequest> itemsReq = request.items() != null ? request.items() : List.of();
+        if (itemsReq.isEmpty()) {
+            throw new ApiException("El carrito está vacío", HttpStatus.BAD_REQUEST);
+        }
+        Descuento cupon = descuentoService.validarCupon(request.codigoCupon(), cliente.getIdCliente());
+        Cotizacion cot = cotizar(cliente, itemsReq, cupon);
+        List<CotizacionOrdenResponse.Linea> lineas = cot.lineas().stream()
+                .map(l -> new CotizacionOrdenResponse.Linea(l.proceso().getIdProceso(), l.proceso().getNombreProceso(),
+                        l.linea().unidadesPlan(), l.linea().cantidadPaquetes(), l.linea().cantidad(), l.valorUnitario(),
+                        l.subtotal(), l.iva(), l.subtotal().add(l.iva())))
+                .toList();
+        return new CotizacionOrdenResponse(lineas, cot.recargos(), cot.ivaRecargos(), cot.subtotal(), cot.iva(), cot.total(),
+                cot.porcentaje(), cot.porcentaje().signum() > 0);
+    }
+
+    private record LineaCotizada(Proceso proceso, Linea linea, BigDecimal valorOriginal, BigDecimal valorUnitario,
+                                 BigDecimal subtotal, BigDecimal iva, String nombreDescuento) {}
+
+    /** subtotal e iva incluyen las líneas Y los recargos por ciudad pendientes. */
+    private record Cotizacion(List<LineaCotizada> lineas, BigDecimal recargos, BigDecimal ivaRecargos,
+                              BigDecimal subtotal, BigDecimal iva, BigDecimal porcentaje) {
+        BigDecimal total() { return subtotal.add(iva); }
+    }
+
+    private Cotizacion cotizar(Cliente cliente, List<ItemCarritoRequest> itemsReq, Descuento cupon) {
+        boolean porPlanes = parametrosTienda.activo(com.polygraph.erp.modules.tienda.service.ParametrosTiendaService.TIENDA_POR_PLANES);
+        BigDecimal porcentaje = ivaService.porcentaje();
+        List<LineaCotizada> lineas = new java.util.ArrayList<>();
+        BigDecimal subtotal = BigDecimal.ZERO;
+        BigDecimal iva = BigDecimal.ZERO;
 
         for (ItemCarritoRequest itemReq : itemsReq) {
             Proceso proceso = procesoRepository.findById(itemReq.idProceso())
@@ -108,35 +175,22 @@ public class OrdenCompraService {
                 throw new ApiException("El proceso '" + proceso.getNombreProceso() + "' no tiene un precio definido para compra en línea", HttpStatus.BAD_REQUEST);
             }
 
-            BigDecimal valorOriginal = resolverValorUnitario(proceso, itemReq.cantidad());
-            DescuentoService.MejorPrecioResult mejorPrecio = descuentoService.mejorPrecioConDescuento(proceso, valorOriginal, cliente.getIdCliente(), cupon);
+            Linea linea = resolverLinea(proceso, itemReq, porPlanes);
+            DescuentoService.MejorPrecioResult mejorPrecio = descuentoService.mejorPrecioConDescuento(proceso, linea.valorOriginal(), cliente.getIdCliente(), cupon);
             BigDecimal valorUnitario = mejorPrecio.precio();
-            BigDecimal subtotal = valorUnitario.multiply(BigDecimal.valueOf(itemReq.cantidad()));
-            montoTotal = montoTotal.add(subtotal);
-
-            items.add(OrdenCompraItem.builder()
-                    .ordenCompra(orden)
-                    .proceso(proceso)
-                    .cantidad(itemReq.cantidad())
-                    .valorOriginal(valorOriginal)
-                    .valorUnitario(valorUnitario)
-                    .subtotal(subtotal)
-                    .nombreDescuentoAplicado(mejorPrecio.descuento() != null ? mejorPrecio.descuento().getNombre() : null)
-                    .build());
+            BigDecimal subtotalLinea = valorUnitario.multiply(BigDecimal.valueOf(linea.cantidad()));
+            BigDecimal ivaLinea = com.polygraph.erp.modules.tienda.service.IvaCalculadora.iva(subtotalLinea, porcentaje,
+                    !Boolean.FALSE.equals(proceso.getAplicaIva()));
+            subtotal = subtotal.add(subtotalLinea);
+            iva = iva.add(ivaLinea);
+            lineas.add(new LineaCotizada(proceso, linea, linea.valorOriginal(), valorUnitario, subtotalLinea, ivaLinea,
+                    mejorPrecio.descuento() != null ? mejorPrecio.descuento().getNombre() : null));
         }
 
-        ordenCompraItemRepository.saveAll(items);
-
-        // Cualquier recargo por ciudad pendiente de solicitudes anteriores se cobra ahora, junto con esta compra.
-        BigDecimal recargosPendientes = recargoPendienteService.totalPendiente(cliente.getIdCliente());
-        montoTotal = montoTotal.add(recargosPendientes);
-
-        orden.setMontoTotal(montoTotal);
-        orden.setMontoRecargosPendientes(recargosPendientes);
-        orden = ordenCompraRepository.save(orden);
-
-        log.info("Orden de compra creada: id={}, cliente={}, monto={}", orden.getIdOrdenCompra(), cliente.getIdCliente(), montoTotal);
-        return construirRespuesta(orden, items);
+        // Cualquier recargo por ciudad pendiente de solicitudes anteriores se cobra ahora, junto con esta compra, con su propio IVA.
+        BigDecimal recargos = recargoPendienteService.totalPendiente(cliente.getIdCliente());
+        BigDecimal ivaRecargos = recargoPendienteService.ivaPendiente(cliente.getIdCliente(), porcentaje);
+        return new Cotizacion(lineas, recargos, ivaRecargos, subtotal.add(recargos), iva.add(ivaRecargos), porcentaje);
     }
 
     /** Recargos por ciudad acumulados de solicitudes anteriores, todavía sin cobrar. */
@@ -167,13 +221,15 @@ public class OrdenCompraService {
 
         Descuento cupon = descuentoService.validarCupon(request.codigoCupon(), cliente.getIdCliente());
 
+        boolean porPlanes = parametrosTienda.activo(com.polygraph.erp.modules.tienda.service.ParametrosTiendaService.TIENDA_POR_PLANES);
         BigDecimal totalSinCupon = BigDecimal.ZERO;
         BigDecimal totalConCupon = BigDecimal.ZERO;
         for (ItemCarritoRequest itemReq : itemsReq) {
             Proceso proceso = procesoRepository.findById(itemReq.idProceso())
                     .orElseThrow(() -> new ApiException("Proceso de catálogo no encontrado: " + itemReq.idProceso(), HttpStatus.BAD_REQUEST));
-            BigDecimal valorBase = resolverValorUnitario(proceso, itemReq.cantidad());
-            BigDecimal cantidad = BigDecimal.valueOf(itemReq.cantidad());
+            Linea linea = resolverLinea(proceso, itemReq, porPlanes);
+            BigDecimal valorBase = linea.valorOriginal();
+            BigDecimal cantidad = BigDecimal.valueOf(linea.cantidad());
             totalSinCupon = totalSinCupon.add(descuentoService.aplicarMejorPrecio(proceso, valorBase, cliente.getIdCliente(), null).multiply(cantidad));
             totalConCupon = totalConCupon.add(descuentoService.aplicarMejorPrecio(proceso, valorBase, cliente.getIdCliente(), cupon).multiply(cantidad));
         }
@@ -271,7 +327,8 @@ public class OrdenCompraService {
                         i.getValorOriginal(),
                         i.getValorUnitario(),
                         i.getSubtotal(),
-                        i.getNombreDescuentoAplicado()))
+                        i.getNombreDescuentoAplicado(),
+                        i.getUnidadesPlan(), i.getCantidadPaquetes(), i.getCobertura(), i.getMontoIva(), i.getVigenciaMeses(), vencimientoDe(orden, i)))
                 .toList();
 
         Cliente cliente = orden.getCliente();
@@ -301,7 +358,8 @@ public class OrdenCompraService {
                 cliente.getTelefono(),
                 cliente.getDireccion(),
                 ciudadCliente != null ? ciudadCliente.getNombreCiudad() : null,
-                cliente.getEmailPrincipal());
+                cliente.getEmailPrincipal(),
+                orden.getMontoSubtotal(), orden.getMontoIva(), orden.getMontoIvaRecargos(), orden.getIvaPorcentaje());
     }
 
     /** Suma, a través de todos los ítems, cuánto se redujo el precio (base vs. lo que se hubiera cobrado sin descuento). */
@@ -402,8 +460,10 @@ public class OrdenCompraService {
         ordenCompraRepository.save(orden);
 
         List<OrdenCompraItem> items = ordenCompraItemRepository.findByOrdenCompra_IdOrdenCompra(orden.getIdOrdenCompra());
+        // Un lote por ítem, creado ahora (al aprobarse el pago) y una sola vez por transacción: el lote es único por (transacción, ítem).
+        String transaccion = orden.getIdTransaccionPasarela() != null ? orden.getIdTransaccionPasarela() : "SIM-" + orden.getIdOrdenCompra();
         for (OrdenCompraItem item : items) {
-            saldoServicioClienteService.acreditar(orden.getCliente(), item.getProceso(), item.getCantidad(), item);
+            saldoServicioClienteService.acreditar(orden.getCliente(), item.getProceso(), item.getCantidad(), item, transaccion);
         }
 
         if (orden.getDescuentoCupon() != null) {
@@ -430,6 +490,70 @@ public class OrdenCompraService {
         log.info("Orden rechazada: id={}", orden.getIdOrdenCompra());
         notificacionService.crearParaCliente(orden.getCliente().getIdCliente(), "PAGO_RECHAZADO", "Compra rechazada",
                 "Tu compra " + orden.getReferencia() + " no pudo procesarse — intenta de nuevo.");
+    }
+
+    /** Lo que vale y cuántas unidades trae un ítem del carrito ya resuelto por el backend. */
+    private record Linea(BigDecimal valorOriginal, int cantidad, Integer unidadesPlan, Integer cantidadPaquetes, String cobertura) {}
+
+    /**
+     * Resuelve el precio y las unidades de un ítem. Con la tienda por planes encendida el precio sale del plan (precio fijo por
+     * unidad) y gana siempre el del backend; si no, se conserva el cálculo por tramos según la cantidad.
+     */
+    private Linea resolverLinea(Proceso proceso, ItemCarritoRequest req, boolean porPlanes) {
+        if (!porPlanes) {
+            if (req.cantidad() == null) {
+                throw new ApiException("Debe indicar la cantidad", HttpStatus.BAD_REQUEST);
+            }
+            return new Linea(resolverValorUnitario(proceso, req.cantidad()), req.cantidad(), null, null, null);
+        }
+        if (req.unidadesPlan() == null || req.cantidadPaquetes() == null) {
+            throw new ApiException("Debe indicar el plan y la cantidad de paquetes", HttpStatus.BAD_REQUEST);
+        }
+        if (Boolean.FALSE.equals(proceso.getVisibleEnTienda())) {
+            throw new ApiException("El servicio '" + proceso.getNombreProceso() + "' no está disponible en la tienda", HttpStatus.BAD_REQUEST);
+        }
+        String cobertura = normalizarCobertura(req.cobertura());
+        var plan = planesTiendaService.planDe(proceso, req.unidadesPlan());
+        BigDecimal precio = plan.precioUnitario();
+        if (com.polygraph.erp.modules.tienda.service.CalculadoraCobertura.NACIONAL.equals(cobertura)) {
+            // Paquete nacional (TP-08): solo para servicios con recargo; precio por sede + factor % del recargo intermedio, a miles de pesos.
+            BigDecimal intermedio = recargoPendienteService.recargoIntermedio(proceso);
+            if (!com.polygraph.erp.modules.tienda.service.CalculadoraCobertura.admiteNacional(Boolean.TRUE.equals(proceso.getAplicaPrecioCiudad()), intermedio)) {
+                throw new ApiException("El servicio '" + proceso.getNombreProceso() + "' no tiene paquete nacional", HttpStatus.BAD_REQUEST);
+            }
+            precio = com.polygraph.erp.modules.tienda.service.CalculadoraCobertura.precioNacional(precio, intermedio,
+                    parametrosTienda.decimal("factorPrecioNacional"));
+        }
+        if (req.precioUnitarioEsperado() != null && req.precioUnitarioEsperado().compareTo(precio) != 0) {
+            log.warn("Precio del carrito distinto al vigente: proceso={}, plan={}, enviado={}, vigente={} — se usa el vigente",
+                    proceso.getIdProceso(), req.unidadesPlan(), req.precioUnitarioEsperado(), precio);
+        }
+        return new Linea(precio, req.unidadesPlan() * req.cantidadPaquetes(),
+                req.unidadesPlan(), req.cantidadPaquetes(), cobertura);
+    }
+
+    /** Día de vencimiento de las unidades de un ítem de una compra aprobada: fecha de aprobación + la vigencia que se le mostró al cliente. */
+    private java.time.LocalDate vencimientoDe(OrdenCompra orden, OrdenCompraItem item) {
+        if (orden.getEstado() != EstadoOrdenCompra.APROBADA || orden.getFechaActualizacion() == null || item.getVigenciaMeses() == null) return null;
+        var v = com.polygraph.erp.modules.tienda.service.CalculadoraVigencia.vencimiento(orden.getFechaActualizacion().toLocalDate(), item.getVigenciaMeses());
+        return v == null ? null : v.toLocalDate();
+    }
+
+    /**
+     * TP-07: vigencia (meses) del plan que se le muestra al cliente antes de pagar. Solo con el interruptor vigenciaPorPlan encendido y en compras por plan;
+     * null = sin vencimiento. Se guarda en el ítem: es la que rige aunque el plan cambie antes de aprobarse el pago.
+     */
+    private Integer vigenciaMeses(Proceso proceso, Integer unidadesPlan) {
+        if (unidadesPlan == null || !parametrosTienda.activo(com.polygraph.erp.modules.tienda.service.ParametrosTiendaService.VIGENCIA_POR_PLAN)) return null;
+        return planesTiendaService.planDe(proceso, unidadesPlan).vigenciaMeses();
+    }
+
+    /** LOCAL (por sede) siempre; NACIONAL solo con coberturaPorSede encendido. Cualquier otra se rechaza en vez de cobrarse mal. */
+    private String normalizarCobertura(String cobertura) {
+        if (cobertura == null || cobertura.isBlank() || "LOCAL".equalsIgnoreCase(cobertura.trim())) return "LOCAL";
+        if ("NACIONAL".equalsIgnoreCase(cobertura.trim())
+                && parametrosTienda.activo(com.polygraph.erp.modules.tienda.service.ParametrosTiendaService.COBERTURA_POR_SEDE)) return "NACIONAL";
+        throw new ApiException("La cobertura '" + cobertura + "' todavía no está disponible", HttpStatus.BAD_REQUEST);
     }
 
     /** Precio por unidad según el tramo de volumen aplicable (el de mayor cantidadMinima que la cantidad alcance); si ninguno aplica, usa el precio base del proceso. */
@@ -470,7 +594,8 @@ public class OrdenCompraService {
                         i.getValorOriginal(),
                         i.getValorUnitario(),
                         i.getSubtotal(),
-                        i.getNombreDescuentoAplicado()))
+                        i.getNombreDescuentoAplicado(),
+                        i.getUnidadesPlan(), i.getCantidadPaquetes(), i.getCobertura(), i.getMontoIva(), i.getVigenciaMeses(), vencimientoDe(orden, i)))
                 .toList();
 
         Integer idComprobante = comprobanteCompraRepository.findByOrdenCompra_IdOrdenCompra(orden.getIdOrdenCompra())
@@ -500,7 +625,8 @@ public class OrdenCompraService {
                 orden.getDescuentoCupon() != null ? orden.getDescuentoCupon().getCodigo() : null,
                 orden.getDescuentoCupon() != null ? orden.getDescuentoCupon().getNombre() : null,
                 montoDescuentoTotal(items),
-                orden.getMontoRecargosPendientes());
+                orden.getMontoRecargosPendientes(),
+                orden.getMontoSubtotal(), orden.getMontoIva(), orden.getMontoIvaRecargos(), orden.getIvaPorcentaje());
     }
 
     private String nombreClienteDisplay(Cliente c) {

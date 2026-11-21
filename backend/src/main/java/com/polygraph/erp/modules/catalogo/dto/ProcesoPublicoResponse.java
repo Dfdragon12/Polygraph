@@ -21,5 +21,19 @@ public record ProcesoPublicoResponse(
         boolean admitePreguntasPoligrafia,
         // NS-08: qué pide Nueva solicitud según el servicio
         boolean requiereDireccion,
-        boolean ciudadEsDePrueba
+        boolean ciudadEsDePrueba,
+        // TP-01: textos comerciales (sin costoDirecto: nunca llega al cliente)
+        String tituloComercial,
+        String frasePrincipal,
+        String descripcionCorta,
+        List<String> incluye,
+        String idealPara,
+        String unidadSingular,
+        String unidadPlural,
+        boolean visibleEnTienda,
+        boolean aplicaIva,
+        // Planes con su precio por unidad y del paquete, SIN IVA
+        List<com.polygraph.erp.modules.tienda.dto.PlanPublicoResponse> planes,
+        // Mayor descuento por volumen del servicio (Hasta X % menos); 0 si no hay
+        java.math.BigDecimal descuentoMaximoPorcentaje
 ) {}

@@ -65,6 +65,59 @@ public class Proceso {
     @Column(name = "puntos_clave", columnDefinition = "TEXT")
     private String puntosClave;
 
+    // ── Textos comerciales y tienda (TP-01, V257) ──
+
+    /** Nombre que ve el cliente; vacío = se usa nombreProceso. */
+    @Column(name = "titulo_comercial", length = 120)
+    private String tituloComercial;
+
+    @Column(name = "frase_principal", length = 160)
+    private String frasePrincipal;
+
+    /** «Qué es». */
+    @Column(name = "descripcion_corta", length = 400)
+    private String descripcionCorta;
+
+    /** Chips de «Qué incluye», uno por línea (máx. 6). */
+    @Column(name = "incluye", columnDefinition = "TEXT")
+    private String incluye;
+
+    @Column(name = "ideal_para", length = 200)
+    private String idealPara;
+
+    @Column(name = "unidad_singular", length = 30)
+    private String unidadSingular;
+
+    @Column(name = "unidad_plural", length = 30)
+    private String unidadPlural;
+
+    /** Solo admin, para margen y alertas. NUNCA se expone al cliente. */
+    @Column(name = "costo_directo", precision = 15, scale = 2)
+    private BigDecimal costoDirecto;
+
+    @Builder.Default
+    @Column(name = "visible_en_tienda", nullable = false)
+    private Boolean visibleEnTienda = true;
+
+    @Builder.Default
+    @Column(name = "aplica_iva", nullable = false)
+    private Boolean aplicaIva = true;
+
+    /** TP-05: el servicio aparece en la lista de precios pospago (la usa TP-11). */
+    @Builder.Default
+    @Column(name = "ofrecer_pospago", nullable = false)
+    private Boolean ofrecerPospago = true;
+
+    /** TP-05: precio pospago especial; vacío = el del plan de 100 unidades (TP-11). */
+    @Column(name = "precio_pospago_propio", precision = 15, scale = 2)
+    private BigDecimal precioPospagoPropio;
+
+    /** TP-11: PLAN_100 (por omisión) = el precio pospago es el del plan de 100; PROPIO = precioPospagoPropio. */
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(name = "modo_precio_pospago", nullable = false, length = 20)
+    private com.polygraph.erp.shared.enums.ModoPrecioPospago modoPrecioPospago = com.polygraph.erp.shared.enums.ModoPrecioPospago.PLAN_100;
+
     /** Formato adicional que el cliente diligencia al solicitar este proceso (poligrafías); null = ninguno. */
     @Enumerated(EnumType.STRING)
     @Column(name = "formato_solicitud", length = 20)

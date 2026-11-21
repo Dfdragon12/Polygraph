@@ -30,10 +30,10 @@ public class FacturaPospagoVencimientoJob {
     private final NotificacionService notificacionService;
     private final com.polygraph.erp.modules.pagos.service.MoraService moraService;
 
-    @Scheduled(cron = "0 0 6 * * *")
+    @Scheduled(cron = "0 0 6 * * *", zone = "America/Bogota")
     public void marcarVencidas() {
         List<FacturaPospago> vencidas = facturaPospagoRepository
-                .findByEstadoAndFechaVencimientoBefore(EstadoFacturaPospago.PENDIENTE, LocalDate.now());
+                .findByEstadoAndFechaVencimientoBefore(EstadoFacturaPospago.PENDIENTE, LocalDate.now(com.polygraph.erp.modules.tienda.service.ParametrosTiendaService.ZONA));
 
         if (vencidas.isEmpty()) {
             log.info("Vencimiento de facturas pospago: sin facturas PENDIENTE vencidas");

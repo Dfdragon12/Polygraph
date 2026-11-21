@@ -41,6 +41,25 @@ public class OrdenCompraItem {
     @Column(name = "subtotal", precision = 15, scale = 2, nullable = false)
     private BigDecimal subtotal;
 
+    /** TP-02: plan comprado (unidades del paquete), cuántos paquetes y cobertura. NULL en compras por cantidad libre. */
+    @Column(name = "unidades_plan")
+    private Integer unidadesPlan;
+
+    @Column(name = "cantidad_paquetes")
+    private Integer cantidadPaquetes;
+
+    @Column(name = "cobertura", length = 20)
+    private String cobertura;
+
+    /** TP-07: vigencia en meses que se le mostró al cliente (null = sin vencimiento o interruptor apagado). Rige aunque el plan cambie después. */
+    @Column(name = "vigencia_meses")
+    private Integer vigenciaMeses;
+
+    /** TP-03: IVA de esta línea (sobre el subtotal), redondeado a pesos. 0 si el cobro con IVA estaba apagado o el servicio no aplica IVA. */
+    @Builder.Default
+    @Column(name = "monto_iva", precision = 15, scale = 2, nullable = false)
+    private BigDecimal montoIva = BigDecimal.ZERO;
+
     /** Nombre del descuento (automático o cupón) que ganó el mejor precio para este ítem — snapshot, null si no aplicó ninguno. */
     @Column(name = "nombre_descuento_aplicado", length = 150)
     private String nombreDescuentoAplicado;

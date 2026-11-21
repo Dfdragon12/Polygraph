@@ -27,5 +27,10 @@ public record ComprobanteResponse(
         String telefonoCliente,
         String direccionCliente,
         String ciudadCliente,
-        String emailCliente
+        String emailCliente,
+        // TP-03: cuadran con lo cobrado (montoTotal = montoSubtotal + montoIva)
+        BigDecimal montoSubtotal,
+        BigDecimal montoIva,
+        BigDecimal montoIvaRecargos,
+        BigDecimal ivaPorcentaje
 ) {}
