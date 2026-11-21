@@ -1,23 +1,35 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import dashboardService from '../../services/dashboardService'
 import pospagoService from '../../services/pospagoService'
 import EtiquetaEstado from '../../components/semaforo/EtiquetaEstado'
 import { useCambios } from '../../hooks/useCambios'
 import { EncabezadoPagina, EsqueletoPagina, botonPrimario, botonSecundario } from '../../components/admin/PaginaAdmin'
-import EstadoTiempo, { Reprogramada } from '../../components/EstadoTiempo'
-import { textoCompromiso, NotaCompromiso } from '../../components/CompromisoFecha'
-import { TarjetaEnCurso, TarjetaCumplimiento, AvisoVencidas } from '../../components/TarjetasTiempo'
-import tiempoService from '../../services/tiempoService'
+import { textoCompromiso } from '../../components/CompromisoFecha'
+import solicitudService from '../../services/solicitudService'
+import { guardarBlob } from '../../services/trabajoService'
+import AnillosRiesgo from '../../components/graficos/AnillosRiesgo'
 import SemaforoEstados from '../../components/semaforo/SemaforoEstados'
-import { Atencion, Grafica, Enlace, Icono, Dona, C, saludo, fechaLarga } from '../../components/tablero/Tablero'
+import { useConfigTienda } from '../../hooks/useConfigTienda'
+import { Grafica, Enlace, Icono, Dona, C, saludo, fechaLarga } from '../../components/tablero/Tablero'
 
 // Tablero del cliente (ADMIN_CLIENTE y ANALISTA_CLIENTE): cómo van sus solicitudes (indicadores y
 // barra por estado), lo último que pidió con su fecha de entrega, su bolsa prepago o cupo de
 // crédito (solo lo que su rol puede ver) y el contacto de su gestor. Se actualiza solo (tiempo real).
 
-const DIAS_CUMPLIMIENTO = 90
+const nf = new Intl.NumberFormat('es-CO')
+const PERIODOS = [['HOY', 'Hoy'], ['SEMANA', 'Última semana'], ['MES', 'Este mes'], ['ANIO', 'Último año'], ['TOTAL', 'Total']]
+const foco = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600'
+const NIVEL_CHIP = { BAJO: 'bg-green-50 text-green-800 ring-green-700/30', MEDIO: 'bg-amber-50 text-amber-900 ring-amber-700/30', ALTO: 'bg-red-50 text-red-800 ring-red-700/30' }
+const CLAVE_VISITA = 'polygraph.inicio.ultimaVisita'
+
+// Fecha/hora local sin zona (así la entiende el servidor, que guarda las fechas en hora de Colombia)
+const isoLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
+const diaMes = (f) => f ? new Date(f).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' }).replace('.', '') : ''
+const mismoDia = (f) => f && new Date(f).toDateString() === new Date().toDateString()
+const diaHora = (f) => f ? new Date(f).toLocaleString('es-CO', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).replace('.', '') : ''
+const mesAnio = (f) => new Date(`${f}T12:00:00`).toLocaleDateString('es-CO', { month: 'short', year: 'numeric' }).replace('.', '').replace(' de ', ' ')
 
 const formatearCOP = (valor) =>
   new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(valor ?? 0)
@@ -43,16 +55,175 @@ const I = {
   vacio: (c) => svg('M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z', c),
 }
 
-/** Estado de tiempo (lo calcula el servidor en días hábiles) y la fecha de compromiso; si se reprogramó, dice cuál era antes. */
-function Entrega({ s }) {
-  if (!s.tiempo) return <span className="block text-right text-xs text-gray-500">{s.fechaEntregaEstimada ? fechaCorta(s.fechaEntregaEstimada) : '—'}</span>
+/** «Informes listos»: lo publicado, parcial o completo. Con la pasta emitida: nivel del estudio y descarga del PDF único; si no, sin nivel. */
+function InformesListos({ inicio, puedeDescargar, onIr }) {
+  const [descargando, setDescargando] = useState(null)
+  const [fallo, setFallo] = useState(null)
+  const descargar = async (i) => {
+    setDescargando(i.idServicio); setFallo(null)
+    try { guardarBlob(await solicitudService.descargarEstudioCompleto(i.idServicio), `Estudio_${i.idServicio}.pdf`) }
+    catch { setFallo(i.idServicio) }
+    finally { setDescargando(null) }
+  }
   return (
-    <div className="text-right">
-      <EstadoTiempo tiempo={s.tiempo} className="!text-[11px]" />
-      <p className="mt-0.5 text-[11px] tabular-nums text-gray-600">Compromiso: {textoCompromiso(s.tiempo, fechaCorta(s.fechaEntregaEstimada))}</p>
-      <NotaCompromiso tiempo={s.tiempo} />
-      {s.tiempo.estadoTiempo !== 'EN_PAUSA' && <Reprogramada tiempo={s.tiempo} className="block" />}
-    </div>
+    <section aria-labelledby="informes-listos" className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm xl:col-span-2">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 id="informes-listos" className="text-lg font-bold text-gray-900">Informes listos</h2>
+        {inicio?.informesNuevos > 0 && <p className="text-sm font-semibold text-green-800">{nf.format(inicio.informesNuevos)} {inicio.informesNuevos === 1 ? 'nuevo' : 'nuevos'} desde tu última visita</p>}
+      </div>
+      {!inicio ? <div className="h-40 animate-pulse rounded-xl bg-gray-100" /> : inicio.informes.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-8 text-center text-sm text-gray-700">Todavía no hay informes publicados. Cuando tu gestor publique uno, lo verás aquí para descargarlo.</p>
+      ) : (
+        <ul className="divide-y divide-gray-100">
+          {inicio.informes.map(i => (
+            <li key={i.idServicio} className="flex flex-wrap items-start gap-3 py-3">
+              <span className="mt-1.5 w-2 shrink-0">{i.nuevo && <><span aria-hidden="true" className="block h-2 w-2 rounded-full bg-blue-600" /><span className="sr-only">Nuevo</span></>}</span>
+              <div className="min-w-0 flex-1">
+                <p className="font-bold text-gray-900">{i.evaluado}</p>
+                <p className="text-sm text-gray-700">
+                  {i.proceso} · #{i.idServicio}{i.cargo ? ` · ${i.cargo}` : ''}
+                  {i.completo ? ` · resultado emitido el ${diaMes(i.emitidoEn)}${i.cumplimiento === 'A_TIEMPO' ? ' · a tiempo' : i.cumplimiento === 'TARDE' ? ' · con retraso' : ''}`
+                    : i.ultimoNombre ? ` · ${mismoDia(i.ultimoFecha) ? 'hoy' : diaMes(i.ultimoFecha)} se publicó ${i.ultimoNombre}` : ''}
+                </p>
+                <p className="mt-0.5 flex items-center gap-1.5 text-sm font-semibold text-gray-900"><span aria-hidden="true" className="h-[9px] w-[9px] rounded-full bg-[#0D9488]" />
+                  {i.completo ? 'Publicado · estudio completo' : `Publicado parcial · ${i.publicados} de ${i.vigentes} informes`}</p>
+                {fallo === i.idServicio && <p role="alert" className="mt-1 text-xs text-red-700">No se pudo descargar el estudio. <button type="button" onClick={() => descargar(i)} className={`font-semibold underline ${foco}`}>Reintentar</button> o contacta a tu gestor.</p>}
+              </div>
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                {i.completo && i.nivel && <span className={`rounded-full px-2.5 py-1 text-xs font-bold ring-1 ring-inset ${NIVEL_CHIP[i.nivel]}`}>{i.nivel}</span>}
+                {i.completo && puedeDescargar ? (
+                  <button type="button" disabled={descargando === i.idServicio} onClick={() => descargar(i)}
+                    className={`min-h-[44px] rounded-lg bg-primary-600 px-4 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-60 ${foco}`}>
+                    {descargando === i.idServicio ? 'Descargando…' : 'Descargar estudio completo'}</button>
+                ) : (
+                  <button type="button" onClick={() => onIr(`/cliente/solicitudes/${i.idServicio}`)}
+                    className={`min-h-[44px] rounded-lg border border-primary-600 bg-white px-4 text-sm font-semibold text-primary-700 hover:bg-primary-50 ${foco}`}>
+                    {i.completo ? 'Ver estudio' : 'Ver y descargar informes'}</button>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      <button type="button" onClick={() => onIr('/cliente/solicitudes?estado=PUBLICADO')} className={`mt-2 inline-flex min-h-[44px] items-center rounded text-sm font-semibold text-primary-700 hover:underline ${foco}`}>Ver todos los informes publicados →</button>
+    </section>
+  )
+}
+
+/** Seguimiento del enlace del candidato en palabras: lo que el cliente necesita saber, sin poder enviarlo ni reenviarlo (eso lo hace Polygraph). */
+function textoSeguimiento(sg) {
+  const partes = []
+  partes.push(sg.enviadoEn ? `Polygraph le envió el enlace el ${diaMes(sg.enviadoEn)}.` : 'Polygraph aún no ha enviado el enlace al candidato.')
+  partes.push(sg.abiertoEn ? `Lo abrió con su cédula y lleva ${sg.seccionesHechas} de ${sg.seccionesTotal} secciones.` : 'Todavía no lo ha abierto.')
+  if (sg.recordatorioEn) partes.push(`${mismoDia(sg.recordatorioEn) ? 'Hoy' : `El ${diaMes(sg.recordatorioEn)}`} le enviamos un recordatorio automático.`)
+  if (sg.vence) partes.push(`El enlace vence el ${diaMes(`${sg.vence}T12:00:00`)}.`)
+  return partes.join(' ')
+}
+
+function RequiereAtencion({ inicio }) {
+  const vacio = inicio && inicio.candidatos.length === 0 && inicio.citas.length === 0
+  return (
+    <section aria-labelledby="requiere-atencion" className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+      <h2 id="requiere-atencion" className="mb-3 text-lg font-bold text-gray-900">Requiere tu atención</h2>
+      {!inicio ? <div className="h-32 animate-pulse rounded-xl bg-amber-100" /> : vacio ? (
+        <p className="rounded-xl bg-white px-4 py-8 text-center text-sm text-gray-800">No tienes nada pendiente: tus candidatos están al día.</p>
+      ) : (
+        <div className="space-y-3">
+          {inicio.candidatos.map(c => (
+            <article key={`c${c.idServicio}`} className="rounded-xl bg-white p-4">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-amber-900">Candidato sin terminar su información</p>
+              <p className="font-bold text-gray-900">{c.evaluado}</p>
+              <p className="flex flex-wrap items-center gap-1.5 text-sm text-gray-700">{c.proceso} · #{c.idServicio} ·
+                {c.resumen[0] && <EtiquetaEstado estado={c.resumen[0].codigo} pequena />}
+                · compromiso: {textoCompromiso(c.tiempo, diaMes(c.fechaEntrega))}</p>
+              <p className="mt-2 text-sm text-gray-900">{textoSeguimiento(c.seguimiento)}</p>
+              <p className="mt-1 text-xs text-gray-700">Si hablas con él, recuérdale revisar su WhatsApp o correo.</p>
+            </article>
+          ))}
+          {inicio.citas.map(c => (
+            <article key={`k${c.idServicio}-${c.fecha}`} className="rounded-xl bg-white p-4">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-sky-800">Cita programada · avísale al candidato</p>
+              <p className="font-bold text-gray-900">{c.evaluado}</p>
+              <p className="flex flex-wrap items-center gap-1.5 text-sm text-gray-700">{c.subproceso} · #{c.idServicio} · <EtiquetaEstado estado={c.estado} pequena /> · {diaHora(c.fecha)}{c.lugar ? ` · ${c.lugar}` : ''}</p>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+const TIEMPOS_CLIENTE = [
+  ['aTiempo', 'A tiempo', 'A_TIEMPO', 'border-green-200 text-green-900 bg-white', null],
+  ['venceHoyOManana', 'Vence hoy o mañana', 'VENCE_HOY,VENCE_MANANA', 'border-amber-200 text-amber-900 bg-amber-50', null],
+  ['atrasadas', 'Atrasadas', 'VENCIDAS', 'border-red-200 text-red-800 bg-red-50', 'Tu gestor ya las está gestionando'],
+  ['enPausa', 'En pausa', 'EN_PAUSA', 'border-slate-200 text-slate-800 bg-white', 'Esperan al candidato · compromiso por definir'],
+]
+
+function TiemposEntrega({ inicio, onIr }) {
+  return (
+    <section aria-labelledby="tiempos-entrega" className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 id="tiempos-entrega" className="text-lg font-bold text-gray-900">Tiempos de entrega</h2>
+        <button type="button" onClick={() => onIr('/cliente/solicitudes')} className={`min-h-[44px] rounded text-sm font-semibold text-primary-700 hover:underline ${foco}`}>Ver todas en Mis solicitudes →</button>
+      </div>
+      {!inicio ? <div className="h-24 animate-pulse rounded-xl bg-gray-100" /> : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {TIEMPOS_CLIENTE.map(([k, nombre, grupo, clase, nota]) => (
+            <button key={k} type="button" onClick={() => onIr(`/cliente/solicitudes?grupo=${grupo}`)} aria-label={`${nombre}: ${inicio.tiempos[k]}. Abre Mis solicitudes filtrada.`}
+              className={`min-h-[44px] rounded-xl border p-4 text-left transition-shadow hover:shadow-md ${foco} ${clase}`}>
+              <span className="block text-sm font-semibold">{nombre}</span>
+              <span className="block text-3xl font-bold tabular-nums text-gray-900">{nf.format(inicio.tiempos[k])}</span>
+              {nota && <span className="block text-xs text-gray-700">{nota}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function rangoTexto(e) {
+  if (!e) return ''
+  if (e.periodo === 'TOTAL') return 'Desde el inicio'
+  if (e.periodo === 'HOY') return new Date(`${e.hasta}T12:00:00`).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })
+  if (e.periodo === 'SEMANA') return `${diaMes(`${e.desde}T12:00:00`)} a ${diaMes(`${e.hasta}T12:00:00`)}`
+  return `${mesAnio(e.desde)} a ${mesAnio(e.hasta)}`
+}
+
+function Estadisticas({ e, error, periodo, onPeriodo, onReintentar, onNivel }) {
+  return (
+    <section aria-labelledby="estadisticas" className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 id="estadisticas" className="text-lg font-bold text-gray-900">Estadísticas de mi empresa</h2>
+          <p className="text-sm text-gray-700">{rangoTexto(e)}{e ? ' · ' : ''}el riesgo se cuenta sobre estudios con resultado emitido</p>
+        </div>
+        <div role="group" aria-label="Periodo de las estadísticas" className="flex flex-wrap gap-1 rounded-xl bg-gray-100 p-1">
+          {PERIODOS.map(([k, nombre]) => (
+            <button key={k} type="button" aria-pressed={periodo === k} onClick={() => onPeriodo(k)}
+              className={`min-h-[44px] rounded-lg px-3 text-sm font-semibold ${foco} ${periodo === k ? 'bg-white text-gray-900 shadow' : 'text-gray-700 hover:text-gray-900'}`}>{nombre}</button>
+          ))}
+        </div>
+      </div>
+      {error ? (
+        <p role="alert" className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">No se pudieron cargar las estadísticas. <button type="button" onClick={onReintentar} className={`font-semibold underline ${foco}`}>Reintentar</button></p>
+      ) : !e ? <div className="h-48 animate-pulse rounded-xl bg-gray-100" /> : (
+        <>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <p className="rounded-xl bg-gray-50 px-4 py-3"><span className="block text-sm font-semibold text-gray-700">Servicios solicitados</span><span className="block text-3xl font-bold tabular-nums text-gray-900">{nf.format(e.solicitados)}</span></p>
+            <p className="rounded-xl bg-gray-50 px-4 py-3"><span className="block text-sm font-semibold text-gray-700">Con resultado emitido</span>
+              <span className="block text-3xl font-bold tabular-nums text-gray-900">{nf.format(e.emitidos)} <span className="text-base font-semibold text-gray-700">de {nf.format(e.solicitados)}</span></span>
+              <span className="text-sm text-gray-700">{nf.format(e.enProceso)} todavía en proceso</span></p>
+            <p className="rounded-xl bg-gray-50 px-4 py-3"><span className="block text-sm font-semibold text-gray-700">Entregados a tiempo</span>
+              <span className="block text-3xl font-bold tabular-nums text-gray-900">{nf.format(e.aTiempo)} de {nf.format(e.emitidos)}</span><span className="text-sm text-gray-700">de los estudios con resultado</span></p>
+          </div>
+          <h3 className="mb-2 mt-5 text-sm font-bold text-gray-900">Nivel de riesgo de los estudios con resultado{e.riesgo.total > 0 ? ` · ${nf.format(e.riesgo.total)} estudios` : ''}</h3>
+          <AnillosRiesgo datos={e.riesgo} onSeleccionar={onNivel} />
+          {e.riesgo.total > 0 && <p className="mt-3 text-xs text-gray-700">Al hacer clic en un nivel se abre Mis solicitudes filtrada por ese nivel y periodo.</p>}
+        </>
+      )}
+    </section>
   )
 }
 
@@ -60,12 +231,19 @@ export default function Dashboard() {
   const { usuario } = useAuth()
   const navigate = useNavigate()
   const [datos, setDatos] = useState(null)
-  const [totalServicios, setTotalServicios] = useState(null)   // servicios distintos, del mismo resumen del semáforo
-  const [resumen, setResumen] = useState(null)
-  const [cumplimiento, setCumplimiento] = useState(null)
+  const [inicio, setInicio] = useState(null)               // PB-05: informes listos, requiere tu atención y tiempos de entrega
+  const [errorInicio, setErrorInicio] = useState(false)
+  const [estadisticas, setEstadisticas] = useState(null)
+  const [errorEstadisticas, setErrorEstadisticas] = useState(false)
+  const [params, setParams] = useSearchParams()
+  const periodo = PERIODOS.some(([k]) => k === params.get('periodo')) ? params.get('periodo') : 'ANIO'
+  // La última vez que abrió su inicio (solo en este navegador): lo publicado después sale marcado como nuevo. Se lee una vez por visita.
+  const [desdeVisita] = useState(() => { try { return localStorage.getItem(CLAVE_VISITA) } catch { return null } })
   const [bolsa, setBolsa] = useState(null)
   const [credito, setCredito] = useState(null)
   const [gestor, setGestor] = useState(null)
+  const config = useConfigTienda()
+  const [lotesPorVencer, setLotesPorVencer] = useState([])   // TP-07: unidades que vencen pronto
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
   const [errorSecundario, setErrorSecundario] = useState(null)
@@ -81,15 +259,15 @@ export default function Dashboard() {
 
   // Carga el tablero; también se llama sola cuando cambia una solicitud del cliente (tiempo real).
   const cargarDatos = useCallback(() => {
-    // El resumen ÚNICO de tiempos (el mismo que usan los demás tableros): el cliente solo recibe sus propias solicitudes.
-    tiempoService.resumen({ top: 1 }).then(setResumen).catch(() => setResumen(null))
-    const desde = new Date(); desde.setDate(desde.getDate() - (DIAS_CUMPLIMIENTO - 1))
-    tiempoService.resumen({ desde: desde.toISOString().slice(0, 10), top: 1 }).then(r => setCumplimiento(r.cumplimiento)).catch(() => setCumplimiento(null))
+    dashboardService.obtenerInicio(desdeVisita)
+      .then(d => { setInicio(d); setErrorInicio(false); try { localStorage.setItem(CLAVE_VISITA, isoLocal(new Date())) } catch { /* sin almacenamiento: no hay marcas de «nuevo» */ } })
+      .catch(() => setErrorInicio(true))
     return dashboardService.obtenerDashboard()
       .then((dashData) => {
         setDatos(dashData)
         const esPospagoLocal = dashData.tipoCliente === 'POSPAGO'
         if (esPospagoLocal && usuario?.rol !== 'ADMIN_CLIENTE') return
+        if (!esPospagoLocal) dashboardService.obtenerLotesPorVencer().then((l) => setLotesPorVencer(Array.isArray(l) ? l : [])).catch(() => setLotesPorVencer([]))
         const segundo = esPospagoLocal ? pospagoService.obtenerEstadoCuenta() : dashboardService.obtenerBolsaServicios()
         return segundo
           .then((dato) => {
@@ -101,11 +279,17 @@ export default function Dashboard() {
       })
       .catch(() => setError('No se pudo cargar el tablero. Intenta nuevamente.'))
       .finally(() => setCargando(false))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usuario?.rol])
 
+  const cargarEstadisticas = useCallback(() => {
+    dashboardService.obtenerEstadisticas(periodo).then(e => { setEstadisticas(e); setErrorEstadisticas(false) }).catch(() => setErrorEstadisticas(true))
+  }, [periodo])
+
   useEffect(() => { cargarDatos() }, [cargarDatos])
+  useEffect(() => { setEstadisticas(null); cargarEstadisticas() }, [cargarEstadisticas])
   useEffect(() => { dashboardService.obtenerGestor().then(setGestor).catch(() => setGestor(null)) }, [])
-  useCambios(() => cargarDatos(), { esperaMs: 1200 })
+  useCambios(() => { cargarDatos(); cargarEstadisticas() }, { esperaMs: 1200 })
 
   const irA = (ruta) => navigate(ruta)
 
@@ -127,7 +311,7 @@ export default function Dashboard() {
       <EncabezadoPagina
         seccion="Panel del cliente"
         titulo={`${saludo()}, ${usuario?.nombre?.trim() || 'bienvenido'}`}
-        descripcion={<span className="inline-block first-letter:uppercase">{fechaLarga()}</span>}
+        descripcion={<span className="inline-block first-letter:uppercase">{fechaLarga()}{inicio && ` · ${nf.format(inicio.informesNuevos)} ${inicio.informesNuevos === 1 ? 'informe nuevo' : 'informes nuevos'} y ${nf.format(inicio.cosasPorAtender)} ${inicio.cosasPorAtender === 1 ? 'cosa que necesita' : 'cosas que necesitan'} tu atención`}</span>}
         icono={Icono.panel('h-6 w-6')}
         acciones={<>
           {esAdminCliente && <Link to="/cliente/carga-masiva" className={botonSecundario}>{I.subir('h-4 w-4')} Carga masiva</Link>}
@@ -146,78 +330,44 @@ export default function Dashboard() {
               <Link to="/cliente/pospago" className="ml-auto whitespace-nowrap text-xs font-semibold hover:underline">Ver mi crédito →</Link>
             </div>
           )}
+          {lotesPorVencer.length > 0 && (
+            <div role="alert" className="flex flex-wrap items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <span className="shrink-0 mt-0.5">{I.alerta('h-5 w-5')}</span>
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold">Tienes unidades por vencer</p>
+                <ul className="mt-1 space-y-0.5">
+                  {lotesPorVencer.map((l) => (
+                    <li key={l.idLote}>
+                      <strong>{l.unidades}</strong> {l.unidades === 1 ? 'unidad' : 'unidades'} de {l.nombreProceso} vencen el {fechaCorta(l.fechaVencimiento)}
+                      {' '}({l.diasRestantes === 0 ? 'hoy' : `en ${l.diasRestantes} ${l.diasRestantes === 1 ? 'día' : 'días'}`}). Úsalas antes de esa fecha.
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <Link to="/cliente/nueva-solicitud" className="ml-auto whitespace-nowrap text-xs font-semibold hover:underline">Nueva solicitud →</Link>
+            </div>
+          )}
           {errorSecundario && (
             <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">{errorSecundario}</div>
           )}
 
-          <AvisoVencidas cantidad={resumen?.porEstadoTiempo?.VENCIDA ?? 0} onVer={() => irA('/cliente/solicitudes?filtro=vencidas')} />
+          {errorInicio && !inicio && (
+            <p role="alert" className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">No se pudieron cargar tus informes ni tus pendientes. <button type="button" onClick={cargarDatos} className={`font-semibold underline ${foco}`}>Reintentar</button></p>
+          )}
 
-          {/* ── Indicadores ── */}
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-            <TarjetaEnCurso resumen={resumen} className="lg:col-span-2"
-              onVer={(estado) => irA(`/cliente/solicitudes?tiempo=${estado}`)} />
-            <TarjetaCumplimiento cumplimiento={cumplimiento} dias={DIAS_CUMPLIMIENTO} />
-          </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <Atencion titulo="Por programar" valor={datos?.serviciosPendientes ?? 0} detalle="Esperan fecha" vacio="Nada por programar"
-              icono={I.reloj('h-4 w-4')} tono="ambar" onClick={() => irA('/cliente/solicitudes')} />
-            <Atencion titulo="Publicados este mes" valor={datos?.publicadosMes ?? 0} detalle="Informes listos para descargar" vacio="Aún ninguno este mes"
-              icono={I.check('h-4 w-4')} tono="primario" onClick={() => irA('/cliente/solicitudes')} />
-            <Atencion titulo="Solicitudes en total" valor={totalServicios ?? 0} detalle="Desde que empezaste" vacio="Aún no hay solicitudes"
-              icono={I.carpeta('h-4 w-4')} tono="primario" onClick={() => irA('/cliente/solicitudes')} />
-          </div>
-
-          {/* ── Estado de sus solicitudes ── */}
-          <SemaforoEstados interno={false} textoCliente titulo="Estado de mis solicitudes" onDatos={(d) => setTotalServicios(d.total)}
+          {/* ── Estado de sus solicitudes (el mismo componente y endpoint que Mis solicitudes) ── */}
+          <SemaforoEstados interno={false} textoCliente titulo="Estado de mis solicitudes"
             onSeleccionar={(estado) => irA(estado ? `/cliente/solicitudes?estado=${estado}` : '/cliente/solicitudes')} />
 
           <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
-            {/* ── Actividad reciente ── */}
-            <Grafica className="xl:col-span-2" titulo="Actividad reciente" descripcion="Tus últimas solicitudes y su tiempo de entrega"
-              accion={<Enlace onClick={() => irA('/cliente/solicitudes')}>Ver todas</Enlace>}>
-              {!datos?.ultimasSolicitudes?.length ? (
-                <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
-                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-50 text-gray-300">{I.vacio('h-6 w-6')}</span>
-                  <p className="text-sm text-gray-500">Aún no has hecho solicitudes.</p>
-                  <Link to="/cliente/nueva-solicitud" className={botonPrimario}>{I.mas('h-4 w-4')} Crear la primera</Link>
-                </div>
-              ) : (
-                <div className="-mx-5 -mb-5 border-t border-gray-100">
-                  <div className="hidden grid-cols-[1fr_11rem_12rem] gap-4 bg-gray-50/60 px-5 py-2 text-[11px] font-semibold uppercase tracking-wider text-gray-600 sm:grid">
-                    <span>Candidato</span><span>Estado</span><span className="text-right">Tiempo</span>
-                  </div>
-                  <ul className="divide-y divide-gray-50">
-                    {datos.ultimasSolicitudes.map(s => (
-                      <li key={s.idServicio}>
-                        <button type="button" onClick={() => irA(`/cliente/solicitudes/${s.idServicio}`)}
-                          className="grid w-full grid-cols-[1fr_11rem] items-center gap-4 px-5 py-3 text-left transition-colors hover:bg-gray-50 sm:grid-cols-[1fr_11rem_12rem]">
-                          <span className="flex min-w-0 items-center gap-3">
-                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-50 text-xs font-semibold text-primary-700">
-                              {`${(s.nombresEvaluado ?? '').trim()[0] ?? ''}${(s.apellidosEvaluado ?? '').trim()[0] ?? ''}`.toUpperCase() || '—'}
-                            </span>
-                            <span className="min-w-0">
-                              <span className="block truncate text-sm font-medium text-gray-900">{`${s.nombresEvaluado ?? ''} ${s.apellidosEvaluado ?? ''}`.trim()}</span>
-                              <span className="block truncate text-xs text-gray-500">#{s.idServicio} · {s.proceso || 'Servicio'}{s.cargo ? ` · ${s.cargo}` : ''}</span>
-                            </span>
-                          </span>
-                          <ul className="hidden flex-wrap gap-1 sm:flex" aria-label="Subprocesos por estado">
-                            {(s.resumen ?? []).map(r => (
-                              <li key={r.codigo}>
-                                <EtiquetaEstado estado={r.codigo} pequena /><span className="sr-only">{r.cantidad}</span>
-                                <span aria-hidden="true" className="ml-0.5 text-[11px] font-semibold text-gray-700">{r.cantidad}</span>
-                              </li>
-                            ))}
-                          </ul>
-                          <Entrega s={s} />
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </Grafica>
+            <InformesListos inicio={inicio} puedeDescargar={esAdminCliente} onIr={irA} />
+            <RequiereAtencion inicio={inicio} />
+          </div>
 
-            <div className="space-y-5">
+          <TiemposEntrega inicio={inicio} onIr={irA} />
+
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+            <div className="xl:col-span-2">
               {/* ── Bolsa prepago o cupo pospago (solo lo que su rol puede ver) ── */}
               {muestraSaldo && (puedeVerCupo ? (
                 <Grafica titulo="Cupo de crédito" descripcion="Lo que puedes seguir solicitando a crédito"
@@ -255,6 +405,18 @@ export default function Dashboard() {
                                   <span className="truncate text-gray-700">{b.nombreProceso}</span>
                                   <span className="shrink-0 tabular-nums text-gray-500"><span className="font-semibold text-gray-900">{b.cantidadDisponible}</span> / {b.cantidadComprada}</span>
                                 </div>
+                                {/* Con la cobertura por sede: unidades por sede y nacionales por separado */}
+                                {config.coberturaPorSede && b.disponibleNacional > 0 && (
+                                  <p className="mt-0.5 text-[11px] text-gray-600">
+                                    {b.cantidadDisponible - b.disponibleNacional} por sede · {b.disponibleNacional} nacionales
+                                  </p>
+                                )}
+                                {/* Con la vigencia: el lote que vence primero */}
+                                {config.vigenciaPorPlan && b.proximoVencimiento && (
+                                  <p className="mt-0.5 text-[11px] text-amber-700">
+                                    {b.unidadesQueVencen} {b.unidadesQueVencen === 1 ? 'vence' : 'vencen'} {fechaCorta(b.proximoVencimiento)}
+                                  </p>
+                                )}
                                 <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-100">
                                   <div className={`h-full rounded-full ${pct <= 20 ? 'bg-amber-400' : 'bg-emerald-500'}`} style={{ width: `${pct}%` }} />
                                 </div>
@@ -268,6 +430,8 @@ export default function Dashboard() {
                 </Grafica>
               ))}
 
+            </div>
+            <div>
               {/* ── Su gestor ── */}
               {gestor && (
                 <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -297,6 +461,10 @@ export default function Dashboard() {
               )}
             </div>
           </div>
+
+          <Estadisticas e={estadisticas} error={errorEstadisticas} periodo={periodo} onReintentar={cargarEstadisticas}
+            onPeriodo={(k) => setParams(prev => { const n = new URLSearchParams(prev); n.set('periodo', k); return n }, { replace: true })}
+            onNivel={(nivel) => irA(`/cliente/solicitudes?nivel=${nivel}&periodo=${periodo}`)} />
         </div>
       )}
     </div>

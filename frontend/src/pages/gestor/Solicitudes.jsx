@@ -1,22 +1,28 @@
 import { parseFecha } from '../../utils/fechas'
-import { useId, useState, useEffect, useCallback, useRef, Fragment } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useId, useState, useEffect, useCallback, Fragment } from 'react'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import api from '../../services/api'
 import tokenService from '../../services/tokenService'
 import catalogoService from '../../services/catalogoService'
 import asignacionService from '../../services/asignacionService'
+import formulariosService from '../../services/formulariosService'
+import trabajoService, { esperarTrabajo, guardarBlob, mensajeDeError } from '../../services/trabajoService'
+import PanelPublicarSubproceso from '../../components/gestor/PanelPublicarSubproceso'
+import PanelEmitirEstudio from '../../components/gestor/PanelEmitirEstudio'
+import PanelEnviarEnlace from '../../components/gestor/PanelEnviarEnlace'
 import Toast from '../../components/Toast'
 import { Modal, ConfirmModal } from '../../components/ui/Modal'
 import Paginacion from '../../components/ui/Paginacion'
 import MenuAcciones from '../../components/ui/MenuAcciones'
-import EstadoTiempo, { FiltroTiempo } from '../../components/EstadoTiempo'
+import EstadoTiempo from '../../components/EstadoTiempo'
+import ChipRiesgo from '../../components/ChipRiesgo'
+import bandejaService from '../../services/bandejaService'
 import ModalAsignarSubproceso from '../../components/ModalAsignarSubproceso'
 import ModalAsignarProgramador from '../../components/ModalAsignarProgramador'
 import CiudadSelect from '../../components/CiudadSelect'
 import RiesgoServicio from '../../components/RiesgoServicio'
 import { useCambios } from '../../hooks/useCambios'
 import SemaforoEstados from '../../components/semaforo/SemaforoEstados'
-import AlertasAparte from '../../components/semaforo/AlertasAparte'
 import EtiquetaEstado from '../../components/semaforo/EtiquetaEstado'
 
 import SelectorMotivo, { motivoIncompleto, MOTIVO_VACIO } from '../../components/SelectorMotivo'
@@ -124,15 +130,30 @@ function subprocesosProgramadorDe(subprocesos) {
 }
 
 
-/* ─── Fila desplegable: subprocesos reales del servicio (con tiempo estimado) ─── */
-function FilaSubprocesos({ idServicio, colSpan, onToast, candidatoCompletado }) {
+/* ─── Fila desplegable (PB-02): una fila por subproceso con su estado, su calificación y UN botón principal según el estado ─── */
+const COLOR_NIVEL = { BAJO: 'bg-[#E6F3EC] text-[#1f6b44]', MEDIO: 'bg-[#FBF1DE] text-[#8a5a0c]', ALTO: 'bg-[#F9E8EA] text-[#8c2733]' }
+const botonFila = 'min-h-[44px] w-full sm:w-[150px] px-3 rounded-lg text-xs font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#A8323F]'
+
+// Calificación del subproceso: publicada (la del cliente) o, en Finalizado, la sugerida; siempre con el nombre del nivel escrito.
+function ChipCalificacion({ sp }) {
+  const nivel = sp.estado === 'PUBLICADO' ? sp.nivelPublicado : sp.estado === 'FINALIZADO' ? sp.riesgoNivel : null
+  const puntaje = sp.estado === 'PUBLICADO' ? sp.puntajePublicado : sp.riesgoPuntaje
+  if (!nivel) return <span className="inline-block px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 text-[11px] font-semibold" aria-label="Sin calificación">—</span>
+  return (
+    <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold tabular-nums ${COLOR_NIVEL[nivel] ?? 'bg-gray-100 text-gray-700'}`}>
+      {nivel}{puntaje != null ? ` ${Number(puntaje).toLocaleString('es-CO', { maximumFractionDigits: 1 })}` : ''}{sp.estado === 'FINALIZADO' ? ' · sugerido' : ''}
+    </span>
+  )
+}
+
+function FilaSubprocesos({ idServicio, colSpan, onToast, candidatoCompletado, estadoServicio, onEmitir }) {
+  const navigate = useNavigate()
   const [subprocesos, setSubprocesos] = useState(null)
   const [error, setError] = useState(false)
   const [seleccionado, setSeleccionado] = useState(null)
+  const [publicando, setPublicando] = useState(null)
   const [asignandoProgramadorDe, setAsignandoProgramadorDe] = useState(null)
-  // false = el candidato todavía no diligenció su link — null/true no restringen (ver
-  // SolicitudGestorResponse.candidatoCompletado). El backend igual lo bloquearía (409); esto solo
-  // evita el intento fallido y explica el motivo de una vez con el tooltip.
+  // false = el candidato todavía no diligenció su link — null/true no restringen (ver SolicitudGestorResponse.candidatoCompletado).
   const bloqueadoPorCandidato = candidatoCompletado === false
   const tituloBloqueo = 'El candidato todavía no ha diligenciado su información (link pendiente).'
 
@@ -145,80 +166,92 @@ function FilaSubprocesos({ idServicio, colSpan, onToast, candidatoCompletado }) 
   useEffect(() => { cargar() }, [cargar])
   useCambios(cargar, { servicios: idServicio })
 
+  const vigentes = (subprocesos ?? []).filter(sp => sp.estado !== 'CANCELADO')
+  const publicados = vigentes.filter(sp => sp.estado === 'PUBLICADO').length
+  const completo = vigentes.length > 0 && publicados === vigentes.length
+  const puedeEmitir = completo && estadoServicio === 'FINALIZADO'
+
+  const verInforme = async (sp) => {
+    try {
+      const inicial = await formulariosService.solicitarDocumentoPdf(sp.id)
+      const listo = await esperarTrabajo(inicial)
+      guardarBlob(await trabajoService.descargarResultado(listo.id), listo.nombreArchivo ?? `informe-${sp.id}.pdf`)
+    } catch (e) {
+      onToast(mensajeDeError(e, 'No se pudo generar el PDF. Reintentar'), 'error')
+    }
+  }
+
+  // Poligrafía y visita las agenda el programador: se abre su asignación como «Programador»; el resto como «Asignación».
+  const abrirAsignacion = (sp) => {
+    if (sp.rolResponsable !== 'ANALISTA_INTERNO') setAsignandoProgramadorDe(sp)
+    else setSeleccionado(sp)
+  }
+  const asignacionDisponible = (sp) => ['PENDIENTE', 'PROGRAMANDO', 'EN_EJECUCION', 'REPROGRAMADO'].includes(sp.estado)
+
   return (
     <Fragment>
     <tr className="bg-gray-50/60">
       <td colSpan={colSpan} className="px-4 py-3">
         {error ? (
-          <p className="text-xs text-red-500">No se pudieron cargar los subprocesos.</p>
+          <p className="text-xs text-red-700">No se pudieron cargar los subprocesos.</p>
         ) : subprocesos === null ? (
-          <div className="flex items-center gap-2 text-xs text-gray-400 py-2">
+          <div className="flex items-center gap-2 text-xs text-gray-600 py-2">
             <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary-500 border-t-transparent" />
             Cargando subprocesos...
           </div>
         ) : subprocesos.length === 0 ? (
-          <p className="text-xs text-gray-400">Este servicio no tiene subprocesos generados.</p>
+          <p className="text-xs text-gray-600">Este servicio no tiene subprocesos generados.</p>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
-            {subprocesos.map(sp => {
-              // Poligrafía/visita se muestran para que el gestor no vea "sin subprocesos" cuando
-              // sí hay — pero solo lectura: eso lo asigna Programador, no se abre el modal.
-              const soloLectura = sp.rolResponsable !== 'ANALISTA_INTERNO'
-              if (soloLectura) {
-                return (
-                  <div key={sp.id} title="Lo coordina el Programador — solo lectura aquí"
-                    className="flex items-center justify-between gap-2 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2 opacity-80">
-                    <div className="min-w-0">
-                      <p className="text-xs font-medium text-gray-600 truncate">{sp.subproceso}</p>
-                      <p className="text-[11px] text-gray-400 truncate">
-                        {sp.nombreAsignado ?? 'Sin asignar'} · {formatDuracion(sp.duracionMinutos)} ·{' '}
-                        <span className="italic">
-                          {sp.nombreProgramadorResponsable ? `Programador: ${sp.nombreProgramadorResponsable}` : 'Programador'}
-                        </span>
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {(sp.estado === 'PENDIENTE' || sp.estado === 'PROGRAMANDO' || sp.estado === 'EN_EJECUCION') && (
-                        <button type="button" onClick={() => setAsignandoProgramadorDe(sp)}
-                          disabled={sp.estado === 'PENDIENTE' && bloqueadoPorCandidato}
-                          title={sp.estado === 'PENDIENTE' && bloqueadoPorCandidato ? tituloBloqueo : 'Elegir a qué programador encargarle esto'}
-                          className={`text-[10px] font-medium whitespace-nowrap ${
-                            sp.estado === 'PENDIENTE' && bloqueadoPorCandidato
-                              ? 'text-gray-300 cursor-not-allowed'
-                              : 'text-primary-600 hover:text-primary-800 hover:underline'}`}>
-                          {sp.nombreProgramadorResponsable ? 'Reasignar programador' : 'Asignar programador'}
-                        </button>
-                      )}
-                      <span>
-                        <EtiquetaEstado estado={sp.estado} pequena />
-                      </span>
-                    </div>
-                  </div>
-                )
-              }
-              // Solo se bloquea el intento de ASIGNAR (subproceso todavía PENDIENTE) — uno ya
-              // asignado/completado sigue abriendo el modal normalmente (completar, aprobar, etc.),
-              // esta regla no aplica ahí.
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-700">
+              Subprocesos · {publicados} de {vigentes.length} publicados
+            </p>
+            {subprocesos.map((sp, i) => {
+              const porPublicar = sp.estado === 'FINALIZADO'
               const bloqueado = sp.estado === 'PENDIENTE' && bloqueadoPorCandidato
               return (
-                <button key={sp.id} onClick={() => { if (!bloqueado) setSeleccionado(sp) }}
-                  disabled={bloqueado} title={bloqueado ? tituloBloqueo : undefined}
-                  className={`flex items-center justify-between gap-2 border rounded-lg px-3 py-2 text-left transition-all ${
-                    bloqueado
-                      ? 'bg-gray-50 border-gray-100 opacity-70 cursor-not-allowed'
-                      : 'bg-white border-gray-200 hover:border-primary-300 hover:shadow-sm'}`}>
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium text-gray-800 truncate">{sp.subproceso}</p>
-                    <p className="text-[11px] text-gray-400 truncate">
-                      {sp.nombreAsignado ?? 'Sin asignar'} · {formatDuracion(sp.duracionMinutos)}
-                    </p>
+                <div key={sp.id} className={`flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg px-3 py-2 border ${porPublicar ? 'border-[#A8323F] bg-[#FBEFF0]' : 'border-gray-200 bg-white'}`}>
+                  <span className="text-xs text-gray-600 tabular-nums w-5">{i + 1}</span>
+                  <div className="min-w-[160px] flex-1">
+                    <p className="text-sm font-semibold text-gray-900">{sp.subproceso}</p>
+                    <p className="text-xs text-gray-600">{sp.nombreAsignado ?? (sp.nombreProgramadorResponsable ? `Programador: ${sp.nombreProgramadorResponsable}` : 'Sin asignar')}</p>
                   </div>
-                  <span className="flex-shrink-0">
+                  <div className="min-w-[150px]">
                     <EtiquetaEstado estado={sp.estado} pequena />
-                  </span>
-                </button>
+                    {porPublicar && <span className="block text-[11px] text-gray-700 mt-0.5">control de calidad</span>}
+                  </div>
+                  <div className="min-w-[110px]"><ChipCalificacion sp={sp} /></div>
+                  <div className="flex flex-wrap gap-2 sm:ml-auto">
+                    {porPublicar ? (
+                      <button type="button" onClick={() => setPublicando(sp)} className={`${botonFila} bg-[#A8323F] text-white hover:bg-[#8f2a35]`}>Revisar y publicar</button>
+                    ) : sp.estado === 'PUBLICADO' ? (
+                      <button type="button" onClick={() => verInforme(sp)} className={`${botonFila} border border-[#A8323F] text-[#A8323F] hover:bg-red-50`}>Ver informe</button>
+                    ) : (
+                      <button type="button" onClick={() => navigate(`/gestor/formulario/${sp.id}`)} disabled={sp.estado === 'CANCELADO'}
+                        className={`${botonFila} border border-[#A8323F] text-[#A8323F] hover:bg-red-50 disabled:opacity-50`}>Ver avance</button>
+                    )}
+                    <button type="button" onClick={() => abrirAsignacion(sp)} disabled={!asignacionDisponible(sp) || bloqueado}
+                      title={bloqueado ? tituloBloqueo : undefined}
+                      className={`${botonFila} border border-gray-300 text-gray-900 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed`}>Asignación</button>
+                  </div>
+                </div>
               )
             })}
+            <div className="rounded-lg bg-gray-100 px-3 py-3 flex flex-wrap items-center gap-3">
+              <p className="text-sm text-gray-900 flex-1 min-w-[200px]">
+                <strong>Estudio completo:</strong> {publicados} de {vigentes.length} publicados.{' '}
+                {completo ? (puedeEmitir ? 'Listo para emitir.' : 'Todos publicados.') : `Se habilita con ${vigentes.length} de ${vigentes.length}.`}
+              </p>
+              <button type="button" onClick={onEmitir} disabled={publicados === 0 || completo}
+                title={completo ? 'Con todo publicado se emite el estudio completo' : publicados === 0 ? 'Publica al menos un informe' : undefined}
+                className="min-h-[44px] px-4 rounded-lg text-sm font-semibold border border-gray-300 bg-white text-gray-900 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
+                Emitir preliminar
+              </button>
+              <button type="button" onClick={onEmitir} disabled={!puedeEmitir}
+                className="min-h-[44px] px-4 rounded-lg text-sm font-semibold bg-[#A8323F] text-white hover:bg-[#8f2a35] disabled:bg-gray-200 disabled:text-gray-600 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
+                Emitir estudio completo
+              </button>
+            </div>
           </div>
         )}
       </td>
@@ -238,6 +271,15 @@ function FilaSubprocesos({ idServicio, colSpan, onToast, candidatoCompletado }) 
         subprocesos={[asignandoProgramadorDe]}
         onClose={() => setAsignandoProgramadorDe(null)}
         onGuardado={() => { setAsignandoProgramadorDe(null); cargar() }}
+        onToast={onToast}
+      />
+    )}
+
+    {publicando && (
+      <PanelPublicarSubproceso
+        asignacion={publicando} publicados={publicados} total={vigentes.length}
+        onClose={() => setPublicando(null)}
+        onHecho={() => { setPublicando(null); cargar() }}
         onToast={onToast}
       />
     )}
@@ -1399,9 +1441,24 @@ function ModalDetalle({ solicitud, onClose, onToast }) {
 }
 
 /* ─── Página principal ─── */
+// PB-05: las tarjetas de estado, el grupo de tiempo, cliente, estudio, responsable y el buscador se combinan y quedan EN LA URL (para volver atrás o
+// compartir la vista). No hay filtro por riesgo; la columna Riesgo se conserva. Cada fila trae UN botón de «Próxima acción» (la calcula el servidor).
+
+const GRUPOS_TIEMPO = [['VENCIDAS', 'Vencidas'], ['VENCE_HOY', 'Vence hoy'], ['VENCE_MANANA', 'Vence mañana'], ['A_TIEMPO', 'A tiempo'], ['EN_PAUSA', 'En pausa']]
+const PASTA_TEXTO = { PENDIENTE: 'pendiente', PRELIMINAR: 'preliminar', EMITIDA: 'emitida' }
+const ACCION_RELLENA = new Set(['REVISAR', 'EMITIR_PASTA', 'ENVIAR_ENLACE'])
+const FOCO = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600'
+const nfN = new Intl.NumberFormat('es-CO')
+
 export default function Solicitudes() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const estadoParam = searchParams.get('estado') ?? 'TODOS'
+  // Enlaces viejos (?estado=VENCIDAS) pasan al filtro de tiempo
+  const estadoParam = (searchParams.get('estado') ?? 'TODOS') === 'VENCIDAS' ? 'TODOS' : (searchParams.get('estado') ?? 'TODOS')
+  const tiempoParam = searchParams.get('estado') === 'VENCIDAS' ? 'VENCIDAS' : (searchParams.get('tiempo') ?? '')
+  const clienteParam = searchParams.get('cliente') ?? ''
+  const estudioParam = searchParams.get('estudio') ?? ''
+  const responsableParam = searchParams.get('responsable') ?? ''
+  const qParam = searchParams.get('q') ?? ''
 
   const [solicitudes, setSolicitudes]     = useState([])
   const [cargando, setCargando]           = useState(true)
@@ -1410,19 +1467,28 @@ export default function Solicitudes() {
   const [pagina, setPagina]               = useState(0)
   const [totalElementos, setTotalElementos] = useState(0)
   const POR_PAGINA = 10
-  const [busqueda, setBusqueda]           = useState('')
-  // Texto que ya se mandó al servidor (con una pausa al escribir): la búsqueda se hace en TODAS
-  // las solicitudes del gestor, no solo en la página que está en pantalla.
-  const [buscar, setBuscar]               = useState('')
-  const buscarRef                         = useRef('')
-  const filtrosTiempoRef                  = useRef({ tiempo: '', ordenRetraso: false })
-  const [filtroTiempo, setFiltroTiempo]   = useState('')
-  const [ordenRetraso, setOrdenRetraso]   = useState(false)
+  const [busqueda, setBusqueda]           = useState(qParam)
+  const [tiempos, setTiempos]             = useState(null)
+  const [opciones, setOpciones]           = useState({ clientes: [], estudios: [], responsables: [] })
   const [cambiandoEstado, setCambiandoEstado] = useState(null)
+  const [emitiendo, setEmitiendo] = useState(null)   // PB-03: ventana «Emitir estudio completo»
+  const [enviandoEnlace, setEnviandoEnlace] = useState(null)   // PB-04: ventana «Enviar enlace al candidato»
   const [detalle, setDetalle]             = useState(null)
   const [expandidos, setExpandidos]       = useState(() => new Set())
   const [cargandoPendientesId, setCargandoPendientesId] = useState(null)
   const [asignandoProgramadorPara, setAsignandoProgramadorPara] = useState(null)
+  const [avisandoId, setAvisandoId]       = useState(null)
+
+  /** Cambia filtros en la URL (y vuelve a la primera página). Un valor vacío quita el filtro. */
+  const actualizar = useCallback((cambios) => {
+    setSearchParams(prev => {
+      const n = new URLSearchParams(prev)
+      n.delete('expandir'); n.delete('emitir'); n.delete('enlace')
+      if (n.get('estado') === 'VENCIDAS') { n.delete('estado'); n.set('tiempo', 'VENCIDAS') }
+      Object.entries(cambios).forEach(([k, v]) => { if (v === '' || v == null || v === 'TODOS') n.delete(k); else n.set(k, v) })
+      return n
+    })
+  }, [setSearchParams])
 
   const toggleExpandir = (idServicio) => {
     setExpandidos(prev => {
@@ -1433,61 +1499,68 @@ export default function Solicitudes() {
     })
   }
 
-  const cargar = useCallback(async (estado, page = 0, silencioso = false) => {
+  const filtrosAlcance = { idCliente: clienteParam || undefined, idProceso: estudioParam || undefined, idResponsable: responsableParam || undefined }
+
+  const cargar = useCallback(async (page = 0, silencioso = false) => {
     if (!silencioso) { setCargando(true); setError(null) }
     try {
       const params = new URLSearchParams({ page, size: POR_PAGINA })
-      if (estado === 'VENCIDAS') params.append('estadoTiempo', 'VENCIDA')
-      else {
-        if (estado && estado !== 'TODOS') params.append('estado', estado)
-        if (filtrosTiempoRef.current.tiempo) params.append('estadoTiempo', filtrosTiempoRef.current.tiempo)
-      }
-      if (filtrosTiempoRef.current.ordenRetraso) params.append('orden', 'retraso')
-      if (buscarRef.current) params.append('q', buscarRef.current)
-      const [rSolicitudes] = await Promise.all([
-        api.get(`/gestor/solicitudes?${params}`),
-      ])
-      setSolicitudes(rSolicitudes.data.content ?? [])
-      setTotalElementos(rSolicitudes.data.totalElements ?? 0)
-    } catch { if (!silencioso) setError('Error al cargar solicitudes.') }
+      if (estadoParam !== 'TODOS') params.append('estado', estadoParam)
+      if (tiempoParam) params.append('tiempo', tiempoParam)
+      if (tiempoParam === 'VENCIDAS') params.append('orden', 'retraso')
+      if (clienteParam) params.append('idCliente', clienteParam)
+      if (estudioParam) params.append('idProceso', estudioParam)
+      if (responsableParam) params.append('idResponsable', responsableParam)
+      if (qParam) params.append('q', qParam)
+      const r = await api.get(`/gestor/solicitudes?${params}`)
+      setSolicitudes(r.data.content ?? [])
+      setTotalElementos(r.data.totalElements ?? 0)
+    } catch { if (!silencioso) setError('No se pudieron cargar las solicitudes.') }
     finally { if (!silencioso) setCargando(false) }
-  }, [])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [estadoParam, tiempoParam, clienteParam, estudioParam, responsableParam, qParam])
 
+  const cargarTiempos = useCallback(() => {
+    bandejaService.tiempos({ idCliente: clienteParam || undefined, idProceso: estudioParam || undefined, idResponsable: responsableParam || undefined })
+      .then(t => setTiempos(t.conteo)).catch(() => setTiempos(null))
+  }, [clienteParam, estudioParam, responsableParam])
+
+  useEffect(() => { bandejaService.opcionesFiltro().then(setOpciones).catch(() => {}) }, [])
+  useEffect(() => { setPagina(0); cargar(0) }, [cargar])
+  useEffect(() => { cargarTiempos() }, [cargarTiempos])
+
+  // El buscador escribe en la URL con una pausa: busca en TODAS las solicitudes del gestor, no solo en la página visible.
   useEffect(() => {
-    const t = setTimeout(() => setBuscar(busqueda.trim()), 350)
+    if (busqueda.trim() === qParam) return undefined
+    const t = setTimeout(() => actualizar({ q: busqueda.trim() }), 350)
     return () => clearTimeout(t)
-  }, [busqueda])
-
-  useEffect(() => {
-    buscarRef.current = buscar
-    filtrosTiempoRef.current = { tiempo: filtroTiempo, ordenRetraso }
-    setPagina(0)
-    cargar(estadoParam, 0)
-  }, [estadoParam, buscar, filtroTiempo, ordenRetraso, cargar])
+  }, [busqueda, qParam, actualizar])
 
   // Tiempo real: la lista y los conteos se actualizan solos (nuevas solicitudes, cambios de estado).
-  useCambios(() => cargar(estadoParam, pagina, true))
+  useCambios(() => { cargar(pagina, true); cargarTiempos() })
 
+  // Entradas desde el tablero: ?id= abre «Ver»; ?expandir= abre los subprocesos; ?emitir= y ?enlace= abren sus ventanas (una sola vez).
   useEffect(() => {
     const idParam = searchParams.get('id')
-    if (!idParam) return
-    setDetalle({ idServicio: Number(idParam) })
-    setSearchParams(prev => {
-      const next = new URLSearchParams(prev)
-      next.delete('id')
-      return next
-    }, { replace: true })
+    const expandir = searchParams.get('expandir')
+    const emitir = searchParams.get('emitir')
+    const enlace = searchParams.get('enlace')
+    if (!idParam && !expandir && !emitir && !enlace) return
+    if (idParam) setDetalle({ idServicio: Number(idParam) })
+    if (expandir) setExpandidos(prev => new Set(prev).add(Number(expandir)))
+    const abrir = async (id, fn) => {
+      try {
+        const r = await api.get('/gestor/solicitudes', { params: { q: `#${id}`, size: 5 } })
+        const s = (r.data.content ?? []).find(x => x.idServicio === Number(id))
+        if (s) fn(s)
+        else setToast({ mensaje: `No se encontró la solicitud #${id}.`, tipo: 'error' })
+      } catch { setToast({ mensaje: 'No se pudo abrir la solicitud.', tipo: 'error' }) }
+    }
+    if (emitir) abrir(emitir, setEmitiendo)
+    if (enlace) abrir(enlace, setEnviandoEnlace)
+    setSearchParams(prev => { const n = new URLSearchParams(prev); ['id', 'expandir', 'emitir', 'enlace'].forEach(k => n.delete(k)); return n }, { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  const cambiarTab = (estado) => {
-    const params = new URLSearchParams()
-    if (estado !== 'TODOS') params.set('estado', estado)
-    setSearchParams(params)
-  }
-
-  // Click en la tarjeta activa vuelve a "Todos" — no hay una tarjeta "Todos" aparte.
-  const alternarTarjeta = (estado) => cambiarTab(estadoParam === estado ? 'TODOS' : estado)
 
   // Trae los subprocesos de poligrafía/visita del servicio (Pendientes o ya Programados — a estos
   // últimos también se les puede cambiar quién los coordina) y abre el selector de programador
@@ -1510,107 +1583,152 @@ export default function Solicitudes() {
     }
   }
 
-  // El filtro del buscador ya lo aplicó el servidor (parámetro q).
-  const solicitudesFiltradas = solicitudes
+  const avisarProgramador = async (idServicio) => {
+    setAvisandoId(idServicio)
+    try {
+      const r = await bandejaService.avisarProgramador(idServicio)
+      setToast({ mensaje: `Aviso enviado al programador · ${r.citas} ${r.citas === 1 ? 'cita' : 'citas'}. Queda registrado.`, tipo: 'exito' })
+    } catch (err) {
+      setToast({ mensaje: `${err.response?.data?.mensaje ?? 'No se pudo avisar al programador.'} Intenta de nuevo con «Avisar al programador».`, tipo: 'error' })
+    } finally { setAvisandoId(null) }
+  }
+
+  /** El botón de «Próxima acción» de la fila. */
+  const ejecutarAccion = (s) => {
+    switch (s.proximaAccion) {
+      case 'EMITIR_PASTA': setEmitiendo(s); break
+      case 'ENVIAR_ENLACE': case 'REENVIAR_ENLACE': setEnviandoEnlace(s); break
+      case 'AVISAR_PROGRAMADOR': avisarProgramador(s.idServicio); break
+      case 'VER_EXPEDIENTE': setDetalle(s); break
+      default: setExpandidos(prev => new Set(prev).add(s.idServicio))   // revisar, asignar, ver avance: se abren sus subprocesos
+    }
+  }
+
+  const hayFiltros = estadoParam !== 'TODOS' || tiempoParam || clienteParam || estudioParam || responsableParam || qParam
+  const limpiar = () => { setBusqueda(''); setSearchParams(new URLSearchParams()) }
+  const selectCls = `min-h-[44px] rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 ${FOCO}`
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-5">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Solicitudes</h2>
-          <p className="text-sm text-gray-500 mt-0.5">
-            {totalElementos} solicitud{totalElementos !== 1 ? 'es' : ''} en total
-            {estadoParam !== 'TODOS' && (
-              <>
-                {' · filtrando por '}
-                {estadoParam === 'VENCIDAS' ? <span className="font-medium text-gray-600">Vencidas</span> : <EtiquetaEstado estado={estadoParam} pequena />}
-                {' — '}
-                <button onClick={() => cambiarTab('TODOS')} className="text-primary-600 hover:underline">ver todas</button>
-              </>
-            )}
+          <p className="mt-0.5 text-sm text-gray-700">
+            {nfN.format(totalElementos)} solicitud{totalElementos !== 1 ? 'es' : ''} {hayFiltros ? 'con estos filtros' : 'en total'} · un servicio cuenta en cada estado donde tenga un subproceso
           </p>
         </div>
+        <label className="flex items-center gap-2 text-sm text-gray-700">
+          <span>Buscar</span>
+          <input type="search" value={busqueda} onChange={e => setBusqueda(e.target.value)} aria-label="Buscar por evaluado, cédula, cliente o número" placeholder="Evaluado, cédula, cliente o N.º"
+            className={`min-h-[44px] w-72 max-w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 ${FOCO}`} />
+        </label>
       </div>
 
       {error && (
-        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg flex items-center justify-between">
-          {error} <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 ml-4">×</button>
+        <div role="alert" className="mb-4 flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <span>{error} <button type="button" onClick={() => cargar(pagina)} className={`font-semibold underline ${FOCO}`}>Reintentar</button></span>
+          <button type="button" aria-label="Cerrar aviso" onClick={() => setError(null)} className={`ml-4 text-red-500 hover:text-red-700 ${FOCO}`}>×</button>
         </div>
       )}
 
-      <SemaforoEstados seleccionado={estadoParam === 'TODOS' ? '' : estadoParam} onSeleccionar={(e) => cambiarTab(e || 'TODOS')} titulo="Estado de las solicitudes" />
-      <AlertasAparte />
+      <SemaforoEstados seleccionado={estadoParam === 'TODOS' ? '' : estadoParam.includes(',') ? '' : estadoParam} onSeleccionar={(e) => actualizar({ estado: e })}
+        filtros={{ grupoTiempo: tiempoParam || undefined, ...filtrosAlcance }} titulo="Estado de las solicitudes" />
 
-      {/* ── Buscador y estado de tiempo ── */}
-      <div className="mb-4 flex flex-wrap items-center gap-4">
-        <input aria-label="Buscar por nombre, cédula, cargo, proceso o N.°…" type="search" value={busqueda} onChange={e => setBusqueda(e.target.value)}
-          placeholder="Buscar por nombre, cédula, cargo, proceso o N.°…"
-          className="w-full max-w-sm border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
-        <FiltroTiempo tiempo={estadoParam === 'VENCIDAS' ? 'VENCIDA' : filtroTiempo}
-          onTiempo={(v) => { if (estadoParam === 'VENCIDAS') cambiarTab('TODOS'); setFiltroTiempo(v) }}
-          ordenRetraso={ordenRetraso} onOrden={setOrdenRetraso} />
-      </div>
+      {/* ── Filtros ── */}
+      <section aria-label="Filtros" className="mb-4 space-y-3 rounded-2xl border border-gray-200 bg-white p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="w-16 text-sm text-gray-700">Tiempo</span>
+          {GRUPOS_TIEMPO.map(([k, nombre]) => (
+            <button key={k} type="button" aria-pressed={tiempoParam === k} onClick={() => actualizar({ tiempo: tiempoParam === k ? '' : k })}
+              className={`min-h-[44px] rounded-full border px-4 text-sm ${FOCO} ${tiempoParam === k ? 'border-slate-900 bg-slate-900 font-semibold text-white' : 'border-gray-300 bg-white text-gray-900 hover:bg-gray-50'}`}>
+              {nombre} <span className="tabular-nums">{tiempos ? nfN.format(tiempos[k] ?? 0) : '…'}</span>
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="w-16 text-sm text-gray-700">Filtrar</span>
+          <label className="flex items-center gap-2 text-sm text-gray-700">Cliente
+            <select value={clienteParam} onChange={e => actualizar({ cliente: e.target.value })} className={selectCls}>
+              <option value="">Todos</option>{opciones.clientes.map(o => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+            </select></label>
+          <label className="flex items-center gap-2 text-sm text-gray-700">Estudio
+            <select value={estudioParam} onChange={e => actualizar({ estudio: e.target.value })} className={selectCls}>
+              <option value="">Todos</option>{opciones.estudios.map(o => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+            </select></label>
+          <label className="flex items-center gap-2 text-sm text-gray-700">Responsable
+            <select value={responsableParam} onChange={e => actualizar({ responsable: e.target.value })} className={selectCls}>
+              <option value="">Todos</option>{opciones.responsables.map(o => <option key={o.id} value={o.id}>{o.nombre} · {o.detalle}</option>)}
+            </select></label>
+          {hayFiltros && <button type="button" onClick={limpiar} className={`min-h-[44px] rounded-lg px-3 text-sm font-semibold text-primary-700 underline underline-offset-2 ${FOCO}`}>Quitar filtros</button>}
+        </div>
+      </section>
 
       {/* ── Tabla ── */}
-      <div className="bg-white rounded-2xl ring-1 ring-gray-900/5 shadow-sm overflow-hidden">
+      <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-900/5">
         {cargando ? (
-          <div className="flex justify-center py-16">
-            <div className="animate-spin rounded-full h-8 w-8 border-4 border-primary-600 border-t-transparent" />
+          <div className="flex justify-center py-16" role="status" aria-label="Cargando solicitudes">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-600 border-t-transparent" />
           </div>
-        ) : solicitudesFiltradas.length === 0 ? (
-          <div className="text-center py-16 text-gray-400 text-sm">{buscar ? `No hay solicitudes que coincidan con "${buscar}".` : 'No hay solicitudes para este filtro.'}</div>
+        ) : solicitudes.length === 0 ? (
+          <div className="py-16 text-center text-sm text-gray-700">
+            {qParam ? `No hay solicitudes que coincidan con «${qParam}».` : 'No hay solicitudes con estos filtros.'}
+            {hayFiltros && <> <button type="button" onClick={limpiar} className={`font-semibold text-primary-700 underline ${FOCO}`}>Quitar filtros</button></>}
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="table-stack min-w-full divide-y divide-gray-100">
               <thead className="bg-gray-50/80">
                 <tr>
-                  {['#', 'Evaluado', 'Cargo', 'Proceso', 'Estado', 'Fechas', '···'].map(h => (
-                    <th key={h} className={`px-3 py-3 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap ${h === 'Cargo' ? 'hidden xl:table-cell' : ''}`}>{h}</th>
+                  {['N.º', 'Evaluado · cargo', 'Cliente', 'Estudio', 'Avance', 'Riesgo', 'Tiempo', 'Próxima acción'].map(h => (
+                    <th key={h} scope="col" className="whitespace-nowrap px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-700">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {solicitudesFiltradas.map(s => (
+                {solicitudes.map(s => (
                   <Fragment key={s.idServicio}>
-                  <tr className="hover:bg-gray-50/70 transition-colors">
-                    <td className="pl-3 pr-1 py-3 text-xs text-gray-400 whitespace-nowrap">
-                      <button onClick={() => toggleExpandir(s.idServicio)}
-                        className="flex items-center gap-1.5 hover:text-primary-600 transition-colors">
-                        <svg className={`h-3.5 w-3.5 flex-shrink-0 transition-transform ${expandidos.has(s.idServicio) ? 'rotate-90' : ''}`}
-                          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <tr className="align-top transition-colors hover:bg-gray-50/70">
+                    <td className="whitespace-nowrap py-3 pl-3 pr-1 text-sm font-semibold text-gray-700">
+                      <button type="button" onClick={() => toggleExpandir(s.idServicio)} aria-expanded={expandidos.has(s.idServicio)} aria-label={`Subprocesos del estudio ${s.idServicio}`}
+                        className={`flex min-h-[44px] items-center gap-1.5 rounded hover:text-primary-700 ${FOCO}`}>
+                        <svg aria-hidden="true" className={`h-3.5 w-3.5 flex-shrink-0 transition-transform ${expandidos.has(s.idServicio) ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                         </svg>
                         #{s.idServicio}
                       </button>
                     </td>
                     <td className="px-3 py-3">
-                      <p className="text-sm font-medium text-gray-900">{s.nombresEvaluado} {s.apellidosEvaluado}</p>
-                      <p className="text-xs text-gray-400">{s.cedulaEvaluado}{s.cargo && <span className="hidden md:inline xl:hidden"> · {s.cargo}</span>}</p>
+                      <p className="text-sm font-semibold text-gray-900">{s.nombresEvaluado} {s.apellidosEvaluado}</p>
+                      <p className="text-xs text-gray-700">{s.cargo ?? '—'}</p>
+                      <p className="text-xs text-gray-700">{s.cedulaEvaluado}</p>
                     </td>
-                    <td className="hidden xl:table-cell px-3 py-3 text-sm text-gray-600">{s.cargo ?? '—'}</td>
-                    <td className="px-3 py-3">
-                      <span className="inline-block text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">{s.proceso}</span>
-                    </td>
+                    <td className="px-3 py-3 text-sm text-gray-900">{s.cliente ?? '—'}</td>
+                    <td className="px-3 py-3 text-sm text-gray-900">{s.proceso}</td>
                     <td className="px-3 py-3">
                       <ul className="flex flex-wrap gap-1" aria-label="Subprocesos por estado">
                         {(s.resumen ?? []).map(r => (
-                          <li key={r.codigo} className={estadoParam === r.codigo ? 'rounded-full ring-2 ring-offset-1 ring-gray-900' : ''}>
-                            <EtiquetaEstado estado={r.codigo} pequena /><span className="ml-0.5 text-[11px] font-semibold text-gray-700">{r.cantidad}</span>
+                          <li key={r.codigo} className={estadoParam.split(',').includes(r.codigo) ? 'rounded-full ring-2 ring-offset-1 ring-gray-900' : ''}>
+                            <EtiquetaEstado estado={r.codigo} pequena /><span className="sr-only">{r.cantidad}</span><span aria-hidden="true" className="ml-0.5 text-[11px] font-semibold text-gray-700">{r.cantidad}</span>
                           </li>
                         ))}
                       </ul>
                       {s.vigentes > 0 && (
-                        <p className="mt-1 text-xs text-gray-700">{s.publicados} de {s.vigentes} publicados{s.etiquetaPublicacion ? ` · ${s.etiquetaPublicacion}` : ''}</p>
+                        <p className="mt-1 text-xs text-gray-700">{s.publicados} de {s.vigentes} publicados · pasta: {PASTA_TEXTO[s.pastaEstado] ?? 'pendiente'}</p>
+                      )}
+                      {s.candidatoCompletado === false && s.estado !== 'CANCELADO' && (
+                        <p className="text-xs text-gray-700">{s.enlaceEnviado ? 'Enlace enviado, sin terminar' : 'Enlace sin enviar'}</p>
                       )}
                     </td>
-                    <td className="px-3 py-3 text-xs">
-                      <div className="grid grid-cols-[2.4rem_auto] gap-x-1.5 gap-y-0.5 items-center">
-                        <span className="text-gray-400">Sol.</span><span className="text-gray-600 whitespace-nowrap">{formatFecha(s.fechaSolicitud)}</span>
-                        <span className="text-gray-400">Entr.</span><span><EtiquetaEntrega tiempo={s.tiempo} /></span>
-                      </div>
-                    </td>
-                    <td className="px-3 py-3 text-center">
-                      <MenuAcciones opciones={[
+                    <td className="px-3 py-3"><ChipRiesgo nivel={s.riesgoNivel} puntaje={s.riesgoPuntaje} critico={s.riesgoCritico} preliminar={!s.riesgoNivel && s.pastaEstado === 'PRELIMINAR'} /></td>
+                    <td className="px-3 py-3 text-sm"><EtiquetaEntrega tiempo={s.tiempo} /></td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-1.5">
+                        <button type="button" onClick={() => ejecutarAccion(s)} disabled={avisandoId === s.idServicio}
+                          className={`min-h-[44px] min-w-[8.5rem] rounded-lg px-3 text-sm font-semibold disabled:opacity-60 ${FOCO} ${ACCION_RELLENA.has(s.proximaAccion)
+                            ? 'bg-primary-600 text-white hover:bg-primary-700' : 'border border-primary-600 bg-white text-primary-700 hover:bg-primary-50'}`}>
+                          {avisandoId === s.idServicio ? 'Avisando…' : s.proximaAccionEtiqueta}<span className="sr-only"> del estudio {s.idServicio}</span>
+                        </button>
+                        <MenuAcciones opciones={[
                         { label: 'Ver', icono: <IconoOjo />, onClick: () => setDetalle(s) },
                         (() => {
                           const { hayAlgunos, todosAsignados } = subprocesosProgramadorDe(s.subprocesos)
@@ -1633,7 +1751,20 @@ export default function Solicitudes() {
                           label: s.estado === 'CANCELADO' ? 'Solicitar reversión' : s.estado === 'FINALIZADO' ? 'Publicar estudio' : 'Cancelar solicitud',
                           icono: <IconoCambioEstado />,
                           destacado: s.estado === 'CANCELADO' ? 'text-amber-600' : 'text-primary-600',
-                          onClick: () => setCambiandoEstado(s),
+                          onClick: () => (s.estado === 'FINALIZADO' ? setEmitiendo(s) : setCambiandoEstado(s)),
+                        },
+                        // PB-04: mientras el candidato no haya enviado su información, el gestor puede enviar o reenviar el enlace
+                        (s.candidatoCompletado === false || s.candidatoCompletado == null) && !['CANCELADO', 'FINALIZADO', 'PUBLICADO'].includes(s.estado) && {
+                          label: 'Enviar / reenviar enlace',
+                          icono: <IconoEnviar />,
+                          destacado: 'text-primary-600',
+                          onClick: () => setEnviandoEnlace(s),
+                        },
+                        s.estado === 'PUBLICADO' && {
+                          label: 'Reemitir estudio (PDF)',
+                          icono: <IconoCambioEstado />,
+                          destacado: 'text-primary-600',
+                          onClick: () => setEmitiendo(s),
                         },
                         ['PENDIENTE', 'PROGRAMANDO', 'EN_EJECUCION', 'FINALIZADO', 'REPROGRAMADO'].includes(s.estado) && {
                           label: 'El candidato desistió',
@@ -1642,10 +1773,12 @@ export default function Solicitudes() {
                           onClick: () => setCambiandoEstado({ ...s, modo: 'desistimiento' }),
                         },
                       ]} />
+                      </div>
                     </td>
                   </tr>
                   {expandidos.has(s.idServicio) && (
-                    <FilaSubprocesos idServicio={s.idServicio} colSpan={7} candidatoCompletado={s.candidatoCompletado}
+                    <FilaSubprocesos idServicio={s.idServicio} colSpan={8} candidatoCompletado={s.candidatoCompletado}
+                      estadoServicio={s.estado} onEmitir={() => setEmitiendo(s)}
                       onToast={(mensaje, tipo = 'exito') => setToast({ mensaje, tipo: tipo === 'error' ? 'error' : 'exito' })} />
                   )}
                   </Fragment>
@@ -1654,22 +1787,53 @@ export default function Solicitudes() {
             </table>
           </div>
         )}
-        {!cargando && solicitudesFiltradas.length > 0 && (
+        {!cargando && solicitudes.length > 0 && (
           <Paginacion
             pagina={pagina + 1}
             total={totalElementos}
             porPagina={POR_PAGINA}
-            onChange={(p) => { setPagina(p - 1); cargar(estadoParam, p - 1) }}
+            onChange={(p) => { setPagina(p - 1); cargar(p - 1) }}
           />
         )}
       </div>
+
+      {/* ── Qué es estado y qué no (SE-01) ── */}
+      <section aria-labelledby="leyenda-estados" className="mt-6">
+        <h3 id="leyenda-estados" className="mb-2 text-sm font-bold text-gray-900">Se conservan los 7 estados unificados (SE-01). Lo nuevo de publicación no es un estado</h3>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {[
+            ['Finalizado', '#22C55E', 'Realizado, en control de calidad: para el gestor es lo que debe revisar.'],
+            ['Publicado', '#0D9488', 'El gestor lo aprobó y el cliente descarga el informe de ese subproceso.'],
+            ['Publicado parcial', '#0D9488', 'El que ya existe: algunos subprocesos publicados y otros no.'],
+            ['Pasta final: pendiente · preliminar · emitida', null, 'Indicador del estudio, no estado. «Emitida» es cuando el cliente ve el resultado del estudio.'],
+          ].map(([titulo, color, texto]) => (
+            <div key={titulo} className="rounded-xl border border-gray-200 bg-white p-3 text-xs text-gray-800">
+              <p className="mb-1 flex items-center gap-1.5 font-bold text-gray-900">{color && <span aria-hidden="true" className="h-[9px] w-[9px] rounded-full" style={{ backgroundColor: color }} />}{titulo}</p>
+              {texto}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {enviandoEnlace && (
+        <PanelEnviarEnlace solicitud={enviandoEnlace} onClose={() => setEnviandoEnlace(null)}
+          onHecho={() => cargar(pagina)}
+          onToast={(mensaje) => setToast({ mensaje, tipo: 'exito' })} />
+      )}
+
+      {emitiendo && (
+        <PanelEmitirEstudio solicitud={{ ...emitiendo, nombres: emitiendo.nombresEvaluado, apellidos: emitiendo.apellidosEvaluado }}
+          onClose={() => setEmitiendo(null)}
+          onHecho={() => { setEmitiendo(null); cargar(pagina) }}
+          onToast={(mensaje) => setToast({ mensaje, tipo: 'exito' })} />
+      )}
 
       {cambiandoEstado && (
         <ModalCambioEstado
           solicitud={cambiandoEstado}
           modo={cambiandoEstado.modo}
           onClose={() => setCambiandoEstado(null)}
-          onGuardado={msg => { setToast({ mensaje: msg, tipo: 'exito' }); cargar(estadoParam, pagina) }}
+          onGuardado={msg => { setToast({ mensaje: msg, tipo: 'exito' }); cargar(pagina) }}
         />
       )}
 
@@ -1685,7 +1849,7 @@ export default function Solicitudes() {
         <ModalAsignarProgramador
           subprocesos={asignandoProgramadorPara}
           onClose={() => setAsignandoProgramadorPara(null)}
-          onGuardado={() => { setAsignandoProgramadorPara(null); cargar(estadoParam, pagina) }}
+          onGuardado={() => { setAsignandoProgramadorPara(null); cargar(pagina) }}
           onToast={(mensaje, tipo = 'exito') => setToast({ mensaje, tipo: tipo === 'error' ? 'error' : 'exito' })}
         />
       )}

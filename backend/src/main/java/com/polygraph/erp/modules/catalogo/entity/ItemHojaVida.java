@@ -32,6 +32,10 @@ public class ItemHojaVida {
     private String descripcion;
 
     @Builder.Default
+    /** PB-04: la pregunta también se hace en el enlace CORTO (solo Antecedentes). */
+    @Column(name = "enlace_corto", nullable = false)
+    private Boolean enlaceCorto = false;
+
     @Column(name = "orden", nullable = false)
     private Integer orden = 0;
 

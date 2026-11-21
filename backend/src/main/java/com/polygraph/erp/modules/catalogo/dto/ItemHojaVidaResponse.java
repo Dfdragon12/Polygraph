@@ -9,10 +9,11 @@ public record ItemHojaVidaResponse(
         String nombre,
         String descripcion,
         Integer orden,
-        Boolean activo
+        Boolean activo,
+        Boolean enlaceCorto
 ) {
     public static ItemHojaVidaResponse de(ItemHojaVida i) {
         return new ItemHojaVidaResponse(i.getId(), i.getLista(), i.getNombre(), i.getDescripcion(),
-                i.getOrden(), i.getActivo());
+                i.getOrden(), i.getActivo(), Boolean.TRUE.equals(i.getEnlaceCorto()));
     }
 }

@@ -89,6 +89,12 @@ public final class SemaforoEstados {
         return a.publicados() == a.vigentes() ? EtiquetaPublicacion.ESTUDIO_COMPLETO_PUBLICADO : EtiquetaPublicacion.PUBLICADO_PARCIAL;
     }
 
+    /** PB-01: «Estudio completo publicado» exige además la pasta EMITIDA; con todo publicado y la pasta sin emitir, sigue «Publicado parcial». */
+    public static EtiquetaPublicacion etiqueta(Avance a, boolean pastaEmitida) {
+        EtiquetaPublicacion e = etiqueta(a);
+        return e == EtiquetaPublicacion.ESTUDIO_COMPLETO_PUBLICADO && !pastaEmitida ? EtiquetaPublicacion.PUBLICADO_PARCIAL : e;
+    }
+
     /** Los estados que ve cada perfil. Cliente, gestor y administrador ven los siete. */
     public static List<EstadoSubproceso> estadosVisibles(Rol rol) {
         return switch (rol) {

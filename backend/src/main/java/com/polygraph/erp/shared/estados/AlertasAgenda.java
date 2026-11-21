@@ -51,7 +51,8 @@ public final class AlertasAgenda {
         long sinAsignar = 0, citasDeHoy = 0, porConfirmar = 0;
         Set<Integer> vencidas = new HashSet<>(), paraHoy = new HashSet<>();
         for (Fila f : filas) {
-            if ((f.estado() == EstadoSubproceso.PENDIENTE || f.estado() == EstadoSubproceso.PROGRAMANDO) && !f.conResponsable()) sinAsignar++;
+            // PB-01: sin asignar = subproceso PENDIENTE sin responsable (ejecutor) o, si es una cita, sin programador. Misma cifra en dashboard, Solicitudes y Agenda.
+            if (f.estado() == EstadoSubproceso.PENDIENTE && !f.conResponsable()) sinAsignar++;
             if (esCita(f.rolTipo()) && f.estado() == EstadoSubproceso.EN_EJECUCION && f.fechaProgramada() != null
                     && f.fechaProgramada().toLocalDate().equals(ahora.toLocalDate())) citasDeHoy++;
             if (ReglasCita.porConfirmar(esCita(f.rolTipo()), f.estado(), f.iniciado(), f.fechaProgramada(), ahora, ReglasCita.TOLERANCIA_MINUTOS)) porConfirmar++;

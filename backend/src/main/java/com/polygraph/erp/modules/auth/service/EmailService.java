@@ -48,6 +48,17 @@ public class EmailService {
         enviar(destinatario, "Completa tu información - Polygraph Service", html);
     }
 
+    /** PB-04: recordatorio automático a las 24 h de enviado el enlace, si el candidato no lo abrió o no lo terminó. */
+    @Async
+    public void enviarRecordatorioLinkEvaluado(String destinatario, String nombre, String token, String proceso) {
+        String enlace = frontendUrl + "/evaluado/link/" + token;
+        String html = cargarPlantilla("templates/email/recordatorio_link_evaluado.html")
+                .replace("{{nombre}}", nombre)
+                .replace("{{enlace}}", enlace)
+                .replace("{{proceso}}", proceso != null ? proceso : "tu proceso");
+        enviar(destinatario, "Recordatorio: completa tu información - Polygraph Service", html);
+    }
+
     @Async
     public void enviarSoporteVencimiento(String destinatario, String nombre, String tipoSoporte, boolean vencido) {
         String enlace = frontendUrl + "/cliente/documentos";

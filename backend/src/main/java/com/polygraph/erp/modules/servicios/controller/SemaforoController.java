@@ -45,8 +45,10 @@ public class SemaforoController {
             @RequestParam(required = false) Long idResponsable,
             @RequestParam(required = false) Rol rol,
             @RequestParam(required = false) Integer idTipoProgreso,
+            @RequestParam(required = false) com.polygraph.erp.shared.estados.BucketTiempo grupoTiempo,
+            @RequestParam(required = false) Integer idProceso,
             Authentication auth) {
-        return ResponseEntity.ok(service.resumen(solicitante(auth), new Filtros(tiempo, idCliente, idResponsable, rol, idTipoProgreso)));
+        return ResponseEntity.ok(service.resumen(solicitante(auth), new Filtros(tiempo, idCliente, idResponsable, rol, idTipoProgreso, grupoTiempo, idProceso)));
     }
 
     @GetMapping("/alertas")
@@ -62,12 +64,14 @@ public class SemaforoController {
             @RequestParam(required = false) Long idResponsable,
             @RequestParam(required = false) Rol rol,
             @RequestParam(required = false) Integer idTipoProgreso,
+            @RequestParam(required = false) com.polygraph.erp.shared.estados.BucketTiempo grupoTiempo,
+            @RequestParam(required = false) Integer idProceso,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             Authentication auth) {
         int tamano = Math.max(1, Math.min(size, MAX_POR_PAGINA));
         return ResponseEntity.ok(service.servicios(solicitante(auth),
-                new Filtros(tiempo, idCliente, idResponsable, rol, idTipoProgreso), estado, PageRequest.of(Math.max(0, page), tamano)));
+                new Filtros(tiempo, idCliente, idResponsable, rol, idTipoProgreso, grupoTiempo, idProceso), estado, PageRequest.of(Math.max(0, page), tamano)));
     }
 
     private Solicitante solicitante(Authentication auth) {

@@ -58,6 +58,13 @@ export default function HeaderMensajesGestor() {
   const [vista, setVista] = useState('empresas') // 'empresas' | 'usuarios' | 'hilo'
   const [idClienteActivo, setIdClienteActivo] = useState(null)
   const [usuarioActivo, setUsuarioActivo] = useState(null)
+
+  // PB-05: el botón «Mensajes de clientes» del tablero abre esta misma campana (no hay otra pantalla de mensajes)
+  useEffect(() => {
+    const abrir = () => setAbierto(true)
+    window.addEventListener('abrir-mensajes-gestor', abrir)
+    return () => window.removeEventListener('abrir-mensajes-gestor', abrir)
+  }, [])
   const [mensajes, setMensajes] = useState(null)
   const [texto, setTexto] = useState('')
   const [enviando, setEnviando] = useState(false)

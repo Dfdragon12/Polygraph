@@ -43,6 +43,17 @@ public class LinkCandidato {
     @Column(name = "ip_origen", length = 45)
     private String ipOrigen;
 
+    /** PB-04: la primera vez que Polygraph lo envió al candidato, y el recordatorio automático (uno por periodo de 24 h). */
+    @Column(name = "enviado_en")
+    private LocalDateTime enviadoEn;
+
+    @Column(name = "ultimo_recordatorio_en")
+    private LocalDateTime ultimoRecordatorioEn;
+
+    @Builder.Default
+    @Column(name = "recordatorios_enviados", nullable = false)
+    private Integer recordatoriosEnviados = 0;
+
     @Column(name = "fecha_primer_ingreso")
     private LocalDateTime fechaPrimerIngreso;
 

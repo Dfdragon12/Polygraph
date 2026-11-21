@@ -475,7 +475,12 @@ function EvalueeForm() {
   const eliminarReferencia = (i) =>
     setForm((prev) => ({ ...prev, referencias: completarReferencias(prev.referencias.filter((_, idx) => idx !== i)) }))
 
-  const preguntas = catalogo.PREGUNTA ?? []
+  const corto = info?.tipoEnlace === 'CORTO'
+  // Pasos que muestra este enlace (índices de PASOS): el corto no pide educación, experiencia ni referencias.
+  const PASOS_ACTIVOS = corto ? [0, 4, 5] : [0, 1, 2, 3, 4, 5]
+  const pasoVecino = (desde, dir) => { let n = desde + dir; while (n >= 0 && n < PASOS.length && !PASOS_ACTIVOS.includes(n)) n += dir; return n }
+  // El enlace corto solo pregunta las declaraciones judiciales (las marca el administrador con «enlaceCorto»).
+  const preguntas = (catalogo.PREGUNTA ?? []).filter(p => !corto || p.enlaceCorto)
   const responder = (idPregunta, cambios) =>
     setRespuestas((prev) => ({ ...prev, [idPregunta]: { respuesta: null, detalle: '', ...prev[idPregunta], ...cambios } }))
 
@@ -602,15 +607,15 @@ function EvalueeForm() {
       else if (r.respuesta && !(r.detalle || '').trim()) declaraciones.push(`Pregunta ${i + 1}: explique su respuesta`)
     })
 
-    return [datosPersonales, educacion, experiencia, referencias, declaraciones, []]
+    return [datosPersonales, corto ? [] : educacion, corto ? [] : experiencia, corto ? [] : referencias, declaraciones, []]
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form, gapsSinJustificar, preguntas, respuestas])
+  }, [form, gapsSinJustificar, preguntas, respuestas, corto])
 
   const pasoValido = (i) => erroresPorPaso[i].length === 0
 
   const intentarAvanzar = () => {
     if (pasoValido(paso)) {
-      setPaso((p) => p + 1)
+      setPaso((p) => pasoVecino(p, 1))
     } else {
       setPasosIntentados((prev) => ({ ...prev, [paso]: true }))
     }
@@ -662,7 +667,7 @@ function EvalueeForm() {
   // Desde V197 el link sigue abierto después de enviar: el candidato puede corregir sus datos,
   // cargar documentos devueltos y ver sus citas hasta que el estudio se cierre.
   const enviado = !!info.hojaVidaCompletada
-  const pasosDatos = [0, 1, 2, 3, 4]
+  const pasosDatos = corto ? [0, 4] : [0, 1, 2, 3, 4]
   const avance = Math.round((pasosDatos.filter(i => pasoValido(i)).length / pasosDatos.length) * 100)
   const docs = resumenDocumentos(documentosRequeridos, archivos)
   const proxima = proximaCita(citas)
@@ -673,7 +678,7 @@ function EvalueeForm() {
   // Estado de cada tarjeta del inicio. tono: hecho | actual (le toca) | atencion | pendiente
   const hojaVida = enviado
     ? { tono: 'hecho', texto: 'Enviada', detalle: 'Ya la recibimos. Puedes corregirla si algo cambió.', accion: 'Revisar', porcentaje: 100 }
-    : { tono: 'actual', texto: `${avance}%`, detalle: 'Completa tus datos, estudios, experiencia, referencias y declaraciones.', accion: avance > 0 ? 'Continuar' : 'Empezar', porcentaje: avance }
+    : { tono: 'actual', texto: `${avance}%`, detalle: corto ? 'Completa tus datos personales y las declaraciones judiciales.' : 'Completa tus datos, estudios, experiencia, referencias y declaraciones.', accion: avance > 0 ? 'Continuar' : 'Empezar', porcentaje: avance }
   const documentos = docs.total === 0
     ? { tono: 'hecho', texto: 'No requeridos', detalle: 'Tu estudio no pide documentos.', accion: 'Ver' }
     : docs.devueltos > 0 ? { tono: 'atencion', texto: `${docs.devueltos} por corregir`, detalle: 'Revisa el motivo y vuelve a cargarlos.', accion: 'Corregir' }
@@ -742,14 +747,15 @@ function EvalueeForm() {
         {/* Stepper */}
         <div className="rounded-2xl border border-gray-200 bg-white px-4 py-4 shadow-sm sm:px-6">
         <ol className="flex items-start">
-          {PASOS.map((nombre, i) => {
+          {PASOS_ACTIVOS.map((i, pos) => {
+            const nombre = PASOS[i]
             const activo = i === paso
             const completo = i < paso && pasoValido(i)
             const incompleto = i < paso && !pasoValido(i)
             const estado = completo ? 'completo' : incompleto ? 'incompleto' : activo ? 'activo' : 'pendiente'
             return (
               <li key={nombre} className="relative flex flex-1 flex-col items-center gap-1.5">
-                {i < PASOS.length - 1 && (
+                {pos < PASOS_ACTIVOS.length - 1 && (
                   <span aria-hidden="true" className={`absolute left-1/2 top-4 h-0.5 w-full rounded transition-colors ${i < paso ? 'bg-primary-300' : 'bg-gray-200'}`} />
                 )}
                 <button type="button" title={nombre}
@@ -761,14 +767,14 @@ function EvalueeForm() {
                     'bg-gray-100 text-gray-500 ring-1 ring-gray-200'
                   }`}>
                   <IconoPaso estado={estado === 'activo' || estado === 'pendiente' ? null : estado} />
-                  {(estado === 'activo' || estado === 'pendiente') && (i + 1)}
+                  {(estado === 'activo' || estado === 'pendiente') && (pos + 1)}
                 </button>
                 <span className={`hidden px-1 text-center text-[11px] leading-tight md:block ${activo ? 'font-semibold text-gray-900' : 'text-gray-400'}`}>{nombre}</span>
               </li>
             )
           })}
         </ol>
-        <p className="mt-3 text-center text-xs text-gray-400 md:hidden">Paso {paso + 1} de {PASOS.length}: <span className="font-medium text-gray-600">{PASOS[paso]}</span></p>
+        <p className="mt-3 text-center text-xs text-gray-400 md:hidden">Paso {PASOS_ACTIVOS.indexOf(paso) + 1} de {PASOS_ACTIVOS.length}: <span className="font-medium text-gray-600">{PASOS[paso]}</span></p>
         </div>
 
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 sm:p-7">
@@ -787,7 +793,7 @@ function EvalueeForm() {
                   <input type="date" className={inputCls} value={form.fechaNacimiento || ''} onChange={f('fechaNacimiento')} />
                 </Campo>
                 <Campo label="Ciudad de nacimiento" requerido ayuda="Escribe y elige el municipio donde naciste.">
-                  <CiudadSelect className={inputCls} value={form.idCiudadNacimiento}
+                  <CiudadSelect permitirAgregar={false} className={inputCls} value={form.idCiudadNacimiento}
                     onChange={(idCiudad) => setForm(p => ({ ...p, idCiudadNacimiento: idCiudad }))} />
                 </Campo>
                 <Campo label="Estado civil" requerido ayuda="Tu estado civil actual.">
@@ -810,7 +816,7 @@ function EvalueeForm() {
                   <input type="date" className={inputCls} value={form.fechaExpedicion || ''} onChange={f('fechaExpedicion')} />
                 </Campo>
                 <Campo label="Lugar de expedición del documento" requerido ayuda="Municipio donde se expidió tu documento.">
-                  <CiudadSelect className={inputCls} value={form.idCiudadExpedicion}
+                  <CiudadSelect permitirAgregar={false} className={inputCls} value={form.idCiudadExpedicion}
                     onChange={(idCiudad) => setForm(p => ({ ...p, idCiudadExpedicion: idCiudad }))} />
                 </Campo>
               </Grupo>
@@ -833,7 +839,7 @@ function EvalueeForm() {
 
               <Grupo titulo="Residencia" descripcion="Dónde vives actualmente.">
                 <Campo label="Ciudad de residencia" requerido ayuda="Municipio donde vives hoy.">
-                  <CiudadSelect className={inputCls} value={form.idCiudadResidencia}
+                  <CiudadSelect permitirAgregar={false} className={inputCls} value={form.idCiudadResidencia}
                     onChange={(idCiudad) => setForm(p => ({ ...p, idCiudadResidencia: idCiudad }))} />
                 </Campo>
                 <Campo label="Barrio de residencia" requerido ayuda="Búscalo en la lista; si no aparece, escríbelo.">
@@ -971,7 +977,7 @@ function EvalueeForm() {
                     </div>
                     <div>
                       <label className={etiquetaCls}>Ciudad <Requerido /></label>
-                      <CiudadSelect valueType="nombre" className={smallSelectCls}
+                      <CiudadSelect permitirAgregar={false} valueType="nombre" className={smallSelectCls}
                         value={edu.ciudad || ''} onChange={(v) => actualizarEducacion(i, 'ciudad', v)} />
                       <Ayuda>Ciudad donde estudiaste.</Ayuda>
                     </div>
@@ -1103,7 +1109,7 @@ function EvalueeForm() {
                     </div>
                     <div>
                       <label className={etiquetaCls}>Ciudad <Requerido /></label>
-                      <CiudadSelect valueType="nombre" className={smallSelectCls}
+                      <CiudadSelect permitirAgregar={false} valueType="nombre" className={smallSelectCls}
                         value={exp.ciudad || ''} onChange={(v) => actualizarExperiencia(i, 'ciudad', v)} />
                       <Ayuda>Ciudad donde trabajaste.</Ayuda>
                     </div>
@@ -1344,13 +1350,13 @@ function EvalueeForm() {
               </section>
 
               {/* Educación */}
-              {form.sinEstudios && (
+              {!corto && form.sinEstudios && (
                 <section>
                   <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Educación</h3>
                   <p className="text-sm bg-gray-50 rounded-lg px-4 py-2.5 text-gray-700">No tengo estudios para registrar.</p>
                 </section>
               )}
-              {!form.sinEstudios && form.educacion.length > 0 && (
+              {!corto && !form.sinEstudios && form.educacion.length > 0 && (
                 <section>
                   <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Educación</h3>
                   <div className="overflow-x-auto rounded-lg border border-gray-200">
@@ -1383,7 +1389,7 @@ function EvalueeForm() {
               )}
 
               {/* Experiencia laboral */}
-              {form.experienciaLaboral.length > 0 && (
+              {!corto && form.experienciaLaboral.length > 0 && (
                 <section>
                   <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Experiencia laboral</h3>
                   <WorkTimeline experiencias={form.experienciaLaboral} inactividades={inactividades} />
@@ -1432,7 +1438,7 @@ function EvalueeForm() {
               )}
 
               {/* Referencias */}
-              {form.referencias.length > 0 && (
+              {!corto && form.referencias.length > 0 && (
                 <section>
                   <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Referencias personales</h3>
                   <ul className="space-y-2">
@@ -1475,7 +1481,7 @@ function EvalueeForm() {
         {/* Navegación */}
         <div className="flex items-center justify-between gap-3">
           <button
-            onClick={() => setPaso((p) => p - 1)}
+            onClick={() => setPaso((p) => pasoVecino(p, -1))}
             disabled={paso === 0}
             className="rounded-xl border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 disabled:opacity-40">
             ← {paso === PASOS.length - 1 ? 'Volver y editar' : 'Anterior'}

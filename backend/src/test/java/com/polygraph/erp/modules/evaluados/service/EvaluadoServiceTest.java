@@ -41,6 +41,7 @@ import static org.mockito.Mockito.*;
 class EvaluadoServiceTest {
 
     @Mock private LinkCandidatoRepository linkCandidatoRepository;
+    @Mock private com.polygraph.erp.modules.servicios.repository.ServicioSubprocesoRepository subprocesoRepository;   // PB-04: tipo de enlace
     @Mock private HojaVidaEvaluadoRepository hojaVidaRepository;
     @Mock private CandidatoRepository candidatoRepository;
     @Mock private HistorialLaboralService historialLaboralService;

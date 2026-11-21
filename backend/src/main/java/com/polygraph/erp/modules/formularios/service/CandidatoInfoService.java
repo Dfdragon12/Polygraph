@@ -47,7 +47,30 @@ public class CandidatoInfoService {
 
     /** Datos del evaluado para el formulario del analista (AC-08): lo del link, completado con la hoja de vida. */
     public List<CampoCandidatoValorResponse> resolverParaAnalista(Candidato candidato) {
-        return resolver(candidato, String.join(",", CAMPOS_DEL_ANALISTA));
+        return parsearClaves(String.join(",", CAMPOS_DEL_ANALISTA)).stream()
+                .map(this::parseCampo)
+                .filter(Objects::nonNull)
+                .map(campo -> datoConHojaDeVida(candidato, campo))
+                .toList();
+    }
+
+    /**
+     * PB-06: el dato como lo ve el analista. Celular, correo, teléfono, dirección y barrio salen de la HOJA DE VIDA (lo que escribió el evaluado) y,
+     * si difieren de los de la solicitud, el de la solicitud va aparte. Si el evaluado no escribió nada, queda el de la solicitud.
+     */
+    private CampoCandidatoValorResponse datoConHojaDeVida(Candidato candidato, CampoCandidato campo) {
+        String solicitud = valorDe(candidato, campo);
+        String hoja = switch (campo) {
+            case CELULAR -> val(hojaVidaDe(candidato).map(HojaVidaEvaluado::getCelular).orElse(null));
+            case EMAIL_PRINCIPAL -> val(hojaVidaDe(candidato).map(HojaVidaEvaluado::getEmail).orElse(null));
+            case TELEFONO_FIJO -> val(hojaVidaDe(candidato).map(HojaVidaEvaluado::getTelefonoFijo).orElse(null));
+            case BARRIO_RESIDENCIA -> val(hojaVidaDe(candidato).map(HojaVidaEvaluado::getBarrio).orElse(null));
+            case DIRECCION_RESIDENCIA -> hojaVidaDe(candidato).map(h -> (val(h.getDireccion()) + " " + val(h.getDireccionAdicional())).trim()).orElse("");
+            default -> "";
+        };
+        if (hoja.isBlank()) return new CampoCandidatoValorResponse(campo.name(), campo.getEtiqueta(), solicitud);
+        boolean igual = solicitud.isBlank() || solicitud.replaceAll("\s+", "").equalsIgnoreCase(hoja.replaceAll("\s+", ""));
+        return new CampoCandidatoValorResponse(campo.name(), campo.getEtiqueta(), hoja, igual ? null : solicitud);
     }
 
     /** camposCsv null/vacío = comportamiento de siempre (nombre completo + cédula) — se usa solo

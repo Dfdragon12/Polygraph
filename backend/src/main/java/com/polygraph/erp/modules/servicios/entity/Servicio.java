@@ -137,6 +137,29 @@ public class Servicio {
     @Column(name = "cumplimiento", length = 10)
     private com.polygraph.erp.shared.enums.Cumplimiento cumplimiento;
 
+    /** PB-01: indicador de la pasta final (no es un estado). EMITIDA = el cliente ve «Estudio completo publicado». */
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(name = "pasta_estado", nullable = false, length = 20)
+    private com.polygraph.erp.shared.enums.PastaEstado pastaEstado = com.polygraph.erp.shared.enums.PastaEstado.PENDIENTE;
+
+    /** PB-03: la nota del gestor (concepto final) que ve el cliente, y quién/cuándo emitió el estudio. */
+    @Column(name = "concepto_gestor", columnDefinition = "TEXT")
+    private String conceptoGestor;
+
+    @Column(name = "emitido_por")
+    private Long emitidoPor;
+
+    @Column(name = "emitido_en")
+    private java.time.LocalDateTime emitidoEn;
+
+    /** Quién confirmó la revisión manual que pidió el motor, y cuándo. */
+    @Column(name = "revision_manual_por")
+    private Long revisionManualPor;
+
+    @Column(name = "revision_manual_en")
+    private java.time.LocalDateTime revisionManualEn;
+
     @Column(name = "estado_tiempo_actualizado_en")
     private java.time.LocalDateTime estadoTiempoActualizadoEn;
 

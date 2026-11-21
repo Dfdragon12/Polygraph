@@ -247,7 +247,14 @@ class SemaforoEstadoServiceTest {
         assertThat(porId.keySet()).containsExactlyInAnyOrder(qa.get(40).getIdServicio(), qa.get(41).getIdServicio(), qa.get(44).getIdServicio());
         assertThat(porId.get(qa.get(40).getIdServicio()).etiquetaPublicacion()).isEqualTo("Publicado parcial");
         assertThat(porId.get(qa.get(44).getIdServicio()).etiquetaPublicacion()).isEqualTo("Publicado parcial");
-        assertThat(porId.get(qa.get(41).getIdServicio()).etiquetaPublicacion()).isEqualTo("Estudio completo publicado");
+        // PB-01: con todo publicado pero la pasta sin emitir sigue «Publicado parcial»; solo con la pasta EMITIDA pasa a «Estudio completo publicado»
+        assertThat(porId.get(qa.get(41).getIdServicio()).etiquetaPublicacion()).isEqualTo("Publicado parcial");
+        qa.get(41).setPastaEstado(com.polygraph.erp.shared.enums.PastaEstado.EMITIDA);
+        em.merge(qa.get(41));
+        em.flush();
+        var emitida = service.servicios(cliente(), Filtros.ninguno(), EstadoSubproceso.PUBLICADO, PageRequest.of(0, 10)).getContent().stream()
+                .filter(f -> f.idServicio().equals(qa.get(41).getIdServicio())).findFirst().orElseThrow();
+        assertThat(emitida.etiquetaPublicacion()).isEqualTo("Estudio completo publicado");
         // avance: publicados sobre no cancelados
         assertThat(porId.get(qa.get(40).getIdServicio()).publicados()).isEqualTo(1);
         assertThat(porId.get(qa.get(40).getIdServicio()).vigentes()).isEqualTo(5);
@@ -365,7 +372,7 @@ class SemaforoEstadoServiceTest {
     @DisplayName("Alertas del gestor sobre el cliente QA: 4 sin asignar (financiero, visita, poligrafía de la #40 y la poligrafía de la #43) y 1 vencida (la #43)")
     void alertasDelGestor() {
         var a = service.alertas(gestor(), Filtros.ninguno());
-        assertThat(a.sinAsignar()).isEqualTo(4);
+        assertThat(a.sinAsignar()).isEqualTo(2);   // PB-01: los que están PROGRAMANDO ya tienen programador, no cuentan
         assertThat(a.vencidas()).isEqualTo(1);
         assertThat(a.paraHoy()).isZero();
         assertThat(a.citasDeHoy()).isZero();

@@ -66,7 +66,7 @@ public class FotoEvaluadoService {
         Foto vigente = todas.stream().filter(Foto::vigente).findFirst().orElse(null);
         boolean bloqueada = vigente != null && vigente.bloqueadaEn() != null;
         boolean cerrado = cerrado(sp);
-        return new Estado(vigente != null, bloqueada, esElPoligrafista(sp, actor) && !bloqueada && !cerrado, esCoordinador(actor), vigente,
+        return new Estado(vigente != null, bloqueada, esElPoligrafista(sp, actor) && !bloqueada && !cerrado, esCoordinador(actor) && !cerrado, vigente,   // PB-02: en solo lectura (enviado o publicado) el gestor no reemplaza la foto; si hace falta, devuelve el subproceso
                 todas.stream().filter(f -> !f.vigente()).toList());
     }
 

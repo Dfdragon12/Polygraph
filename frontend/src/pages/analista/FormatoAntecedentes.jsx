@@ -64,7 +64,7 @@ export default function FormularioAnalista() {
 function resumenDelEvaluado(inicial) {
   return (inicial.datosCandidato ?? [])
     .filter(c => c.valor && /expedici|direcci|barrio|celular|tel[eé]fono|correo|email/i.test(`${c.clave} ${c.etiqueta}`))
-    .map(c => ({ etiqueta: c.etiqueta, valor: c.valor }))
+    .map(c => ({ etiqueta: c.etiqueta, valor: c.valor, solicitud: c.valorSolicitud }))
 }
 
 function PanelCaso({ ficha, nota, resumen }) {
@@ -74,7 +74,7 @@ function PanelCaso({ ficha, nota, resumen }) {
       <Tarjeta key={`ev-${resumen.length + decl.length > 0}`} titulo="Lo que registró el evaluado" vacia={resumen.length + decl.length === 0}>
         {resumen.length > 0 && (
           <dl className="space-y-1 mb-2">
-            {resumen.map((r, i) => <div key={i}><dt className="text-xs text-gray-600">{r.etiqueta}</dt><dd className="text-gray-900 break-words">{r.valor}</dd></div>)}
+            {resumen.map((r, i) => <div key={i}><dt className="text-xs text-gray-600">{r.etiqueta}</dt><dd className="text-gray-900 break-words">{r.valor}</dd>{r.solicitud && <dd className="text-xs text-gray-700 break-words">En la solicitud: {r.solicitud}</dd>}</div>)}
           </dl>
         )}
         <ul className="space-y-2">
@@ -376,6 +376,11 @@ export function FormatoAntecedentes({ inicial, idServicioSubproceso }) {
               <span className="block text-[11px] font-semibold uppercase tracking-wider text-gray-700">Fase {f.id}</span>
               <span className="block text-sm font-medium text-gray-900">{f.nombre}</span>
               <span className={`block text-xs ${color}`}>{estado === 'completa' ? '✓ completa' : estado}</span>
+              {estado === 'con faltantes' && (() => {
+                // PB-06: dice QUÉ falta (el primer faltante de cada tema de la fase), no solo «con faltantes»
+                const quefalta = faltantes.grupos.filter(g => f.temas.some(t => t.id === g.id)).flatMap(g => g.items.map(i => i.texto))
+                return quefalta.length > 0 ? <span className="block text-xs text-gray-800">Falta: {quefalta.slice(0, 2).join('; ')}{quefalta.length > 2 ? ` y ${quefalta.length - 2} más` : ''}</span> : null
+              })()}
             </button>
           )
         })}

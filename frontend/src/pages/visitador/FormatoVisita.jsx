@@ -62,7 +62,7 @@ export default function FormularioVisitador() {
 function resumenDelEvaluado(inicial) {
   const filas = []
   ;(inicial.datosCandidato ?? []).filter(c => c.valor && /direcci|barrio|ciudad de resid|estrato|civil/i.test(`${c.clave} ${c.etiqueta}`))
-    .forEach(c => filas.push({ etiqueta: c.etiqueta, valor: c.valor }))
+    .forEach(c => filas.push({ etiqueta: c.etiqueta, valor: c.valor, solicitud: c.valorSolicitud }))
   ;(inicial.tablasFijas ?? []).forEach(t => {
     const esEstudio = /educ|estudi/i.test(t.clave ?? '')
     const esEmpleo = /experiencia|emple/i.test(t.clave ?? '')
@@ -82,7 +82,7 @@ function PanelCaso({ ficha, nota, resumen = [] }) {
       <Tarjeta key={`ev-${resumen.length + decl.length > 0}`} titulo="Lo que registró el evaluado" vacia={resumen.length + decl.length === 0}>
         {resumen.length > 0 && (
           <dl className="space-y-1 mb-2">
-            {resumen.map((r, i) => <div key={i}><dt className="text-xs text-gray-600">{r.etiqueta}</dt><dd className="text-gray-900 break-words">{r.valor}</dd></div>)}
+            {resumen.map((r, i) => <div key={i}><dt className="text-xs text-gray-600">{r.etiqueta}</dt><dd className="text-gray-900 break-words">{r.valor}</dd>{r.solicitud && <dd className="text-xs text-gray-700 break-words">En la solicitud: {r.solicitud}</dd>}</div>)}
           </dl>
         )}
         <ul className="space-y-2">

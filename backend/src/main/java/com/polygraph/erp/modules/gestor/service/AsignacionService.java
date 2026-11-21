@@ -194,7 +194,20 @@ public class AsignacionService {
         if (ejecutor != null && (estado == EstadoSubproceso.FINALIZADO || estado == EstadoSubproceso.PUBLICADO)) {
             return pagina.map(a -> conRiesgo(toResponse(a), ejecutor));
         }
+        // PB-02: el gestor ve la calificación SUGERIDA de lo que le toca revisar (Finalizado); lo publicado ya trae la suya.
+        if (ejecutor == null && estado == null && idServicio != null) {
+            return pagina.map(a -> a.getEstado() == EstadoSubproceso.FINALIZADO ? sugerida(toResponse(a)) : toResponse(a));
+        }
         return pagina.map(this::toResponse);
+    }
+
+    private AsignacionResponse sugerida(AsignacionResponse fila) {
+        try {
+            var r = calificacionRiesgoService.resumenSubproceso(fila.id(), asignacionRepository.findById(fila.id()).map(ServicioSubproceso::getUsuarioAsignado).orElse(null));
+            return r.calculado() ? fila.conRiesgo(r.califica(), r.nivel(), r.puntaje(), r.tieneCritica()) : fila;
+        } catch (RuntimeException e) {
+            return fila;
+        }
     }
 
     /** Riesgo del subproceso para quien lo ejecutó: el mismo cálculo del encabezado del formulario
@@ -729,6 +742,12 @@ public class AsignacionService {
         if (!obligatoriosVacios.isEmpty()) {
             throw new ApiException("Faltan campos obligatorios: " + String.join("; ", obligatoriosVacios)
                     + ". Llénalos antes de enviarlo.", HttpStatus.CONFLICT);
+        }
+        // PB-02: no se envía a revisión con secciones por completar (la poligrafía del #52 salió con 9 de 18). Las opcionales que se quitaron no cuentan.
+        var progreso = formularioService.progreso(asignacion.getId(), actor);
+        if (progreso.seccionesTotal() != null && progreso.seccionesCompletas() != null && progreso.seccionesCompletas() < progreso.seccionesTotal()) {
+            throw new ApiException("Faltan secciones por completar: " + progreso.seccionesCompletas() + " de " + progreso.seccionesTotal()
+                    + ". Termínalas (o quita las opcionales que no apliquen) antes de enviarlo.", HttpStatus.CONFLICT);
         }
         List<String> sinJustificar = formularioService.respuestasCriticasSinJustificar(asignacion.getId());
         if (!sinJustificar.isEmpty()) {
@@ -1379,7 +1398,8 @@ public class AsignacionService {
                 ReglasCita.puedeRegistrarNoSePresento(esCita(a), a.getEstado(), Boolean.TRUE.equals(a.getIniciado()), a.getFechaProgramada(), ahoraEnColombia(), ReglasCita.TOLERANCIA_MINUTOS),
                 ReglasCita.porConfirmar(esCita(a), a.getEstado(), Boolean.TRUE.equals(a.getIniciado()), a.getFechaProgramada(), ahoraEnColombia(), ReglasCita.TOLERANCIA_MINUTOS),
                 atrasado(a),
-                atrasado(a) ? calendario.diasHabilesEntre(a.getFechaProgramada().toLocalDate(), ahoraEnColombia().toLocalDate()) : 0
+                atrasado(a) ? calendario.diasHabilesEntre(a.getFechaProgramada().toLocalDate(), ahoraEnColombia().toLocalDate()) : 0,
+                a.getConclusion(), a.getConclusionPublicada(), a.getNivelPublicado(), a.getPuntajePublicado()
         );
     }
 }

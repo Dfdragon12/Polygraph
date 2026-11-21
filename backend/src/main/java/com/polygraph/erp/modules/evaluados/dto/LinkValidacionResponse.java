@@ -26,5 +26,7 @@ public record LinkValidacionResponse(
         // Documentos que este proceso puntual exige — configurados por admin en
         // admin/catálogo → editar proceso (ver ProcesoService.obtenerDocumentosRequeridos). Viene
         // ya resuelto acá para no exponer un endpoint público nuevo solo para esto.
-        List<DocumentoRequeridoResponse> documentosRequeridos
+        List<DocumentoRequeridoResponse> documentosRequeridos,
+        // PB-04: CORTO (solo Antecedentes: datos personales, 3 declaraciones judiciales y autorización) o COMPLETO.
+        String tipoEnlace
 ) {}

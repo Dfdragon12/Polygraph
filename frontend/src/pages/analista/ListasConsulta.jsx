@@ -12,6 +12,8 @@ import { codigosOfrecidos } from './codigosPorFuente'
 const RESULTADOS = ['Sin novedad', 'Con hallazgo', 'No disponible']
 const ESTADOS_SUGERIDOS = ['Vigente', 'En proceso', 'Pagada', 'Cancelada', 'Archivada']
 const inputCls = 'w-full min-h-11 border border-gray-300 rounded-lg px-3 text-sm bg-white disabled:bg-gray-100'
+// PB-06: ancho mínimo por columna, para que Estado, Fecha y el aviso de soporte se lean completos (la tabla se desplaza dentro de su caja si no cabe).
+const ANCHO_MINIMO = { fuente: 'min-w-[8rem]', resultado: 'min-w-[11rem]', coincidencia: 'min-w-[11rem]', ref: 'min-w-[8rem]', estado: 'min-w-[10rem]', fecha: 'min-w-[11rem]', soporte: 'min-w-[12rem]', observacion: 'min-w-[12rem]' }
 const tiene = (v) => v !== undefined && v !== null && String(v).trim() !== ''
 const hoy = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
 
@@ -145,14 +147,14 @@ export default function ListasConsulta({ seccion, tabla, soloLectura, idServicio
         <div className="overflow-x-auto">
           <table className="w-full text-sm border border-gray-300">
             <thead className="bg-gray-100 text-xs text-gray-700">
-              <tr>{encabezados.map(([k, t]) => <th key={k} scope="col" className="text-left p-2 border-b border-gray-300">{t}</th>)}</tr>
+              <tr>{encabezados.map(([k, t]) => <th key={k} scope="col" className={`text-left p-2 border-b border-gray-300 ${ANCHO_MINIMO[k] ?? ''}`}>{t}</th>)}</tr>
             </thead>
             <tbody>
               {seccion.filas.map(f => {
                 const c = celdas(f)
                 return (
                   <tr key={f.localId} data-clave={`${seccion.clave}-${leer(f, colFuente.clave)}`} className="border-b border-gray-200 align-top">
-                    {encabezados.map(([k]) => <td key={k} className={`p-2 ${k === 'fuente' ? 'w-[14%]' : ''}`}>{c[k]}</td>)}
+                    {encabezados.map(([k]) => <td key={k} className={`p-2 ${ANCHO_MINIMO[k] ?? ''}`}>{c[k]}</td>)}
                   </tr>
                 )
               })}

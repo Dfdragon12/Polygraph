@@ -43,7 +43,9 @@ public record CalificacionRiesgoResponse(
         boolean bloqueado,
         boolean puedeDecidir,
         boolean puedeCambiarCriticidad,
-        List<Historial> historial
+        List<Historial> historial,
+        // PB-01: el estado REAL (uno de los 7) de cada subproceso del estudio, por el mismo código de `subprocesos[].codigo` (id del subproceso). La pestaña Riesgo lo muestra en vez de «Pendiente».
+        java.util.Map<String, String> estadosSubproceso
 ) {
     public record Historial(Long id, LocalDateTime fechaCalculo, String estado, BigDecimal puntajeFinal,
                             String nivelFinal, String nivelDecidido, String calculadoPorNombre) {}

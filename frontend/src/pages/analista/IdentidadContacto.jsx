@@ -143,7 +143,7 @@ export default function IdentidadContacto({ secciones, datosCandidato, soloLectu
           <section key={cfg.clave} aria-labelledby={`an-${cfg.clave}`} data-clave={cfg.clave}>
             <h3 id={`an-${cfg.clave}`} className="text-sm font-bold text-gray-900 mb-1">{cfg.titulo}</h3>
             <p className="text-sm text-gray-800 mb-2">Declarado por el evaluado: {declarados.length > 0
-              ? <span className="inline-block bg-gray-100 rounded px-2 py-0.5">{declarados.join(' · ')}</span> : <span className="text-gray-600 italic">sin dato en el link</span>}</p>
+              ? <span className="inline-block bg-gray-100 rounded px-2 py-0.5">{declarados.join(' · ')}</span> : <span className="text-gray-600 italic">el evaluado no lo escribió</span>}</p>
             <div className="space-y-3">
               {s.filas.map((f, i) => {
                 const val = (clave) => f.valores[idEn(s, clave)] ?? ''

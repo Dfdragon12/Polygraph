@@ -25,7 +25,7 @@ class AlertasAgendaTest {
         return List.of(
                 fila(1, 1, PENDIENTE, false, null, Rol.ANALISTA_INTERNO, EstadoTiempo.VENCIDA, 0, false),                              // sin asignar, servicio vencido
                 fila(1, 2, EN_EJECUCION, true, null, Rol.ANALISTA_INTERNO, EstadoTiempo.VENCIDA, 0, false),                            // mismo servicio vencido
-                fila(2, 3, PROGRAMANDO, false, null, Rol.POLIGRAFISTA, EstadoTiempo.POR_VENCER, 0, false),                              // sin asignar, vence hoy
+                fila(2, 3, PROGRAMANDO, false, null, Rol.POLIGRAFISTA, EstadoTiempo.POR_VENCER, 0, false),                              // PROGRAMANDO: ya lo tiene el programador (no cuenta como sin asignar), vence hoy
                 fila(3, 4, EN_EJECUCION, true, AHORA.withHour(15), Rol.VISITADOR, EstadoTiempo.A_TIEMPO, 5, false),                    // cita de hoy
                 fila(4, 5, EN_EJECUCION, true, AHORA.minusHours(2), Rol.POLIGRAFISTA, EstadoTiempo.POR_VENCER, 1, false),              // por confirmar (pasaron >15 min)
                 fila(5, 6, EN_EJECUCION, true, AHORA.minusDays(1), Rol.POLIGRAFISTA, EstadoTiempo.POR_VENCER, 0, true),                // ayer, ya iniciada: no cuenta como por confirmar ni de hoy
@@ -35,7 +35,7 @@ class AlertasAgendaTest {
     @Test
     void elGestorVeTodasLasAlertas() {
         Resultado r = AlertasAgenda.calcular(Rol.GESTOR, datos(), 3, AHORA);
-        assertEquals(2, r.sinAsignar());           // el pendiente sin responsable y el programando sin profesional
+        assertEquals(1, r.sinAsignar());           // PB-01: solo el PENDIENTE sin responsable; uno en PROGRAMANDO ya tiene programador
         assertEquals(3, r.novedadesAbiertas());
         assertEquals(2, r.citasDeHoy());           // la de las 15:00 y la de hace 2 horas (también es de hoy)
         assertEquals(1, r.vencidas());             // el servicio 1, aunque tenga dos subprocesos

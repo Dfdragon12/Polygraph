@@ -546,7 +546,15 @@ public class CalificacionRiesgoService {
                 gestiona && !bloqueado,
                 todas.stream().map(c -> new CalificacionRiesgoResponse.Historial(c.getId(), c.getFechaCalculo(), c.getEstado().name(),
                         c.getPuntajeFinal(), c.getNivelFinal() != null ? c.getNivelFinal().name() : null,
-                        c.getNivelDecidido() != null ? c.getNivelDecidido().name() : null, nombre(c.getCalculadoPor()))).toList());
+                        c.getNivelDecidido() != null ? c.getNivelDecidido().name() : null, nombre(c.getCalculadoPor()))).toList(),
+                estadosReales(id));
+    }
+
+    private java.util.Map<String, String> estadosReales(Integer idServicio) {
+        java.util.Map<String, String> m = new java.util.LinkedHashMap<>();
+        subprocesoRepository.findByServicio_IdServicioOrderByTipoProgreso_OrdenAsc(idServicio)
+                .forEach(sp -> m.put(String.valueOf(sp.getId()), sp.getEstado().name()));
+        return m;
     }
 
     // ───────────────────────────── Apoyo ─────────────────────────────

@@ -63,6 +63,23 @@ public class ServicioSubproceso {
     @Column(name = "fecha_publicado")
     private LocalDateTime fechaPublicado;
 
+    /** PB-02: conclusión que escribe quien ejecuta; al publicar, el gestor puede ajustarla (conclusionPublicada es la que ve el cliente). */
+    @Column(name = "conclusion", columnDefinition = "TEXT")
+    private String conclusion;
+
+    @Column(name = "conclusion_publicada", columnDefinition = "TEXT")
+    private String conclusionPublicada;
+
+    /** BAJO/MEDIO/ALTO con el que se publicó (la sugerida o la que el gestor cambió con motivo). */
+    @Column(name = "nivel_publicado", length = 10)
+    private String nivelPublicado;
+
+    @Column(name = "puntaje_publicado", precision = 7, scale = 2)
+    private java.math.BigDecimal puntajePublicado;
+
+    @Column(name = "publicado_por")
+    private Long publicadoPor;
+
     @Column(name = "observaciones", columnDefinition = "TEXT")
     private String observaciones;
 

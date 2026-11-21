@@ -80,7 +80,12 @@ public record AsignacionResponse(
         boolean porConfirmar,
         // «Atrasado en agenda» (SE-08): el día en que estaba programado ya pasó sin hacerse; se cuenta en días hábiles. No es la «Vencida» de la entrega al cliente.
         boolean atrasadoAgenda,
-        int diasHabilesAtrasoAgenda
+        int diasHabilesAtrasoAgenda,
+        // PB-02: la conclusión del ejecutor, y lo publicado (la que ve el cliente, el nivel y el puntaje con que se publicó)
+        String conclusion,
+        String conclusionPublicada,
+        String nivelPublicado,
+        BigDecimal puntajePublicado
 ) {
     public AsignacionResponse conRiesgo(boolean califica, String nivel, BigDecimal puntaje, boolean critico) {
         return new AsignacionResponse(id, idServicio, nombresEvaluado, apellidosEvaluado, cedulaEvaluado, cargo, proceso,
@@ -89,7 +94,7 @@ public record AsignacionResponse(
                 observaciones, idCiudad, nombreCiudad, estadoConfirmacion, notasConfirmacion, idProgramadorResponsable,
                 nombreProgramadorResponsable, versionPlantilla, versionPlantillaActual, lugar,
                 documentosPorRevisar, documentosDevueltos, novedadesAbiertas, califica, nivel, puntaje, critico,
-                iniciado, devuelto, reprogramaciones, tiempo, evaluadoAvisado, noHaLlegadoDisponible, noSePresentoDisponible, porConfirmar, atrasadoAgenda, diasHabilesAtrasoAgenda);
+                iniciado, devuelto, reprogramaciones, tiempo, evaluadoAvisado, noHaLlegadoDisponible, noSePresentoDisponible, porConfirmar, atrasadoAgenda, diasHabilesAtrasoAgenda, conclusion, conclusionPublicada, nivelPublicado, puntajePublicado);
     }
 
     public AsignacionResponse conIndicadores(int documentosPorRevisar, int documentosDevueltos, int novedadesAbiertas) {
@@ -100,6 +105,6 @@ public record AsignacionResponse(
                 nombreProgramadorResponsable, versionPlantilla, versionPlantillaActual, lugar,
                 documentosPorRevisar, documentosDevueltos, novedadesAbiertas,
                 riesgoCalifica, riesgoNivel, riesgoPuntaje, riesgoCritico,
-                iniciado, devuelto, reprogramaciones, tiempo, evaluadoAvisado, noHaLlegadoDisponible, noSePresentoDisponible, porConfirmar, atrasadoAgenda, diasHabilesAtrasoAgenda);
+                iniciado, devuelto, reprogramaciones, tiempo, evaluadoAvisado, noHaLlegadoDisponible, noSePresentoDisponible, porConfirmar, atrasadoAgenda, diasHabilesAtrasoAgenda, conclusion, conclusionPublicada, nivelPublicado, puntajePublicado);
     }
 }

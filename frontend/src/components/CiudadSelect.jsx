@@ -18,7 +18,7 @@ const quitarTildes = (s) => (s || '').normalize('NFD').replace(/\p{Diacritic}/gu
  * tener duplicados por typos) y, opcionalmente, el código DANE de la ciudad — el del departamento
  * se deriva solo del que se elija. Queda seleccionada automáticamente.
  */
-function CiudadSelect({ value, onChange, className, required = false, valueType = 'id', id, name, placeholder = 'Selecciona o busca una ciudad...', disabled = false, soloConfirmadas = false }) {
+function CiudadSelect({ value, onChange, className, required = false, valueType = 'id', id, name, placeholder = 'Selecciona o busca una ciudad...', disabled = false, soloConfirmadas = false, permitirAgregar = true }) {
   const idCampos = useId()
   const [ciudades, setCiudades] = useState([])
   const [cargando, setCargando] = useState(true)
@@ -139,8 +139,8 @@ function CiudadSelect({ value, onChange, className, required = false, valueType 
               {c.nombreCiudad} <span className="text-gray-400">— {c.departamento}</span>
             </button>
           ))}
-          {soloConfirmadas ? (
-            <p className="border-t border-gray-100 mt-1 px-3 pt-2 pb-1 text-xs text-gray-600">¿No ves la ciudad? Escríbele a tu gestor para que la confirme.</p>
+          {soloConfirmadas || !permitirAgregar ? (
+            <p className="border-t border-gray-100 mt-1 px-3 pt-2 pb-1 text-xs text-gray-600">{soloConfirmadas ? '¿No ves la ciudad? Escríbele a tu gestor para que la confirme.' : '¿No ves tu ciudad? Elige el municipio más cercano o díselo a tu gestor de Polygraph.'}</p>
           ) : (
           <button
             type="button"

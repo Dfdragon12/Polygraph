@@ -10,5 +10,7 @@ public enum TipoTrabajo {
     /** Mismo documento, pedido por roles internos desde el formulario (cualquier estado). */
     FORMULARIO_PDF,
     /** Recalcula el estado de tiempo (semáforo) de las solicitudes en curso: el estado cambia solo con el paso de los días. */
-    RECALCULO_TIEMPO
+    RECALCULO_TIEMPO,
+    /** PB-03: arma el PDF único del estudio completo (portada + informes de los subprocesos), con versión. */
+    ESTUDIO_PDF
 }

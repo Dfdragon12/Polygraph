@@ -36,6 +36,7 @@ public class SolicitudController {
     private final com.polygraph.erp.modules.solicitudes.service.CancelacionSolicitudService cancelacionSolicitudService;
     private final UsuarioRepository usuarioRepository;
     private final InformePdfProcesador informePdfProcesador;
+    private final com.polygraph.erp.modules.solicitudes.service.EmisionEstudioService emisionEstudioService;
     private final CargaMasivaProcesador cargaMasivaProcesador;
     private final com.polygraph.erp.modules.solicitudes.service.EntregaEstimadaService entregaEstimadaService;
     private final com.polygraph.erp.modules.solicitudes.service.ResumenCobroService resumenCobroService;
@@ -45,6 +46,14 @@ public class SolicitudController {
     @PreAuthorize("hasAnyRole('ADMIN_CLIENTE', 'ANALISTA_CLIENTE')")
     public ResponseEntity<com.polygraph.erp.modules.solicitudes.dto.EntregaEstimadaResponse> entregaEstimada(@RequestParam java.util.List<Integer> procesos) {
         return ResponseEntity.ok(entregaEstimadaService.estimar(procesos));
+    }
+
+    /** TP-08: aviso de recargo por ciudad del paso 2, apenas se elige la ciudad (calculado en el servidor). */
+    @GetMapping("/recargo-ciudad")
+    @PreAuthorize("hasAnyRole('ADMIN_CLIENTE', 'ANALISTA_CLIENTE')")
+    public ResponseEntity<com.polygraph.erp.modules.solicitudes.dto.RecargoCiudadResponse> recargoCiudad(
+            @RequestParam Integer idProceso, @RequestParam Integer idCiudad, @AuthenticationPrincipal UserDetails userDetails) {
+        return ResponseEntity.ok(resumenCobroService.avisoRecargo(userDetails.getUsername(), idProceso, idCiudad));
     }
 
     /** NS-11: qué se usa y qué queda, para el resumen del paso 3 (calculado en el servidor). */
@@ -80,13 +89,18 @@ public class SolicitudController {
             // uno o varios, separados por coma (ej. ENTREGADA_A_TIEMPO,ENTREGADA_TARDE)
             @RequestParam(required = false) java.util.List<com.polygraph.erp.shared.enums.EstadoTiempo> estadoTiempo,
             @RequestParam(required = false) String orden,
+            // PB-05: grupos de tiempo del inicio (uno o varios: VENCE_HOY,VENCE_MANANA) y los anillos de riesgo (nivel + periodo)
+            @RequestParam(required = false) java.util.List<com.polygraph.erp.shared.estados.BucketTiempo> grupoTiempo,
+            @RequestParam(required = false) com.polygraph.erp.modules.riesgo.motor.ModeloRiesgo.NivelRiesgo nivel,
+            @RequestParam(required = false) String periodo,
             @RequestParam(defaultValue = "0") int pagina,
             @RequestParam(defaultValue = "10") int tamano,
             @AuthenticationPrincipal UserDetails userDetails) {
 
         Integer clienteId = resolverIdCliente(idCliente, userDetails);
         Pageable pageable = PageRequest.of(pagina, tamano);
-        return ResponseEntity.ok(solicitudService.listarSolicitudes(clienteId, estado, estadoTiempo, orden, pageable));
+        return ResponseEntity.ok(solicitudService.listarSolicitudes(clienteId, estado, estadoTiempo, grupoTiempo, nivel,
+                periodo == null || periodo.isBlank() ? null : com.polygraph.erp.shared.estados.PeriodoEstadistica.de(periodo), orden, pageable));
     }
 
     @GetMapping("/conteo")
@@ -118,6 +132,26 @@ public class SolicitudController {
             @PathVariable Long idServicioSubproceso,
             @AuthenticationPrincipal UserDetails userDetails) {
         return ResponseEntity.accepted().body(informePdfProcesador.solicitar(id, idServicioSubproceso, userDetails));
+    }
+
+    /** PB-03: el gestor emite el estudio (PRELIMINAR o FINAL) con su nota, alertas para el cliente y, si el motor lo pide, la confirmación de revisión manual. */
+    @PostMapping("/{id}/emitir-estudio")
+    @PreAuthorize("hasAnyRole('GESTOR', 'ADMIN_POLYGRAPH')")
+    public ResponseEntity<com.polygraph.erp.modules.solicitudes.dto.EmisionEstudioResponse> emitirEstudio(
+            @PathVariable Integer id,
+            @RequestBody com.polygraph.erp.modules.solicitudes.dto.EmitirEstudioRequest request,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        return ResponseEntity.ok(emisionEstudioService.emitir(id, request, userDetails));
+    }
+
+    /** PB-03: el PDF único del estudio completo, tal como se guardó (v1, v2...). */
+    @GetMapping("/{id}/estudio-completo/pdf")
+    @PreAuthorize("hasAnyRole('ADMIN_CLIENTE', 'GESTOR', 'ADMIN_POLYGRAPH')")
+    public ResponseEntity<org.springframework.core.io.Resource> estudioCompletoPdf(@PathVariable Integer id, @AuthenticationPrincipal UserDetails userDetails) {
+        var d = emisionEstudioService.descargar(id, userDetails);
+        return ResponseEntity.ok().contentType(MediaType.APPLICATION_PDF)
+                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + d.nombre() + "\"")
+                .body(d.archivo());
     }
 
     @PatchMapping("/{id}/status")

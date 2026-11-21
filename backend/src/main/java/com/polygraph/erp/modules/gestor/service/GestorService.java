@@ -42,6 +42,8 @@ public class GestorService {
     private final HojaVidaEvaluadoRepository hojaVidaEvaluadoRepository;
     private final NovedadesTableroService novedadesTableroService;
     private final com.polygraph.erp.shared.service.TiempoServicioService tiempoServicioService;
+    private final com.polygraph.erp.modules.riesgo.repository.CalificacionRiesgoRepository calificacionRiesgoRepository;
+    private final com.polygraph.erp.modules.servicios.repository.LinkCandidatoRepository linkCandidatoRepository;
 
     public GestorDashboardResponse obtenerDashboard(Long idGestor) {
         long pendientes  = contar(idGestor, EstadoServicio.PENDIENTE);
@@ -171,13 +173,29 @@ public class GestorService {
     /** tiempo: filtra por estado de tiempo (vencidas, por vencer...); orden "retraso": lo más atrasado primero. Se combinan con el buscador. */
     public Page<SolicitudGestorResponse> listarSolicitudes(Long idGestor, String estado, String q, java.util.List<com.polygraph.erp.shared.enums.EstadoTiempo> tiempo,
                                                            String orden, Pageable pageable) {
+        return listarSolicitudes(idGestor, new FiltrosSolicitudes(estado, q, tiempo, null, null, null, null, orden), pageable);
+    }
+
+    /**
+     * PB-05: todos los filtros de la pantalla Solicitudes, combinables: tarjeta de estado (uno o varios, separados por coma), grupo de tiempo
+     * (Vencidas · Vence hoy · Vence mañana · A tiempo · En pausa), cliente, estudio, responsable y buscador. NO hay filtro por riesgo.
+     */
+    public record FiltrosSolicitudes(String estado, String q, java.util.List<com.polygraph.erp.shared.enums.EstadoTiempo> estadoTiempo,
+                                     com.polygraph.erp.shared.estados.BucketTiempo tiempo, Integer idCliente, Integer idProceso, Long idResponsable, String orden) {}
+
+    public Page<SolicitudGestorResponse> listarSolicitudes(Long idGestor, FiltrosSolicitudes f, Pageable pageable) {
+        String orden = f.orden();
         // El semáforo es un filtro (SE-04/SE-09): el servicio entra al estado si al menos uno de sus subprocesos está en él.
         var filtro = org.springframework.data.jpa.domain.Specification
                 .where(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.delGestor(idGestor))
-                .and(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.conSubprocesoEn(
-                        com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.estadoDeFiltro(estado)))
-                .and(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.conTiempo(tiempo))
-                .and(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.buscar(q))
+                .and(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.conSubprocesoEnAlguno(
+                        com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.estadosDeFiltro(f.estado())))
+                .and(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.conTiempo(f.estadoTiempo()))
+                .and(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.conBucket(f.tiempo()))
+                .and(f.idCliente() == null ? null : com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.delCliente(f.idCliente()))
+                .and(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.delProceso(f.idProceso()))
+                .and(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.conResponsable(f.idResponsable()))
+                .and(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.buscar(f.q()))
                 .and(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.ordenadoPorRetraso(orden));
         Page<Servicio> pagina = servicioRepository.findAll(filtro, PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(),
                 com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.orden(orden)));
@@ -195,6 +213,13 @@ public class GestorService {
                 .findByCandidato_IdCandidatoIn(idsCandidato).stream()
                 .collect(Collectors.toMap(hv -> hv.getCandidato().getIdCandidato(), HojaVidaEvaluado::getCompletado));
 
+        Map<Integer, com.polygraph.erp.modules.riesgo.entity.CalificacionRiesgo> riesgoPorServicio = idsServicio.isEmpty() ? Map.of()
+                : calificacionRiesgoRepository.findByVigenteTrueAndServicio_IdServicioIn(idsServicio).stream()
+                        .collect(Collectors.toMap(c -> c.getServicio().getIdServicio(), c -> c, (a, b) -> a));
+        Map<Integer, Boolean> enlaceEnviado = idsServicio.isEmpty() ? Map.of()
+                : linkCandidatoRepository.findByServicio_IdServicioIn(idsServicio).stream()
+                        .collect(Collectors.toMap(l -> l.getServicio().getIdServicio(), l -> l.getEnviadoEn() != null, (a, b) -> a || b));
+
         return pagina.map(s -> {
             List<SolicitudGestorResponse.SubprocesoResumen> subprocesos = subprocesosPorServicio
                     .getOrDefault(s.getIdServicio(), List.of()).stream()
@@ -206,6 +231,10 @@ public class GestorService {
             Boolean candidatoCompletado = s.getCandidato() != null
                     ? completadoPorCandidato.get(s.getCandidato().getIdCandidato())
                     : null;
+            var proxima = com.polygraph.erp.shared.estados.ProximaAccion.de(s.getEstado() == EstadoServicio.CANCELADO,
+                    subprocesosPorServicio.getOrDefault(s.getIdServicio(), List.of()).stream().map(BandejaGestorService::sub).toList(),
+                    s.getPastaEstado() == com.polygraph.erp.shared.enums.PastaEstado.EMITIDA, candidatoCompletado,
+                    enlaceEnviado.getOrDefault(s.getIdServicio(), false));
 
             return new SolicitudGestorResponse(
                     s.getIdServicio(),
@@ -221,10 +250,30 @@ public class GestorService {
                     tiempoServicioService.de(s),
                     avance(subprocesosPorServicio.getOrDefault(s.getIdServicio(), List.of())).publicados(),
                     avance(subprocesosPorServicio.getOrDefault(s.getIdServicio(), List.of())).vigentes(),
-                    etiquetaPublicacion(subprocesosPorServicio.getOrDefault(s.getIdServicio(), List.of())),
+                    etiquetaPublicacion(subprocesosPorServicio.getOrDefault(s.getIdServicio(), List.of()), s),
                     com.polygraph.erp.modules.servicios.dto.ServicioSemaforoFila.ResumenEstado.de(
-                            subprocesosPorServicio.getOrDefault(s.getIdServicio(), List.of()).stream().map(ServicioSubproceso::getEstado).toList()));
+                            subprocesosPorServicio.getOrDefault(s.getIdServicio(), List.of()).stream().map(ServicioSubproceso::getEstado).toList()),
+                    s.getCliente() != null ? s.getCliente().getIdCliente() : null,
+                    BandejaGestorService.nombreCliente(s.getCliente()),
+                    riesgoVisible(riesgoPorServicio.get(s.getIdServicio())) == null ? null : nivelDe(riesgoPorServicio.get(s.getIdServicio())),
+                    riesgoVisible(riesgoPorServicio.get(s.getIdServicio())) == null ? null : riesgoPorServicio.get(s.getIdServicio()).getPuntajeFinal(),
+                    riesgoVisible(riesgoPorServicio.get(s.getIdServicio())) != null
+                            && riesgoPorServicio.get(s.getIdServicio()).getTipoAjuste() == com.polygraph.erp.modules.riesgo.motor.ModeloRiesgo.TipoAjuste.CRITICO,
+                    s.getPastaEstado() != null ? s.getPastaEstado().name() : null,
+                    proxima.name(), proxima.etiqueta(),
+                    enlaceEnviado.getOrDefault(s.getIdServicio(), false));
         });
+    }
+
+    /** Solo un cálculo terminado se muestra: nunca «BAJO 0» de un estudio que aún no se calcula (SE-06). */
+    private static com.polygraph.erp.modules.riesgo.entity.CalificacionRiesgo riesgoVisible(com.polygraph.erp.modules.riesgo.entity.CalificacionRiesgo c) {
+        return c != null && c.getEstado() == com.polygraph.erp.modules.riesgo.motor.ModeloRiesgo.EstadoResultado.CALCULADO ? c : null;
+    }
+
+    /** El nivel que vale: el que puso el gestor o, si no cambió nada, el del motor. */
+    private static String nivelDe(com.polygraph.erp.modules.riesgo.entity.CalificacionRiesgo c) {
+        var n = c.getNivelDecidido() != null ? c.getNivelDecidido() : c.getNivelFinal();
+        return n == null ? null : n.name();
     }
 
     private static com.polygraph.erp.shared.estados.SemaforoEstados.Avance avance(List<ServicioSubproceso> sps) {
@@ -232,8 +281,8 @@ public class GestorService {
     }
 
     /** «Publicado parcial» / «Estudio completo publicado», o null si ninguno está publicado. */
-    private static String etiquetaPublicacion(List<ServicioSubproceso> sps) {
-        return com.polygraph.erp.shared.estados.SemaforoEstados.etiqueta(avance(sps)).texto();
+    private static String etiquetaPublicacion(List<ServicioSubproceso> sps, Servicio s) {
+        return com.polygraph.erp.shared.estados.SemaforoEstados.etiqueta(avance(sps), s.getPastaEstado() == com.polygraph.erp.shared.enums.PastaEstado.EMITIDA).texto();
     }
 
     private GestorDashboardResponse.SolicitudResumen toResumen(Servicio s) {

@@ -22,7 +22,13 @@ public final class ConsultaSemaforo {
      * Filtros combinables: tiempo + cliente + responsable + rol + tipo de subproceso (el estado va aparte, es el semáforo).
      * Los de cliente y responsable solo los usan los perfiles internos.
      */
-    public record Filtros(EstadoTiempo tiempo, Integer idCliente, Long idResponsable, Rol rol, Integer idTipoProgreso) {
+    public record Filtros(EstadoTiempo tiempo, Integer idCliente, Long idResponsable, Rol rol, Integer idTipoProgreso,
+                          // PB-05: grupo de tiempo (Vencidas · Vence hoy · Vence mañana · A tiempo · En pausa) y estudio (proceso) de la solicitud
+                          com.polygraph.erp.shared.estados.BucketTiempo grupo, Integer idProceso) {
+        public Filtros(EstadoTiempo tiempo, Integer idCliente, Long idResponsable, Rol rol, Integer idTipoProgreso) {
+            this(tiempo, idCliente, idResponsable, rol, idTipoProgreso, null, null);
+        }
+
         public static Filtros ninguno() { return new Filtros(null, null, null, null, null); }
     }
 
@@ -38,12 +44,12 @@ public final class ConsultaSemaforo {
 
     /** Las filas con lo que necesitan las alertas aparte (SE-09): responsable, fecha, tipo, tiempo del servicio e «iniciado». */
     public static Consulta filasParaAlertas(Solicitante quien, Filtros f) {
-        return armar("SELECT sp.servicio.idServicio, sp.id, sp.estado, u.idUsuario, sp.fechaProgramada, sp.tipoProgreso.rolResponsable, "
+        return armar("SELECT sp.servicio.idServicio, sp.id, sp.estado, (CASE WHEN sp.tipoProgreso.rolResponsable IN (com.polygraph.erp.shared.enums.Rol.POLIGRAFISTA, com.polygraph.erp.shared.enums.Rol.VISITADOR) THEN pr.idUsuario ELSE u.idUsuario END), sp.fechaProgramada, sp.tipoProgreso.rolResponsable, "
                 + "sp.servicio.estadoTiempo, sp.servicio.diasRestantesHabiles, sp.iniciado", quien, f);
     }
 
     private static Consulta armar(String seleccion, Solicitante quien, Filtros f) {
-        StringBuilder q = new StringBuilder(seleccion + " FROM ServicioSubproceso sp LEFT JOIN sp.usuarioAsignado u WHERE 1=1");
+        StringBuilder q = new StringBuilder(seleccion + " FROM ServicioSubproceso sp LEFT JOIN sp.usuarioAsignado u LEFT JOIN sp.programadorResponsable pr WHERE 1=1");
         Map<String, Object> p = new LinkedHashMap<>();
         List<String> condiciones = new ArrayList<>();
 
@@ -85,8 +91,26 @@ public final class ConsultaSemaforo {
             p.put("fCliente", f.idCliente());
         }
         if (interno && f.idResponsable() != null) {
-            condiciones.add("u.idUsuario = :fResponsable");
+            condiciones.add("(u.idUsuario = :fResponsable OR pr.idUsuario = :fResponsable)");   // ejecutor o programador encargado (PB-05)
             p.put("fResponsable", f.idResponsable());
+        }
+        if (f.grupo() != null) {
+            // Dice lo mismo que BucketTiempo.de y que ServicioSpecifications.conBucket
+            switch (f.grupo()) {
+                case VENCIDAS -> { condiciones.add("sp.servicio.estadoTiempo = :gVencida"); p.put("gVencida", EstadoTiempo.VENCIDA); }
+                case EN_PAUSA -> { condiciones.add("sp.servicio.estadoTiempo = :gPausa"); p.put("gPausa", EstadoTiempo.EN_PAUSA); }
+                case VENCE_HOY -> { condiciones.add("(sp.servicio.estadoTiempo = :gPorVencer AND COALESCE(sp.servicio.diasRestantesHabiles, 0) <= 0)"); p.put("gPorVencer", EstadoTiempo.POR_VENCER); }
+                case VENCE_MANANA -> { condiciones.add("(sp.servicio.estadoTiempo = :gPorVencer AND COALESCE(sp.servicio.diasRestantesHabiles, 0) = 1)"); p.put("gPorVencer", EstadoTiempo.POR_VENCER); }
+                case A_TIEMPO -> {
+                    condiciones.add("(sp.servicio.estadoTiempo = :gATiempo OR (sp.servicio.estadoTiempo = :gPorVencer AND COALESCE(sp.servicio.diasRestantesHabiles, 0) >= 2))");
+                    p.put("gATiempo", EstadoTiempo.A_TIEMPO);
+                    p.put("gPorVencer", EstadoTiempo.POR_VENCER);
+                }
+            }
+        }
+        if (interno && f.idProceso() != null) {
+            condiciones.add("sp.servicio.proceso.idProceso = :fProceso");
+            p.put("fProceso", f.idProceso());
         }
         if (f.rol() != null) {
             condiciones.add("sp.tipoProgreso.rolResponsable = :fRol");

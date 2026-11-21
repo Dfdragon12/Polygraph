@@ -33,6 +33,35 @@ import java.util.List;
 public class LinkCandidatoController {
 
     private final LinkCandidatoGestorService tokenService;
+    private final com.polygraph.erp.modules.gestor.service.EnvioEnlaceService envioService;
+
+    /** PB-04: lo que muestra la ventana «Enviar enlace al candidato»: tipo, secciones, contacto, mensaje y fecha de referencia. */
+    @GetMapping("/{id}/envio")
+    public ResponseEntity<com.polygraph.erp.modules.gestor.service.EnvioEnlaceService.Contexto> envioContexto(@PathVariable Long id, Authentication auth) {
+        return ResponseEntity.ok(envioService.contexto(id, auth.getName()));
+    }
+
+    @PostMapping("/{id}/envio")
+    public ResponseEntity<com.polygraph.erp.modules.gestor.service.EnvioEnlaceService.EnvioResponse> enviar(
+            @PathVariable Long id, @RequestBody com.polygraph.erp.modules.gestor.service.EnvioEnlaceService.EnviarRequest request, Authentication auth) {
+        return ResponseEntity.ok(envioService.enviar(id, request, auth.getName()));
+    }
+
+    @PostMapping("/{id}/copiado")
+    public ResponseEntity<Void> copiado(@PathVariable Long id, Authentication auth) {
+        envioService.copiado(id, auth.getName());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/ampliar")
+    public ResponseEntity<java.util.Map<String, Object>> ampliar(@PathVariable Long id, @RequestParam(defaultValue = "2") int dias, Authentication auth) {
+        return ResponseEntity.ok(java.util.Map.of("venceReferencia", envioService.ampliar(id, dias, auth.getName())));
+    }
+
+    @GetMapping("/{id}/seguimiento")
+    public ResponseEntity<java.util.List<com.polygraph.erp.modules.gestor.service.EnvioEnlaceService.Paso>> seguimiento(@PathVariable Long id, Authentication auth) {
+        return ResponseEntity.ok(envioService.seguimiento(id, auth.getName()));
+    }
 
     @GetMapping("/estadisticas")
     public ResponseEntity<LinkEstadisticasResponse> estadisticas(Authentication auth) {

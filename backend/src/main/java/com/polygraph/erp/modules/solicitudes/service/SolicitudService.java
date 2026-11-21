@@ -65,6 +65,7 @@ import java.util.UUID;
 public class SolicitudService {
 
     private final ServicioRepository servicioRepository;
+    private final com.polygraph.erp.modules.solicitudes.repository.DocumentoEstudioRepository documentoEstudioRepository;
     private final HistorialEstadoServicioRepository historialRepository;
     private final CandidatoRepository candidatoRepository;
     private final ProcesoRepository procesoRepository;
@@ -96,6 +97,7 @@ public class SolicitudService {
     private final com.polygraph.erp.modules.pagos.service.MoraService moraService;
     private final org.springframework.context.ApplicationEventPublisher eventos;
     private final SolicitudExtraService solicitudExtraService;
+    private final com.polygraph.erp.modules.tienda.service.ParametrosTiendaService parametrosTienda;
     private final com.polygraph.erp.modules.solicitudes.repository.SolicitudIdempotenciaRepository idempotenciaRepository;
 
     /** NS-12: crea TODAS las solicitudes de una carga masiva ya validada en UNA transacción: si algo falla, no queda ninguna. Cada una sigue las mismas reglas
@@ -195,7 +197,7 @@ public class SolicitudService {
             if (cliente.getTipoCliente() == TipoCliente.PREPAGO) {
                 saldoServicioClienteService.validarDisponibilidad(cliente.getIdCliente(), proceso);
             } else if (cliente.getTipoCliente() == TipoCliente.POSPAGO) {
-                clientePospagoService.validarCreditoDisponible(cliente, proceso, request.idCiudad());
+                clientePospagoService.validarCreditoDisponible(cliente, proceso, request.idCiudad(), usaBolsaEnPospago(cliente, proceso));
             }
 
             procesos.add(proceso);
@@ -225,9 +227,22 @@ public class SolicitudService {
         // Recepción efectiva, plazo copiado del catálogo y compromiso (el original y el vigente nacen iguales).
         var tiempoInicial = tiempoServicioService.datosDeCreacion(ahora, maxDiasHabiles);
 
+        // TP-08: con la cobertura por sede encendida, la solicitud lleva UN solo recargo por ciudad: el del servicio que lo tenga más alto.
+        boolean coberturaActiva = parametrosTienda.activo(com.polygraph.erp.modules.tienda.service.ParametrosTiendaService.COBERTURA_POR_SEDE);
+        Ciudad ciudadSolicitud = request.idCiudad() != null ? ciudadRepository.findById(request.idCiudad()).orElse(null) : null;
+        Proceso procesoConRecargo = null;
+        if (coberturaActiva) {
+            BigDecimal mayor = BigDecimal.ZERO;
+            for (Proceso p : procesos) {
+                BigDecimal r = recargoPendienteService.calcular(p, ciudadSolicitud);
+                if (r.compareTo(mayor) > 0) { mayor = r; procesoConRecargo = p; }
+            }
+        }
+
         // Crear un servicio por cada proceso elegido
         List<Servicio> serviciosCreados = new ArrayList<>();
         for (Proceso proceso : procesos) {
+            boolean cobraRecargo = !coberturaActiva || proceso == procesoConRecargo;
             Servicio servicio = Servicio.builder()
                     .cliente(cliente)
                     .candidato(candidato)
@@ -252,18 +267,38 @@ public class SolicitudService {
             if (!Boolean.FALSE.equals(proceso.getRequiereHojaVida())) semaforoTiempoService.abrirPausa(guardado, com.polygraph.erp.shared.enums.OrigenPausa.CANDIDATO,
                     com.polygraph.erp.modules.servicios.service.SemaforoTiempoService.MOTIVO_HOJA_DE_VIDA, usuario.getEmail(), null);
             if (cliente.getTipoCliente() == TipoCliente.PREPAGO) {
-                var unidad = saldoServicioClienteService.descontar(cliente.getIdCliente(), proceso);
+                // Bolsa preferida: nacional si la ciudad tiene recargo, por sede si es sede; si no hay de esa, se usa la otra (TP-08)
+                String preferida = coberturaActiva
+                        ? com.polygraph.erp.modules.tienda.service.CalculadoraCobertura.bolsaPreferida(
+                                recargoPendienteService.calcular(proceso, ciudadSolicitud).signum() > 0)
+                        : com.polygraph.erp.modules.tienda.service.CalculadoraCobertura.LOCAL;
+                var unidad = saldoServicioClienteService.descontar(cliente.getIdCliente(), proceso, preferida);
                 // El valor queda guardado en la solicitud: una compra posterior no lo cambia.
                 guardado.setIdLotePrepago(unidad.idLote());
+                guardado.setCoberturaConsumo(unidad.cobertura());
                 guardado.setValorUnitarioPrepago(unidad.valorUnitario());
                 servicioRepository.save(guardado);
                 // El recargo por ciudad no se cobra aquí — queda pendiente y se suma a la siguiente
                 // compra en Comprar Servicios.
-                recargoPendienteService.registrarSiAplica(cliente, candidato, proceso, request.idCiudad());
+                if (cobraRecargo) recargoPendienteService.registrarSiAplica(cliente, candidato, proceso, request.idCiudad(), null, unidad.cobertura());
             } else if (cliente.getTipoCliente() == TipoCliente.POSPAGO) {
                 // Pospago sí se cobra de inmediato (proceso + recargo por ciudad si aplica), pero
                 // contra el cupo de crédito — se suma a la siguiente factura de corte, no a un pago inmediato.
-                clientePospagoService.descontarCredito(cliente, guardado, proceso, request.idCiudad());
+                // TP-12: si el cliente pasó de prepago a pospago con unidades en su bolsa, primero se gastan esas (sin cupo por el servicio; el recargo sí va al cupo)
+                boolean usaBolsa = usaBolsaEnPospago(cliente, proceso);
+                String coberturaBolsa = null;
+                if (usaBolsa) {
+                    String preferida = coberturaActiva
+                            ? com.polygraph.erp.modules.tienda.service.CalculadoraCobertura.bolsaPreferida(recargoPendienteService.calcular(proceso, ciudadSolicitud).signum() > 0)
+                            : com.polygraph.erp.modules.tienda.service.CalculadoraCobertura.LOCAL;
+                    var unidad = saldoServicioClienteService.descontar(cliente.getIdCliente(), proceso, preferida);
+                    guardado.setIdLotePrepago(unidad.idLote());
+                    guardado.setValorUnitarioPrepago(unidad.valorUnitario());
+                    guardado.setCoberturaConsumo(unidad.cobertura());
+                    servicioRepository.save(guardado);
+                    coberturaBolsa = unidad.cobertura();
+                }
+                clientePospagoService.descontarCredito(cliente, guardado, proceso, request.idCiudad(), cobraRecargo, usaBolsa, coberturaBolsa);
             }
             serviciosCreados.add(guardado);
             generarSubprocesos(guardado);
@@ -344,11 +379,31 @@ public class SolicitudService {
     @Transactional(readOnly = true)
     public Page<SolicitudResponse> listarSolicitudes(Integer idCliente, String estado, java.util.List<com.polygraph.erp.shared.enums.EstadoTiempo> tiempo,
                                                      String orden, Pageable pageable) {
+        return listarSolicitudes(idCliente, estado, tiempo, null, null, null, orden, pageable);
+    }
+
+    /** PB-05: además, grupos de tiempo (Vence hoy o mañana...) y nivel de riesgo + periodo (los anillos del inicio abren la lista así). */
+    @Transactional(readOnly = true)
+    public Page<SolicitudResponse> listarSolicitudes(Integer idCliente, String estado, java.util.List<com.polygraph.erp.shared.enums.EstadoTiempo> tiempo,
+                                                     java.util.List<com.polygraph.erp.shared.estados.BucketTiempo> grupos,
+                                                     com.polygraph.erp.modules.riesgo.motor.ModeloRiesgo.NivelRiesgo nivel,
+                                                     com.polygraph.erp.shared.estados.PeriodoEstadistica periodo, String orden, Pageable pageable) {
+        org.springframework.data.jpa.domain.Specification<Servicio> deGrupos = null;
+        if (grupos != null) {
+            for (var g : grupos) {
+                var uno = com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.conBucket(g);
+                deGrupos = deGrupos == null ? uno : deGrupos.or(uno);
+            }
+        }
         var filtro = org.springframework.data.jpa.domain.Specification
                 .where(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.delCliente(idCliente))
                 .and(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.conSubprocesoEn(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.estadoDeFiltro(estado)))
                 .and(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.conTiempo(
                         tiempo))
+                .and(deGrupos)
+                .and(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.conNivelEmitido(nivel))
+                .and(periodo == null ? null : com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.solicitadaDesde(
+                        periodo.desde(java.time.LocalDate.now(java.time.ZoneId.of("America/Bogota")))))
                 .and(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.ordenadoPorRetraso(orden));
         Page<Servicio> pagina = servicioRepository.findAll(filtro, org.springframework.data.domain.PageRequest.of(
                 pageable.getPageNumber(), pageable.getPageSize(), com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.orden(orden)));
@@ -422,9 +477,16 @@ public class SolicitudService {
         return new InformeAutorizado(idServicio, idServicioSubproceso, nombre, sp.getFechaPublicado());
     }
 
+    /** PB-03: el PDF único vigente del estudio (solo con el estudio publicado y la pasta emitida). */
+    private SolicitudDetalleResponse.EstudioPdfResponse estudioPdf(Servicio s) {
+        if (s.getEstado() != EstadoServicio.PUBLICADO || s.getPastaEstado() != com.polygraph.erp.shared.enums.PastaEstado.EMITIDA) return null;
+        return documentoEstudioRepository.findFirstByIdServicioAndVigenteTrueOrderByVersionDesc(s.getIdServicio())
+                .map(d -> new SolicitudDetalleResponse.EstudioPdfResponse(d.getVersion(), d.getEstado(), d.getPaginas(), d.getTipo())).orElse(null);
+    }
+
     private static boolean informeDisponible(Servicio servicio, ServicioSubproceso sp) {
-        return servicio.getEstado() == EstadoServicio.PUBLICADO
-                && sp.getEstado() == EstadoSubproceso.PUBLICADO
+        // PB-02: cada informe se descarga apenas el gestor publica ese subproceso; no espera al estudio completo.
+        return sp.getEstado() == EstadoSubproceso.PUBLICADO
                 && Boolean.TRUE.equals(sp.getTipoProgreso().getRequiereDocumento());
     }
 
@@ -471,7 +533,8 @@ public class SolicitudService {
         candidatoRepository.save(candidato);
 
         if (servicio.getCliente().getTipoCliente() == TipoCliente.PREPAGO && servicio.getProceso() != null) {
-            recargoPendienteService.reconciliarPorCambioCiudad(servicio.getCliente(), candidato, servicio.getProceso(), idCiudadNueva);
+            recargoPendienteService.reconciliarPorCambioCiudad(servicio.getCliente(), candidato, servicio.getProceso(), idCiudadNueva,
+                    servicio.getCoberturaConsumo() != null ? servicio.getCoberturaConsumo() : "LOCAL");
         }
 
         log.info("Ciudad de candidato corregida: servicio={}, candidato={}, ciudad anterior={}, ciudad nueva={}",
@@ -507,6 +570,17 @@ public class SolicitudService {
         }
 
         servicio.setEstado(nuevoEstado);
+        // PB-01: hasta que exista la ventana de cierre (PB-03), «Publicar estudio» deja la pasta EMITIDA y devolverlo la vuelve PENDIENTE.
+        if (nuevoEstado == EstadoServicio.PUBLICADO) {
+            servicio.setPastaEstado(com.polygraph.erp.shared.enums.PastaEstado.EMITIDA);
+            // PB-03: lo que el gestor escribe al publicar es su nota (concepto final): la ve el cliente en «Nota de tu gestor».
+            if (request.observacion() != null && !request.observacion().isBlank()) servicio.setConceptoGestor(request.observacion().trim());
+        } else if (estadoAnterior == EstadoServicio.PUBLICADO) {
+            // PB-03: si el estudio deja de estar completo, el PDF único deja de estar disponible y la pasta vuelve a PENDIENTE;
+            // al emitir de nuevo se crea una versión nueva. El cliente nunca descarga un PDF que no coincide con lo publicado.
+            servicio.setPastaEstado(com.polygraph.erp.shared.enums.PastaEstado.PENDIENTE);
+            documentoEstudioRepository.invalidar(idServicio);
+        }
         // NS-04: cancelar devuelve lo que costó (y no se factura); sacar la solicitud de CANCELADO lo vuelve a cobrar.
         if (nuevoEstado == EstadoServicio.CANCELADO && estadoAnterior != EstadoServicio.CANCELADO) devolucionCobroService.devolver(servicio);
         else if (estadoAnterior == EstadoServicio.CANCELADO && nuevoEstado != EstadoServicio.CANCELADO) devolucionCobroService.volverACobrar(servicio);
@@ -668,7 +742,7 @@ public class SolicitudService {
                 tiempoServicioService.de(s),
                 sps.stream().map(sp -> new SolicitudResponse.SubprocesoResumen(sp.getTipoProgreso().getNombreProgreso(), sp.getEstado().name())).toList(),
                 avance.publicados(), avance.vigentes(),
-                com.polygraph.erp.shared.estados.SemaforoEstados.etiqueta(avance).texto(),
+                com.polygraph.erp.shared.estados.SemaforoEstados.etiqueta(avance, s.getPastaEstado() == com.polygraph.erp.shared.enums.PastaEstado.EMITIDA).texto(),
                 com.polygraph.erp.modules.servicios.dto.ServicioSemaforoFila.ResumenEstado.de(sps.stream().map(com.polygraph.erp.modules.servicios.entity.ServicioSubproceso::getEstado).toList()));
     }
 
@@ -722,7 +796,11 @@ public class SolicitudService {
                         sp.getTipoProgreso().getNombreProgreso(),
                         sp.getEstado().name(),
                         sp.getFechaProgramada(),
-                        informeDisponible(s, sp)))
+                        informeDisponible(s, sp),
+                        sp.getEstado() == EstadoSubproceso.PUBLICADO ? sp.getConclusionPublicada() : null,
+                        sp.getEstado() == EstadoSubproceso.PUBLICADO ? sp.getNivelPublicado() : null,
+                        sp.getEstado() == EstadoSubproceso.PUBLICADO ? sp.getPuntajePublicado() : null,
+                        sp.getFechaPublicado()))
                 .toList();
 
         SolicitudDetalleResponse.ResultadoRiesgoResponse riesgo = s.getEstado() == EstadoServicio.PUBLICADO
@@ -764,7 +842,9 @@ public class SolicitudService {
                 documentosCandidato(s),
                 clientePuedeCancelar(s.getEstado()),
                 cobro(s, totalPagadoRecargo, totalPendienteRecargo),
-                tiempoServicioService.de(s));
+                tiempoServicioService.de(s),
+                s.getEstado() == EstadoServicio.PUBLICADO ? s.getConceptoGestor() : null,
+                estudioPdf(s));
     }
 
     /** Cuánto le vale la solicitud al cliente — ver SolicitudDetalleResponse.CobroResponse. */
@@ -783,7 +863,8 @@ public class SolicitudService {
                                 f != null ? f.getReferencia() : null,
                                 m.getAnuladoEn() != null ? ESTADO_COBRO_CANCELADA : f != null ? f.getEstado().name() : "SIN_FACTURAR",
                                 f != null ? f.getFechaVencimiento() : null,
-                                f != null ? f.getFechaPago() : null);
+                                f != null ? f.getFechaPago() : null,
+                                m.getAnuladoEn() != null ? BigDecimal.ZERO : m.getMontoIvaBase().add(m.getMontoIvaRecargo()));
                     })
                     .orElse(null);
         }
@@ -806,7 +887,7 @@ public class SolicitudService {
                 s.getCobroDevueltoEn() != null ? BigDecimal.ZERO : (valor != null ? valor : BigDecimal.ZERO).add(pagado).add(pendiente), true,
                 item != null ? item.getOrdenCompra().getReferencia() : null,
                 s.getCobroDevueltoEn() != null ? ESTADO_COBRO_CANCELADA : item != null ? item.getOrdenCompra().getEstado().name() : null,
-                null, item != null ? item.getOrdenCompra().getFechaActualizacion() : null);
+                null, item != null ? item.getOrdenCompra().getFechaActualizacion() : null, null);
     }
 
     /** El cliente cancela solo mientras no ha empezado la ejecución del estudio. */
@@ -930,11 +1011,26 @@ public class SolicitudService {
         if (mora.enMora()) throw new ApiException(mora.mensaje(), HttpStatus.FORBIDDEN);
     }
 
+    /** TP-12: ¿la unidad de esta solicitud pospago sale de la bolsa prepago que el cliente tenía? Solo con pospagoPlan100 encendido. */
+    private boolean usaBolsaEnPospago(Cliente cliente, Proceso proceso) {
+        return parametrosTienda.activo(com.polygraph.erp.modules.tienda.service.ParametrosTiendaService.POSPAGO_PLAN_100)
+                && saldoServicioClienteService.disponibleTotal(cliente.getIdCliente(), proceso.getIdProceso()) > 0;
+    }
+
     /** Para que la pantalla de Nueva solicitud avise ANTES de enviar; devuelve el mismo mensaje con el que el servidor rechaza. */
     @Transactional(readOnly = true)
     public com.polygraph.erp.modules.pagos.mora.MoraCliente.Resultado moraDelUsuario(String emailUsuario) {
         var usuario = usuarioRepository.findByEmail(emailUsuario).orElseThrow(() -> new ApiException("Usuario no encontrado", HttpStatus.NOT_FOUND));
-        return usuario.getIdCliente() == null ? com.polygraph.erp.modules.pagos.mora.MoraCliente.Resultado.SIN_MORA : moraService.calcular(usuario.getIdCliente());
+        if (usuario.getIdCliente() == null) return com.polygraph.erp.modules.pagos.mora.MoraCliente.Resultado.SIN_MORA;
+        var mora = moraService.calcular(usuario.getIdCliente());
+        if (mora.enMora()) return mora;
+        // TP-12: una cuenta suspendida (decisión del administrador) tampoco puede enviar; el aviso sale desde el paso 1, igual que la mora
+        var pospago = clientePospagoRepository.findByIdCliente(usuario.getIdCliente()).orElse(null);
+        if (pospago != null && pospago.getEstadoMora() == EstadoMora.SUSPENDIDO) {
+            return new com.polygraph.erp.modules.pagos.mora.MoraCliente.Resultado(true, 0, 0, null, BigDecimal.ZERO,
+                    "Tu cuenta está suspendida: puedes preparar la solicitud pero no enviarla. Contacta a tu gestor para regularizar tu situación.");
+        }
+        return mora;
     }
 
     private void generarSubprocesos(Servicio servicio) {

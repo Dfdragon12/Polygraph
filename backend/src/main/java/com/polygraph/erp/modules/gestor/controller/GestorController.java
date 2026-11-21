@@ -6,6 +6,7 @@ import com.polygraph.erp.modules.clientes.dto.CrearUsuarioPropioRequest;
 import com.polygraph.erp.modules.clientes.service.ClienteAdminService;
 import com.polygraph.erp.modules.gestor.dto.ConteoEstadosResponse;
 import com.polygraph.erp.modules.gestor.dto.GestorDashboardResponse;
+import com.polygraph.erp.modules.gestor.service.BandejaGestorService;
 import com.polygraph.erp.modules.gestor.service.GestorService;
 import com.polygraph.erp.modules.solicitudes.dto.CambioEstadoRequest;
 import com.polygraph.erp.modules.solicitudes.dto.CorregirCiudadRequest;
@@ -36,6 +37,7 @@ import java.util.List;
 public class GestorController {
 
     private final GestorService gestorService;
+    private final BandejaGestorService bandejaService;
     private final SolicitudService solicitudService;
     private final com.polygraph.erp.modules.solicitudes.service.CancelacionSolicitudService cancelacionSolicitudService;
     private final ReversionSolicitudService reversionSolicitudService;
@@ -56,15 +58,57 @@ public class GestorController {
 
     @GetMapping("/solicitudes")
     public ResponseEntity<Page<SolicitudGestorResponse>> listar(
+            // Una tarjeta de estado, o varias separadas por coma (PB-05: «Seguir la programación» = PROGRAMANDO,REPROGRAMADO)
             @RequestParam(required = false) String estado,
             // Texto del buscador: busca en TODAS las solicitudes del gestor, no solo en la página
             @RequestParam(required = false) String q,
             // uno o varios, separados por coma (ej. ENTREGADA_A_TIEMPO,ENTREGADA_TARDE)
             @RequestParam(required = false) java.util.List<com.polygraph.erp.shared.enums.EstadoTiempo> estadoTiempo,
+            // PB-05: Vencidas · Vence hoy · Vence mañana · A tiempo · En pausa
+            @RequestParam(required = false) com.polygraph.erp.shared.estados.BucketTiempo tiempo,
+            @RequestParam(required = false) Integer idCliente,
+            @RequestParam(required = false) Integer idProceso,
+            @RequestParam(required = false) Long idResponsable,
             @RequestParam(required = false) String orden,
             @PageableDefault(size = 20, sort = "fechaSolicitud") Pageable pageable,
             Authentication auth) {
-        return ResponseEntity.ok(gestorService.listarSolicitudes(resolverIdGestor(auth), estado, q, estadoTiempo, orden, pageable));
+        return ResponseEntity.ok(gestorService.listarSolicitudes(resolverIdGestor(auth),
+                new GestorService.FiltrosSolicitudes(estado, q, estadoTiempo, tiempo, idCliente, idProceso, idResponsable, orden), pageable));
+    }
+
+    /** PB-05: cuántas solicitudes hay en cada grupo de tiempo (los chips de Solicitudes), con los mismos filtros de cliente, estudio y responsable. */
+    @GetMapping("/solicitudes/tiempos")
+    public ResponseEntity<BandejaGestorService.Tiempos> tiempos(
+            @RequestParam(required = false) Integer idCliente,
+            @RequestParam(required = false) Integer idProceso,
+            @RequestParam(required = false) Long idResponsable,
+            Authentication auth) {
+        return ResponseEntity.ok(bandejaService.tiempos(resolverIdGestor(auth), idCliente, idProceso, idResponsable));
+    }
+
+    /** PB-05: las opciones de los selectores Cliente, Estudio y Responsable. */
+    @GetMapping("/solicitudes/filtros")
+    public ResponseEntity<BandejaGestorService.OpcionesFiltro> opcionesFiltro(Authentication auth) {
+        return ResponseEntity.ok(bandejaService.opcionesFiltro(resolverIdGestor(auth)));
+    }
+
+    /** PB-05: «Mi bandeja del día». */
+    @GetMapping("/bandeja")
+    public ResponseEntity<BandejaGestorService.Bandeja> bandeja(Authentication auth) {
+        return ResponseEntity.ok(bandejaService.bandeja(resolverIdGestor(auth)));
+    }
+
+    /** PB-05: «Riesgo detectado» por periodo (HOY, SEMANA, MES, ANIO, TOTAL). */
+    @GetMapping("/bandeja/riesgo")
+    public ResponseEntity<com.polygraph.erp.modules.servicios.service.EstadisticasEstudiosService.RiesgoGestor> riesgo(
+            @RequestParam(defaultValue = "MES") String periodo, Authentication auth) {
+        return ResponseEntity.ok(bandejaService.riesgo(resolverIdGestor(auth), com.polygraph.erp.shared.estados.PeriodoEstadistica.de(periodo)));
+    }
+
+    /** PB-05: «Avisar al programador» de las citas sin agendar (todas, o solo las de un servicio). Queda registrado y le llega una notificación. */
+    @PostMapping("/bandeja/avisar-programador")
+    public ResponseEntity<BandejaGestorService.AvisoProgramador> avisarProgramador(@RequestParam(required = false) Integer idServicio, Authentication auth) {
+        return ResponseEntity.ok(bandejaService.avisarProgramador(resolverIdGestor(auth), idServicio));
     }
 
     @GetMapping("/solicitudes/conteo")

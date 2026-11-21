@@ -29,6 +29,18 @@ const asignacionService = {
   aprobar: (id) =>
     api.patch(`/gestor/asignaciones/${id}/aprobar`).then(r => r.data),
 
+  // PB-02: publicar con la conclusión y la calificación que verá el cliente. { conclusion, nivel, motivoNivel, revisado }
+  publicar: (id, payload) =>
+    api.post(`/gestor/asignaciones/${id}/publicar`, payload).then(r => r.data),
+
+  // PB-02: quien ejecuta escribe su conclusión; y pide corregir un informe ya publicado
+  guardarConclusion: (id, conclusion) =>
+    api.put(`/gestor/asignaciones/${id}/conclusion`, { conclusion }).then(r => r.data),
+  solicitarCorreccion: (id, motivo) =>
+    api.post(`/gestor/asignaciones/${id}/solicitar-correccion`, { motivo }).then(r => r.data),
+  historialPublicacion: (id) =>
+    api.get(`/gestor/asignaciones/${id}/historial-publicacion`).then(r => r.data),
+
   desasignar: (id) =>
     api.patch(`/gestor/asignaciones/${id}/desasignar`).then(r => r.data),
 

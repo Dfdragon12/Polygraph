@@ -179,7 +179,7 @@ public class SemaforoEstadoService {
                 resumen,
                 avance.publicados(),
                 avance.vigentes(),
-                SemaforoEstados.etiqueta(avance).texto(),
+                SemaforoEstados.etiqueta(avance, s.getPastaEstado() == com.polygraph.erp.shared.enums.PastaEstado.EMITIDA).texto(),
                 filasSp,
                 tiempoServicioService.de(s));
     }

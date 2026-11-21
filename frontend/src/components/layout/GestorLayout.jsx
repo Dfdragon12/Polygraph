@@ -5,7 +5,7 @@ const SECCIONES = [
   {
     titulo: 'General',
     items: [
-      { ruta: '/gestor/dashboard',    etiqueta: 'Dashboard',    icono: <IconoDashboard /> },
+      { ruta: '/gestor/dashboard',    etiqueta: 'Mi bandeja del día', icono: <IconoDashboard /> },
     ],
   },
   {

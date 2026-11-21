@@ -12,6 +12,11 @@ import { useEstadosSubproceso } from '../../hooks/useEstadosSubproceso'
 
 const POR_PAGINA = 10
 
+// PB-05: filtros que llegan desde el inicio (anillos de riesgo y tiempos de entrega); todos quedan en la URL.
+const NOMBRE_PERIODO = { HOY: 'Hoy', SEMANA: 'Última semana', MES: 'Este mes', ANIO: 'Último año', TOTAL: 'Total' }
+const NOMBRE_GRUPO = { VENCIDAS: 'Atrasadas', VENCE_HOY: 'Vence hoy', VENCE_MANANA: 'Vence mañana', A_TIEMPO: 'A tiempo', EN_PAUSA: 'En pausa' }
+const NOMBRE_NIVEL = { BAJO: 'Bajo', MEDIO: 'Medio', ALTO: 'Alto' }
+
 const fechaCorta = (valor) => valor
   ? new Date(`${String(valor).slice(0, 10)}T00:00:00`).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ de /g, ' ')
   : '—'
@@ -37,7 +42,10 @@ export default function Solicitudes() {
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const nivel = NOMBRE_NIVEL[searchParams.get('nivel')] ? searchParams.get('nivel') : ''
+  const periodo = NOMBRE_PERIODO[searchParams.get('periodo')] ? searchParams.get('periodo') : ''
+  const grupo = (searchParams.get('grupo') ?? '').split(',').filter(g => NOMBRE_GRUPO[g]).join(',')
   const { nombre } = useEstadosSubproceso()
   // Desde el dashboard: ?filtro=vencidas o ?estado=PROGRAMANDO abren la lista ya filtrada.
   const [filtroEstado, setFiltroEstado] = useState(searchParams.get('filtro') === 'vencidas' ? 'VENCIDAS' : (searchParams.get('estado') ?? ''))
@@ -52,6 +60,7 @@ export default function Solicitudes() {
       const resp = await solicitudService.listar({
         estado: filtroEstado && filtroEstado !== 'VENCIDAS' ? filtroEstado : undefined,
         estadoTiempo: filtroEstado === 'VENCIDAS' ? 'VENCIDA' : filtroTiempo,
+        grupoTiempo: grupo, nivel, periodo: nivel ? periodo : '',
         orden: ordenRetraso ? 'retraso' : undefined,
         pagina,
         tamano: POR_PAGINA,
@@ -64,7 +73,7 @@ export default function Solicitudes() {
     } finally {
       if (!silencioso) setCargando(false)
     }
-  }, [filtroEstado, filtroTiempo, ordenRetraso, pagina])
+  }, [filtroEstado, filtroTiempo, ordenRetraso, pagina, grupo, nivel, periodo])
 
   useEffect(() => { cargar() }, [cargar])
   useCambios(() => cargar(true))
@@ -73,6 +82,12 @@ export default function Solicitudes() {
   const alternarFiltro = (estado) => {
     setFiltroEstado(estado)
     setPagina(0)
+    setSearchParams(prev => { const n = new URLSearchParams(prev); if (estado) n.set('estado', estado); else n.delete('estado'); return n }, { replace: true })
+  }
+
+  const quitarParametros = (...claves) => {
+    setPagina(0)
+    setSearchParams(prev => { const n = new URLSearchParams(prev); claves.forEach(c => n.delete(c)); return n }, { replace: true })
   }
 
   return (
@@ -91,6 +106,23 @@ export default function Solicitudes() {
 
       <SemaforoEstados seleccionado={filtroEstado} onSeleccionar={alternarFiltro} interno={false} textoCliente titulo="Estado de tus solicitudes" />
       <AlertasAparte />
+
+      {(nivel || grupo) && (
+        <div className="flex flex-wrap gap-2">
+          {nivel && (
+            <button type="button" onClick={() => quitarParametros('nivel', 'periodo')}
+              className="min-h-[44px] px-3 py-1.5 text-xs text-gray-900 border border-gray-300 rounded-lg hover:bg-gray-50 bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
+              × Quitar filtro «Riesgo {NOMBRE_NIVEL[nivel].toLowerCase()}{periodo ? ` · ${NOMBRE_PERIODO[periodo]}` : ''}»
+            </button>
+          )}
+          {grupo && (
+            <button type="button" onClick={() => quitarParametros('grupo')}
+              className="min-h-[44px] px-3 py-1.5 text-xs text-gray-900 border border-gray-300 rounded-lg hover:bg-gray-50 bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
+              × Quitar filtro «Tiempo: {grupo.split(',').map(g => NOMBRE_GRUPO[g]).join(' o ')}»
+            </button>
+          )}
+        </div>
+      )}
 
       {filtroEstado && (
         <div>
@@ -129,10 +161,10 @@ export default function Solicitudes() {
           <div className="flex flex-col items-center justify-center py-14 px-6 text-center">
             <div className="text-gray-300 mb-3"><IconoCarpeta /></div>
             <p className="text-sm font-medium text-gray-700">
-              {filtroEstado || filtroTiempo ? 'No hay solicitudes con este filtro' : 'Todavía no tienes solicitudes'}
+              {filtroEstado || filtroTiempo || nivel || grupo ? 'No hay solicitudes con este filtro' : 'Todavía no tienes solicitudes'}
             </p>
             <p className="text-xs text-gray-400 mt-1">
-              {filtroEstado || filtroTiempo ? 'Prueba con otro filtro o quítalo para ver todas.' : 'Crea tu primera solicitud para empezar el estudio de un candidato.'}
+              {filtroEstado || filtroTiempo || nivel || grupo ? 'Prueba con otro filtro o quítalo para ver todas.' : 'Crea tu primera solicitud para empezar el estudio de un candidato.'}
             </p>
             {!filtroEstado && !filtroTiempo && (
               <Link to="/cliente/nueva-solicitud" className="mt-4 text-sm font-semibold text-primary-600 hover:text-primary-700">

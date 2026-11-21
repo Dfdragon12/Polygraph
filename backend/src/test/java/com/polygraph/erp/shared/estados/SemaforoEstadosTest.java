@@ -102,6 +102,17 @@ class SemaforoEstadosTest {
     }
 
     @Test
+    void estudioCompletoExigeLaPastaEmitida() {
+        var todos = SemaforoEstados.avance(List.of(PUBLICADO, PUBLICADO));
+        // PB-01: todos publicados pero la pasta sin emitir → sigue «Publicado parcial» (antes decía «Estudio completo publicado» de más)
+        assertEquals(EtiquetaPublicacion.PUBLICADO_PARCIAL, SemaforoEstados.etiqueta(todos, false));
+        assertEquals(EtiquetaPublicacion.ESTUDIO_COMPLETO_PUBLICADO, SemaforoEstados.etiqueta(todos, true));
+        // con pasta emitida pero faltan subprocesos: parcial; sin ninguno publicado: nada
+        assertEquals(EtiquetaPublicacion.PUBLICADO_PARCIAL, SemaforoEstados.etiqueta(SemaforoEstados.avance(List.of(PUBLICADO, FINALIZADO)), true));
+        assertEquals(EtiquetaPublicacion.NINGUNA, SemaforoEstados.etiqueta(SemaforoEstados.avance(List.of(EN_EJECUCION)), true));
+    }
+
+    @Test
     void etiquetaDePublicacion() {
         // #40: 1 de 5 publicados → parcial
         assertEquals(EtiquetaPublicacion.PUBLICADO_PARCIAL, SemaforoEstados.etiqueta(SemaforoEstados.avance(List.of(PUBLICADO, EN_EJECUCION, PROGRAMANDO, PROGRAMANDO, PENDIENTE))));

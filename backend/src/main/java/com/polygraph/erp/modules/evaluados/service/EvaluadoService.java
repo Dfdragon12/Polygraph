@@ -22,6 +22,7 @@ import com.polygraph.erp.modules.servicios.repository.LinkCandidatoRepository;
 import com.polygraph.erp.shared.entity.Notificacion;
 import com.polygraph.erp.shared.enums.EstadoServicio;
 import com.polygraph.erp.shared.enums.Rol;
+import com.polygraph.erp.shared.enums.TipoEnlace;
 import com.polygraph.erp.shared.enums.TipoCliente;
 import com.polygraph.erp.shared.exceptions.ApiException;
 import com.polygraph.erp.shared.repository.NotificacionRepository;
@@ -57,6 +58,7 @@ public class EvaluadoService {
     private final com.polygraph.erp.modules.servicios.service.SemaforoTiempoService semaforoTiempoService;
     private final ValidadorArchivoCandidato validadorArchivo;
     private final ItemHojaVidaRepository itemHojaVidaRepository;
+    private final com.polygraph.erp.modules.servicios.repository.ServicioSubprocesoRepository subprocesoRepository;
     private final com.polygraph.erp.modules.auth.service.AceptacionLegalService aceptacionLegalService;
 
     /** Niveles educativos del portal, del más bajo al más alto — con esto se saca el "nivel
@@ -87,7 +89,9 @@ public class EvaluadoService {
         boolean completada = hv != null && Boolean.TRUE.equals(hv.getCompletado());
         boolean autorizo = hv != null && Boolean.TRUE.equals(hv.getAutorizacionDatos());
 
-        List<DocumentoRequeridoResponse> documentosRequeridos = servicio.getProceso() != null
+        TipoEnlace tipoEnlace = tipoDeEnlace(servicio);
+        // El enlace corto no pide documentos.
+        List<DocumentoRequeridoResponse> documentosRequeridos = servicio.getProceso() != null && tipoEnlace == TipoEnlace.COMPLETO
                 ? documentoRequeridoProcesoRepository
                         .findByProceso_IdProcesoOrderByOrdenAscNombreAsc(servicio.getProceso().getIdProceso())
                         .stream().map(DocumentoRequeridoResponse::from).toList()
@@ -106,7 +110,15 @@ public class EvaluadoService {
                 autorizo ? hv.getFechaAutorizacion() : null,
                 validadorArchivo.maxPdfMb(),
                 validadorArchivo.maxImagenMb(),
-                documentosRequeridos);
+                documentosRequeridos,
+                tipoEnlace.name());
+    }
+
+    /** PB-04: el tipo de enlace lo decide el sistema por los subprocesos vigentes de la solicitud. */
+    public TipoEnlace tipoDeEnlace(Servicio servicio) {
+        return TipoEnlace.de(subprocesoRepository.findByServicio_IdServicioOrderByTipoProgreso_OrdenAsc(servicio.getIdServicio()).stream()
+                .filter(sp -> sp.getEstado() != com.polygraph.erp.shared.enums.EstadoSubproceso.CANCELADO)
+                .map(sp -> sp.getTipoProgreso().getNombreProgreso()).toList());
     }
 
     /** Nombre de la empresa cliente como lo ve el candidato: comercial, si no razón social, si no nombre. */
@@ -266,10 +278,11 @@ public class EvaluadoService {
             throw new ApiException("Debe aceptar la autorización de manejo de datos", HttpStatus.BAD_REQUEST);
         }
 
-        validarDeclaraciones(request);
-        validarRevisionCandidato(request);
-
         Servicio servicio = obtenerServicio(link);
+        boolean corto = tipoDeEnlace(servicio) == TipoEnlace.CORTO;
+        validarDeclaraciones(request, corto);
+        if (!corto) validarRevisionCandidato(request);   // educación, experiencia y referencias no se piden en el enlace corto
+
         // El link sigue abierto después de enviar (V197): el candidato puede volver a corregir y
         // re-enviar. Solo el PRIMER envío avisa a gestión y mueve el servicio; los siguientes
         // actualizan los datos en silencio (si no, cada corrección era una notificación nueva).
@@ -357,7 +370,7 @@ public class EvaluadoService {
 
     /** Al enviar, cada pregunta de declaración activa debe tener respuesta y, si es "Sí", su
      *  explicación. Las preguntas las administra el admin (ItemHojaVida, lista PREGUNTA). */
-    private void validarDeclaraciones(HojaVidaRequest request) {
+    private void validarDeclaraciones(HojaVidaRequest request, boolean soloEnlaceCorto) {
         Map<Integer, RespuestaHojaVidaRequest> porPregunta = new java.util.HashMap<>();
         if (request.respuestas() != null) {
             request.respuestas().stream()
@@ -365,6 +378,7 @@ public class EvaluadoService {
                     .forEach(r -> porPregunta.put(r.idPregunta(), r));
         }
         for (ItemHojaVida pregunta : itemHojaVidaRepository.findByListaAndActivoTrueOrderByOrdenAscIdAsc(ListaHojaVida.PREGUNTA)) {
+            if (soloEnlaceCorto && !Boolean.TRUE.equals(pregunta.getEnlaceCorto())) continue;   // PB-04
             RespuestaHojaVidaRequest r = porPregunta.get(pregunta.getId());
             if (r == null || r.respuesta() == null) {
                 throw new ApiException("Responda todas las preguntas de la declaración.", HttpStatus.BAD_REQUEST);

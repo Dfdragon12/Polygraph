@@ -25,7 +25,17 @@ public record SolicitudGestorResponse(
         int vigentes,
         String etiquetaPublicacion,
         // «Pendiente 1 · Programando 2 · ...» calculado en el servidor.
-        java.util.List<com.polygraph.erp.modules.servicios.dto.ServicioSemaforoFila.ResumenEstado> resumen
+        java.util.List<com.polygraph.erp.modules.servicios.dto.ServicioSemaforoFila.ResumenEstado> resumen,
+        // PB-05: cliente, riesgo (solo si ya está calculado: nunca «BAJO 0»), indicador de la pasta y el botón de «Próxima acción».
+        Integer idCliente,
+        String cliente,
+        String riesgoNivel,
+        java.math.BigDecimal riesgoPuntaje,
+        boolean riesgoCritico,
+        String pastaEstado,
+        String proximaAccion,
+        String proximaAccionEtiqueta,
+        boolean enlaceEnviado
 ) {
     // programadorAsignado: solo relevante para subprocesos de poligrafía/visita — si el gestor ya
     // le encargó a un PROGRAMADOR coordinarlo (ver ServicioSubproceso.programadorResponsable).

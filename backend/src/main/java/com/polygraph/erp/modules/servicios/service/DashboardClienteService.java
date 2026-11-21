@@ -92,12 +92,23 @@ public class DashboardClienteService {
     @Transactional(readOnly = true)
     public Page<SolicitudResumenResponse> listarSolicitudes(EstadoServicio estado, java.util.List<com.polygraph.erp.shared.enums.EstadoTiempo> tiempo,
                                                             String orden, Pageable pageable) {
+        return listarSolicitudes(estado, tiempo, orden, null, null, pageable);
+    }
+
+    /** PB-05: nivel + periodo son los de los anillos de riesgo (estudios con la pasta emitida, solicitados en el periodo). */
+    @Transactional(readOnly = true)
+    public Page<SolicitudResumenResponse> listarSolicitudes(EstadoServicio estado, java.util.List<com.polygraph.erp.shared.enums.EstadoTiempo> tiempo,
+                                                            String orden, com.polygraph.erp.modules.riesgo.motor.ModeloRiesgo.NivelRiesgo nivel,
+                                                            com.polygraph.erp.shared.estados.PeriodoEstadistica periodo, Pageable pageable) {
         Integer idCliente = obtenerIdClienteActual();
         var filtro = org.springframework.data.jpa.domain.Specification
                 .where(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.delCliente(idCliente))
                 .and(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.conSubprocesoEn(estado == null ? null : com.polygraph.erp.shared.enums.EstadoSubproceso.valueOf(estado.name())))
                 .and(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.conTiempo(
                         tiempo))
+                .and(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.conNivelEmitido(nivel))
+                .and(periodo == null ? null : com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.solicitadaDesde(
+                        periodo.desde(LocalDate.now(java.time.ZoneId.of("America/Bogota")))))
                 .and(com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.ordenadoPorRetraso(orden));
         Page<Servicio> pagina = servicioRepository.findAll(filtro, org.springframework.data.domain.PageRequest.of(
                 pageable.getPageNumber(), pageable.getPageSize(), com.polygraph.erp.modules.servicios.repository.ServicioSpecifications.orden(orden)));
@@ -166,7 +177,7 @@ public class DashboardClienteService {
                 tiempoServicioService.de(s),
                 com.polygraph.erp.modules.servicios.dto.ServicioSemaforoFila.ResumenEstado.de(estados),
                 avance.publicados(), avance.vigentes(),
-                com.polygraph.erp.shared.estados.SemaforoEstados.etiqueta(avance).texto()
+                com.polygraph.erp.shared.estados.SemaforoEstados.etiqueta(avance, s.getPastaEstado() == com.polygraph.erp.shared.enums.PastaEstado.EMITIDA).texto()
         );
     }
 }

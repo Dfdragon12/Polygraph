@@ -141,6 +141,12 @@ app:
         max-intentos: 3
         timeout-minutos: 5
         espera-base-segundos: 15
+      # PB-03: PDF único del estudio (portada + informes). Va por LibreOffice igual que los otros dos, así que comparte el tope de conversiones.
+      ESTUDIO_PDF:
+        hilos: ${TRABAJOS_HILOS_ESTUDIO_PDF:1}
+        max-intentos: 3
+        timeout-minutos: 10
+        espera-base-segundos: 15
       # Recalcula el semáforo de tiempo de todas las solicitudes en curso (a las 00:05 y a la hora de corte). Idempotente: se puede reintentar.
       RECALCULO_TIEMPO:
         hilos: 1

@@ -155,6 +155,163 @@ function ResultadoEstudio({ riesgo }) {
   )
 }
 
+/* ─── PB-02: informes por subproceso (cada uno se descarga apenas el gestor lo publica) y resultado del estudio ─── */
+function InformesPorSubproceso({ subprocesos, publicada, puedeDescargar, descargar, descargando, estadoDescarga }) {
+  const { de } = useEstadosSubproceso()
+  const activos = subprocesos.filter(sp => sp.estado !== 'CANCELADO')
+  const publicados = activos.filter(sp => sp.estado === 'PUBLICADO')
+  const faltan = activos.filter(sp => sp.estado !== 'PUBLICADO').map(sp => sp.nombre)
+  const pct = activos.length > 0 ? Math.round((publicados.length / activos.length) * 100) : 0
+  return (
+    <div className="space-y-4">
+      {!publicada && activos.length > 0 && (
+        <>
+          <div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-gray-700">Informes publicados por tu gestor</p>
+              <span className="inline-flex items-center gap-2 rounded-full bg-[#E3F3F1] px-3 py-1 text-xs font-semibold text-[#0b5f58]">
+                <span aria-hidden="true" className="h-[9px] w-[9px] rounded-full bg-[#0D9488]" />
+                {publicados.length > 0 ? `Publicado parcial · ${publicados.length} de ${activos.length} informes` : `Sin informes publicados · 0 de ${activos.length}`}
+              </span>
+            </div>
+            <div className="mt-2 h-2 rounded-full bg-gray-200 overflow-hidden" role="progressbar" aria-valuemin={0} aria-valuemax={activos.length} aria-valuenow={publicados.length}
+              aria-label={`${publicados.length} de ${activos.length} informes publicados`}>
+              <div className="h-full bg-[#1f6b44]" style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+          <section className="rounded-2xl border border-dashed border-gray-300 bg-white p-5 flex flex-wrap items-center justify-between gap-4">
+            <div className="min-w-[240px] flex-1">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-700">Resultado del estudio</p>
+              <h2 className="text-lg font-bold text-gray-900">Se entrega cuando los {activos.length} informes estén publicados</h2>
+              <p className="text-sm text-gray-700 mt-1">Mientras tanto puedes descargar cada informe publicado.{faltan.length > 0 && ` Faltan: ${faltan.join(', ')}.`}</p>
+            </div>
+            <button type="button" disabled className="min-h-[44px] px-5 rounded-lg bg-gray-200 text-gray-600 text-sm font-semibold cursor-not-allowed">
+              Descargar estudio completo · {publicados.length} de {activos.length}
+            </button>
+          </section>
+        </>
+      )}
+      <section className="bg-white rounded-2xl ring-1 ring-gray-900/5 shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-base font-bold text-gray-900">Informes por subproceso</h2>
+          <p className="text-xs text-gray-700">Cada informe se descarga apenas tu gestor lo publica</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[640px]">
+            <thead>
+              <tr className="text-left text-[11px] uppercase tracking-wider text-gray-700">
+                <th scope="col" className="px-5 py-3 font-semibold">Subproceso</th>
+                <th scope="col" className="px-3 py-3 font-semibold">Conclusión</th>
+                <th scope="col" className="px-5 py-3 font-semibold">Calificación e informe</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {subprocesos.map((sp, i) => {
+                const e = de(sp.estado)
+                const listo = sp.estado === 'PUBLICADO'
+                const nivel = NIVEL_RIESGO[sp.nivel]
+                return (
+                  <tr key={sp.id} className="align-top">
+                    <td className="px-5 py-4">
+                      <div className="flex items-start gap-3">
+                        <span className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold text-gray-700 tabular-nums">{i + 1}</span>
+                        <div>
+                          <p className="font-semibold text-gray-900">{sp.nombre}</p>
+                          {e && (
+                            <p className="mt-0.5 flex items-start gap-1.5 text-xs text-gray-800">
+                              <span aria-hidden="true" className="mt-1 h-[9px] w-[9px] flex-shrink-0 rounded-full" style={{ backgroundColor: e.color }} />
+                              <span><span className="font-medium">{e.nombre}</span> · {e.textoCliente}</span>
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-3 py-4 text-gray-800 max-w-[420px]">
+                      {listo && sp.conclusion ? sp.conclusion : (
+                        <span className="text-gray-600">La conclusión aparece cuando tu gestor publique el informe.
+                          {sp.fechaProgramada && sp.estado !== 'CANCELADO' && ` Programado para el ${new Date(sp.fechaProgramada).toLocaleDateString('es-CO')}.`}</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-4">
+                      {listo ? (
+                        <div className="flex flex-wrap items-center gap-3">
+                          <div>
+                            {nivel
+                              ? <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-bold ring-1 ${nivel.chip}`}>{sp.nivel}</span>
+                              : <span className="inline-block rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-semibold text-gray-700">Sin calificar</span>}
+                            {sp.puntaje != null && <p className="mt-0.5 text-[11px] text-gray-700 tabular-nums">Puntaje {Number(sp.puntaje).toLocaleString('es-CO', { maximumFractionDigits: 1 })}</p>}
+                          </div>
+                          {sp.informeDisponible && (puedeDescargar ? (
+                            <button type="button" onClick={() => descargar(sp)} disabled={descargando === sp.id}
+                              className="min-h-[44px] rounded-lg border border-[#B23A48] px-4 text-sm font-semibold text-[#B23A48] hover:bg-red-50 disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
+                              ↓ {descargando === sp.id ? textoEstadoDescarga(estadoDescarga) : 'Descargar informe'}
+                            </button>
+                          ) : <span className="text-xs text-gray-700">Lo descarga el administrador de tu empresa.</span>)}
+                        </div>
+                      ) : (
+                        <button type="button" disabled className="min-h-[44px] rounded-lg bg-gray-100 px-4 text-sm font-semibold text-gray-600 cursor-not-allowed">Informe aún no disponible</button>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+/* ─── PB-03: estudio completo listo (pasta emitida): nivel, nota del gestor y el PDF único ─── */
+function EstudioListo({ riesgo, nota, estudioPdf, activos, onDescargar, descargando, errorPdf }) {
+  const cfg = NIVEL_RIESGO[riesgo?.nivel]
+  const listoPdf = estudioPdf?.estado === 'LISTO'
+  return (
+    <section className="rounded-2xl bg-[#141B2B] text-white p-5 sm:p-6 flex flex-wrap items-center justify-between gap-6">
+      <div className="min-w-[260px] flex-1">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-300">Resultado del estudio</p>
+        <h2 className="text-2xl font-bold mt-1">Tu informe está listo</h2>
+        {nota && <p className="mt-3 text-sm leading-relaxed text-gray-100"><strong>Nota de tu gestor:</strong> {nota}</p>}
+      </div>
+      <div className="flex flex-col items-start gap-3 sm:items-end">
+        {cfg && riesgo?.nivel && (
+          <p className="flex items-center gap-3 text-sm text-gray-200">Nivel de riesgo
+            <span className="rounded-full bg-[#E6F3EC] px-4 py-1 text-base font-bold text-[#1f6b44]" style={riesgo.nivel === 'MEDIO' ? { background: '#FBF1DE', color: '#8a5a0c' } : riesgo.nivel === 'ALTO' ? { background: '#F9E8EA', color: '#8c2733' } : undefined}>{riesgo.nivel}</span>
+          </p>
+        )}
+        <button type="button" onClick={onDescargar} disabled={!listoPdf || descargando}
+          className="min-h-[44px] rounded-lg bg-[#B23A48] px-5 text-sm font-bold text-white hover:bg-[#9c3140] disabled:bg-gray-500 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
+          {descargando ? 'Descargando…' : 'Descargar estudio completo · PDF'}
+        </button>
+        <p className="text-xs text-gray-300">
+          {listoPdf ? `Informe de análisis final + los ${activos} informes, en un solo archivo${estudioPdf.paginas ? ` · ${estudioPdf.paginas} páginas` : ''}`
+            : estudioPdf?.estado === 'ERROR' ? 'No se pudo armar el PDF. Tu gestor lo está revisando.'
+            : estudioPdf ? 'Estamos armando el PDF del estudio; estará listo en un momento.' : 'El PDF del estudio todavía no está disponible.'}
+        </p>
+        {errorPdf && <p role="alert" className="text-xs text-red-200">{errorPdf}</p>}
+      </div>
+    </section>
+  )
+}
+
+/* ─── PB-03: qué trae el PDF, en orden ─── */
+function QueTraeElPdf({ subprocesos }) {
+  const publicados = subprocesos.filter(sp => sp.estado === 'PUBLICADO')
+  return (
+    <section className="bg-white rounded-2xl ring-1 ring-gray-900/5 shadow-sm p-5">
+      <h2 className="text-base font-bold text-gray-900">Qué trae el PDF del estudio completo</h2>
+      <ol className="mt-3 flex gap-3 overflow-x-auto pb-2">
+        <li className="w-[104px] flex-shrink-0 rounded-lg border border-gray-200 p-2"><div className="h-1.5 rounded bg-[#A8323F] mb-2" /><p className="text-[11px] font-bold text-gray-900">Informe de análisis final</p><p className="text-[10px] text-gray-700">Resumen, nivel y nota del gestor</p></li>
+        {publicados.map((sp, i) => (
+          <li key={sp.id} className="w-[104px] flex-shrink-0 rounded-lg border border-gray-200 p-2"><div className="h-1.5 rounded bg-gray-900 mb-2" /><p className="text-[11px] font-bold text-gray-900">{i + 1}. {sp.nombre}</p><p className="text-[10px] text-gray-700">Informe del subproceso</p></li>
+        ))}
+      </ol>
+      <p className="text-xs text-gray-700 mt-2">Primero va el Informe de análisis final y después los informes, en el mismo orden de la tabla.</p>
+    </section>
+  )
+}
+
 /* ─── Línea de tiempo de la entrega: recibida → plazo → compromiso → hoy (o la entrega, ya congelada) ─── */
 const diasHabiles = (n) => `${n} ${n === 1 ? 'día hábil' : 'días hábiles'}`
 
@@ -711,6 +868,8 @@ export default function SolicitudDetalle() {
   const [error, setError] = useState(null)
   const [descargando, setDescargando] = useState(null)
   const [estadoDescarga, setEstadoDescarga] = useState(null)
+  const [descargandoEstudio, setDescargandoEstudio] = useState(false)
+  const [errorEstudio, setErrorEstudio] = useState(null)
   const [errorDescarga, setErrorDescarga] = useState(null)
   // Corta el polling del PDF si el usuario sale de la página antes de que termine.
   const abortoDescargaRef = useRef(null)
@@ -780,6 +939,16 @@ export default function SolicitudDetalle() {
 
   // Solo el administrador de la cuenta descarga informes (el analista del cliente solo ve estados).
   const puedeDescargar = usuario?.rol === 'ADMIN_CLIENTE'
+
+  const descargarEstudio = async () => {
+    setDescargandoEstudio(true); setErrorEstudio(null)
+    try {
+      const r = await solicitudService.descargarEstudioCompleto(id)
+      guardarBlob(r, `Estudio_${id}.pdf`)
+    } catch (e) {
+      setErrorEstudio('No se pudo descargar el estudio. Reintentar o contacta a tu gestor.')
+    } finally { setDescargandoEstudio(false) }
+  }
 
   const descargar = async (sp) => {
     setDescargando(sp.id)
@@ -970,10 +1139,19 @@ export default function SolicitudDetalle() {
       <AvisoQueSigue aviso={aviso} onPedirEnlace={pedirEnlace} enlacePedido={enlacePedido} pidiendoEnlace={pidiendoEnlace}
         onIrA={() => abrirYVer('novedades', 'seccion-novedades')} />
 
-      {publicada && detalle.riesgo && <ResultadoEstudio riesgo={detalle.riesgo} />}
+      {publicada && (
+        <EstudioListo riesgo={detalle.riesgo} nota={detalle.notaGestor} estudioPdf={detalle.estudioPdf} activos={activos.length}
+          onDescargar={descargarEstudio} descargando={descargandoEstudio} errorPdf={errorEstudio} />
+      )}
       {errorDescarga && (
         <p className="text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{errorDescarga}</p>
       )}
+
+      {subprocesos.length > 0 && !cancelada && (
+        <InformesPorSubproceso subprocesos={subprocesos} publicada={publicada} puedeDescargar={puedeDescargar}
+          descargar={descargar} descargando={descargando} estadoDescarga={estadoDescarga} />
+      )}
+      {publicada && detalle.estudioPdf && <QueTraeElPdf subprocesos={subprocesos} />}
 
       {/* Componentes del estudio — acordeón, uno abierto a la vez */}
       {subprocesos.length > 0 && (
@@ -1060,10 +1238,10 @@ export default function SolicitudDetalle() {
         </section>
       )}
 
-      {detalle.notas && (
+      {detalle.notaGestor && !publicada && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50/70 px-5 py-4">
           <p className="text-[11px] font-semibold text-amber-700 uppercase tracking-wider">Nota de tu gestor</p>
-          <p className="mt-1 text-sm text-amber-900 leading-relaxed">{detalle.notas}</p>
+          <p className="mt-1 text-sm text-amber-900 leading-relaxed">{detalle.notaGestor}</p>
         </div>
       )}
 

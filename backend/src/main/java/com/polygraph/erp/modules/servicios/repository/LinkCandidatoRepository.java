@@ -14,6 +14,21 @@ import java.util.Optional;
 
 public interface LinkCandidatoRepository extends JpaRepository<LinkCandidato, Long> {
 
+    /** PB-04: enlaces enviados por Polygraph hace 24 h o más que el candidato no terminó y que aún no tienen su recordatorio. */
+    @org.springframework.data.jpa.repository.Query("SELECT l FROM LinkCandidato l WHERE l.enviadoEn IS NOT NULL AND l.enviadoEn <= :limite AND l.ultimoRecordatorioEn IS NULL "
+            + "AND l.revocado = false AND l.usado = false AND l.intentosFallidos < :maxIntentos AND l.servicio.estado NOT IN :cerrados")
+    java.util.List<LinkCandidato> pendientesDeRecordatorio(java.time.LocalDateTime limite, int maxIntentos,
+                                                           java.util.Collection<com.polygraph.erp.shared.enums.EstadoServicio> cerrados);
+
+    /** «Reclama» el recordatorio de un enlace: solo uno gana, aunque corran dos procesos a la vez. */
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.data.jpa.repository.Query("UPDATE LinkCandidato l SET l.ultimoRecordatorioEn = :ahora, l.recordatoriosEnviados = l.recordatoriosEnviados + 1 "
+            + "WHERE l.id = :id AND l.ultimoRecordatorioEn IS NULL")
+    int reclamarRecordatorio(Long id, java.time.LocalDateTime ahora);
+
+    /** PB-05: los enlaces de varias solicitudes de una vez (la lista de Solicitudes dice cuáles ya se enviaron). */
+    List<LinkCandidato> findByServicio_IdServicioIn(java.util.Collection<Integer> idsServicio);
+
     Optional<LinkCandidato> findByToken(String token);
 
     Optional<LinkCandidato> findTopByServicio_IdServicioOrderByFechaCreacionDesc(Integer idServicio);

@@ -801,6 +801,9 @@ export default function Formulario() {
   const [devolviendo, setDevolviendo] = useState(false)
   const [motivoDevolver, setMotivoDevolver] = useState(MOTIVO_VACIO)
   const [enviandoDevolver, setEnviandoDevolver] = useState(false)
+  const [conclusion, setConclusion] = useState('')                 // PB-02: la conclusión que escribe quien ejecuta
+  const [pidiendoCorreccion, setPidiendoCorreccion] = useState(false)
+  const [motivoCorreccion, setMotivoCorreccion] = useState('')
   const [toast, setToast] = useState(null)
   const [meta, setMeta] = useState(null)
   const [riesgo, setRiesgo] = useState(null)
@@ -887,6 +890,10 @@ export default function Formulario() {
           nombreSubproceso: r.nombreSubproceso,
           fechaProgramada: r.fechaProgramada,
           observacionesAsignacion: r.observacionesAsignacion,
+          conclusion: r.conclusion,
+          conclusionPublicada: r.conclusionPublicada,
+          nivelPublicado: r.nivelPublicado,
+          fechaPublicado: r.fechaPublicado,
           telefonoEvaluado: r.telefonoEvaluado,
           ciudadEvaluado: r.ciudadEvaluado,
           idServicio: r.idServicio,
@@ -1040,8 +1047,22 @@ export default function Formulario() {
   // 3..N+2 = secciones de la plantilla (bloque idx -> paso idx + PRIMER_BLOQUE) y, solo para quien
   // diligencia, un último paso "Revisión y envío" donde se revisa qué falta y se completa.
   const esEjecutor = ['analista', 'poligrafista', 'visitador'].includes(prefijo)
+  useEffect(() => { setConclusion(meta?.conclusion ?? '') }, [meta?.conclusion])
+  const guardarConclusion = async () => {
+    if (!esEjecutor || meta?.soloLectura || (conclusion ?? '') === (meta?.conclusion ?? '')) return
+    try { await asignacionService.guardarConclusion(idServicioSubproceso, conclusion); setMeta(m => ({ ...m, conclusion })) }
+    catch (err) { mostrarToast(err.response?.data?.mensaje ?? 'No se pudo guardar la conclusión.', 'error') }
+  }
+  const pedirCorreccion = async () => {
+    if (!motivoCorreccion.trim()) { mostrarToast('Cuenta qué hay que corregir.', 'error'); return }
+    try {
+      await asignacionService.solicitarCorreccion(idServicioSubproceso, motivoCorreccion.trim())
+      mostrarToast('Solicitud enviada · tu gestor la verá en sus avisos')
+      setPidiendoCorreccion(false); setMotivoCorreccion('')
+    } catch (err) { mostrarToast(err.response?.data?.mensaje ?? 'No se pudo enviar la solicitud. Reintentar', 'error') }
+  }
   // NS-07: la criticidad del cargo la eligió el cliente al solicitar; solo el gestor (o el admin) la cambia.
-  const criticidadBloqueada = (c) => c.calificacion?.uso === 'CRITICIDAD' && !!meta?.criticidadDeSolicitud && !['gestor', 'admin'].includes(prefijo)
+  const criticidadBloqueada = (c) => c.calificacion?.uso === 'CRITICIDAD' && !!meta?.criticidadDeSolicitud && prefijo !== 'gestor'
   const PASO_NOVEDADES = 0
   const PASO_CANDIDATO = 1
   const PASO_SOPORTES = 2
@@ -1558,7 +1579,45 @@ export default function Formulario() {
         </div>
       )}
 
-      {meta?.soloLectura && (
+      {meta?.soloLectura && esEjecutor && meta?.estado === 'FINALIZADO' && (
+        <div className="mb-5 bg-gray-100 border border-gray-200 rounded-2xl px-4 py-3 print:hidden" role="status">
+          <p className="text-sm font-semibold text-gray-900">Enviado · en revisión del gestor</p>
+          <p className="text-sm text-gray-700">Quedó en solo lectura. Si el gestor lo devuelve, verás el motivo aquí y podrás corregirlo.</p>
+        </div>
+      )}
+      {meta?.soloLectura && esEjecutor && meta?.estado === 'PUBLICADO' && (
+        <div className="mb-5 bg-teal-50 border border-teal-200 rounded-2xl px-4 py-3 print:hidden" role="status">
+          <p className="text-sm font-semibold text-teal-900">
+            Publicado al cliente{meta.fechaPublicado ? ` el ${new Date(meta.fechaPublicado).toLocaleDateString('es-CO', { dateStyle: 'long' })}` : ''}
+            {meta.nivelPublicado ? ` · ${meta.nivelPublicado}` : ''}
+          </p>
+          {meta.conclusionPublicada && (
+            <p className="text-sm text-teal-900 mt-1 whitespace-pre-line">
+              <span className="font-medium">Conclusión publicada: </span>{meta.conclusionPublicada}
+              {meta.conclusion && meta.conclusion.trim() !== meta.conclusionPublicada.trim() && (
+                <span className="block text-xs text-teal-800 mt-1">El gestor ajustó tu texto. El tuyo era: {meta.conclusion}</span>
+              )}
+            </p>
+          )}
+          {!pidiendoCorreccion ? (
+            <button type="button" onClick={() => setPidiendoCorreccion(true)}
+              className="mt-2 min-h-[44px] px-4 rounded-lg border border-teal-700 text-sm font-semibold text-teal-900 hover:bg-teal-100 focus-visible:outline focus-visible:outline-2">
+              Solicitar corrección
+            </button>
+          ) : (
+            <div className="mt-2 space-y-2">
+              <label htmlFor="motivo-correccion" className="block text-xs font-medium text-teal-900">¿Qué hay que corregir? <span className="text-red-700">*</span></label>
+              <textarea id="motivo-correccion" rows={3} value={motivoCorreccion} onChange={e => setMotivoCorreccion(e.target.value)}
+                className="w-full border border-teal-300 rounded-lg px-3 py-2 text-sm bg-white" />
+              <div className="flex gap-2">
+                <button type="button" onClick={pedirCorreccion} className="min-h-[44px] px-4 rounded-lg bg-teal-700 text-white text-sm font-semibold">Enviar al gestor</button>
+                <button type="button" onClick={() => setPidiendoCorreccion(false)} className="min-h-[44px] px-4 rounded-lg border border-gray-300 text-sm">Cancelar</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {meta?.soloLectura && !(esEjecutor && (meta?.estado === 'FINALIZADO' || meta?.estado === 'PUBLICADO')) && (
         <div className="mb-5 bg-gray-100 border border-gray-200 rounded-2xl px-4 py-3 print:hidden">
           <p className="text-sm text-gray-600">
             Este servicio ya está completado — el formulario quedó en solo lectura, no se pueden hacer más cambios.
@@ -1928,6 +1987,14 @@ export default function Formulario() {
         {esEjecutor && bloques.length > 0 && (
           <section className={`${enEnvio ? 'block' : 'hidden'} print:hidden bg-white border border-gray-200 border-l-4 border-l-green-400 rounded-2xl shadow-sm p-4`}>
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Revisión antes de enviar</p>
+            {!meta?.soloLectura && (
+              <div className="mb-4">
+                <label htmlFor="conclusion-subproceso" className="block text-sm font-semibold text-gray-900 mb-1">Conclusión</label>
+                <textarea id="conclusion-subproceso" rows={4} maxLength={4000} value={conclusion} onChange={e => setConclusion(e.target.value)} onBlur={guardarConclusion}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500" />
+                <p className="text-xs text-gray-600 mt-1">Es lo que leerá el cliente junto a la calificación. Tu gestor puede ajustarla al publicar; el texto original queda en el historial.</p>
+              </div>
+            )}
             {meta?.soloLectura ? (
               <p className="text-sm text-gray-600">Este subproceso ya se envió — queda pendiente la revisión de quien lo coordina.</p>
             ) : (

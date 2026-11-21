@@ -71,9 +71,16 @@ class SolicitudServiceInformeTest {
     }
 
     @Test
-    @DisplayName("Mientras la solicitud no está publicada, no hay informe (409)")
-    void noPublicado_409() {
+    @DisplayName("PB-02: el informe se descarga apenas el subproceso se publica, aunque el estudio completo todavía no")
+    void subprocesoPublicadoSinEstudioCompleto_autoriza() {
         servicio.setEstado(EstadoServicio.FINALIZADO);
+        assertThat(service.validarInforme(40, 900L, sesion).idServicioSubproceso()).isEqualTo(900L);
+    }
+
+    @Test
+    @DisplayName("Mientras el subproceso no está publicado, no hay informe (409)")
+    void noPublicado_409() {
+        poligrafia.setEstado(EstadoSubproceso.FINALIZADO);
         assertThatThrownBy(() -> service.validarInforme(40, 900L, sesion))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).getStatus()).isEqualTo(HttpStatus.CONFLICT));

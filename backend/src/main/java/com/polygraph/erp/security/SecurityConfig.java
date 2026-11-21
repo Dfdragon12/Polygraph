@@ -54,7 +54,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/v1/auth/**").permitAll()
                 .requestMatchers("/api/v1/evaluees/link/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/ciudades", "/api/v1/ciudades/**").permitAll()
-                .requestMatchers(HttpMethod.POST, "/api/v1/ciudades").permitAll()
+                // PB-06: crear una ciudad ya NO es público — el evaluado no agrega ciudades al catálogo de tarifas (solo usuarios con sesión)
                 // Barrios/departamentos/países: mismo criterio que ciudades — los formularios sin
                 // sesión (candidato vía link, registro de cliente) necesitan poder leerlos y, en el
                 // caso de barrios, crear uno nuevo si no está en el catálogo. Antes faltaban acá

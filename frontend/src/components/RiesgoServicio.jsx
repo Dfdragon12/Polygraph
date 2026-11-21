@@ -1,5 +1,6 @@
 import { useId, useState, useEffect, useCallback } from 'react'
 import riesgoService from '../services/riesgoService'
+import EtiquetaEstado from './semaforo/EtiquetaEstado'
 
 // Pestaña "Riesgo" del detalle de la solicitud (gestor): la recomendación del motor con su
 // detalle interno, la criticidad del caso y la decisión final del gestor (docs/
@@ -196,7 +197,13 @@ export default function RiesgoServicio({ idServicio, onToast }) {
                       {s.nombre}
                       {s.criticos?.length > 0 && <span className="ml-1.5 text-[10px] font-bold text-red-600" title={s.criticos.map(c => c.descripcion).join('\n')}>CRÍTICO</span>}
                     </td>
-                    <td className={`px-3 py-2 ${ESTADO_SUB[s.estado]?.clase ?? ''}`}>{ESTADO_SUB[s.estado]?.texto ?? s.estado}</td>
+                    <td className="px-3 py-2">
+                      {/* PB-01: el estado REAL del subproceso (los 7), no «Pendiente» para todo lo no cerrado */}
+                      {d.estadosSubproceso?.[s.codigo]
+                        ? <EtiquetaEstado estado={d.estadosSubproceso[s.codigo]} pequena />
+                        : <span className={ESTADO_SUB[s.estado]?.clase ?? ''}>{ESTADO_SUB[s.estado]?.texto ?? s.estado}</span>}
+                      {s.estado === 'SIN_CALIFICACION' && <span className="block text-[10px] text-gray-600 mt-0.5">Sin calificación (no cuenta)</span>}
+                    </td>
                     <td className="px-3 py-2 text-right">{pct(s.peso)}</td>
                     <td className="px-3 py-2 text-right">{s.pesoEfectivo != null ? pct(s.pesoEfectivo) : '—'}</td>
                     <td className="px-3 py-2 text-right font-semibold">{s.puntajeFinal != null ? num(s.puntajeFinal) : '—'}</td>

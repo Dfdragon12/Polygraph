@@ -47,8 +47,13 @@ public record SolicitudDetalleResponse(
         boolean puedeCancelar,
         CobroResponse cobro,
         // Estado de tiempo en días hábiles (null si está cancelada o sin fecha).
-        com.polygraph.erp.shared.dto.TiempoServicio tiempo
+        com.polygraph.erp.shared.dto.TiempoServicio tiempo,
+        // PB-03: la nota del gestor (concepto final), solo con el estudio publicado; y el PDF único del estudio completo (null si no hay uno vigente).
+        String notaGestor,
+        EstudioPdfResponse estudioPdf
 ) {
+    public record EstudioPdfResponse(Integer version, String estado, Integer paginas, String tipo) {}
+
     /** Cuánto le vale la solicitud al cliente.
      *  POSPAGO: valores exactos del cargo de esta solicitud (movimientos_credito_pospago) y su factura.
      *  PREPAGO: valorReferencia = true — la solicitud descontó 1 unidad de la bolsa; el valor es el
@@ -66,7 +71,8 @@ public record SolicitudDetalleResponse(
             String referencia,          // factura (pospago) u orden de compra (prepago)
             String estadoPago,          // PENDIENTE/PAGADA/VENCIDA (factura) · APROBADA (compra) · SIN_FACTURAR
             LocalDate fechaVencimiento,
-            LocalDateTime fechaPago) {}
+            LocalDateTime fechaPago,
+            BigDecimal iva) {}   // TP-03: IVA incluido en `total` (pospago); null en prepago (el IVA se pagó al comprar)
 
     /** estadoRevision: PENDIENTE · APROBADO · DENEGADO · ILEGIBLE · VENCIDO · INCOMPLETO · NO_CORRESPONDE
      *  (null si no lo ha cargado). observacionRevision: la misma que ve el candidato en su portal. */
@@ -126,6 +132,11 @@ public record SolicitudDetalleResponse(
             String nombre,
             String estado,
             LocalDateTime fechaProgramada,
-            boolean informeDisponible
+            boolean informeDisponible,
+            // PB-02: lo que publicó el gestor (null mientras el subproceso no esté publicado)
+            String conclusion,
+            String nivel,
+            java.math.BigDecimal puntaje,
+            LocalDateTime fechaPublicado
     ) {}
 }

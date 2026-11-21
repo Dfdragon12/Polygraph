@@ -26,6 +26,14 @@ const tokenService = {
   enviarCorreo: (id) =>
     api.post(`/gestor/tokens/${id}/enviar-correo`),
 
+  // PB-04: ventana «Enviar enlace al candidato»
+  envioContexto: (id) => api.get(`/gestor/tokens/${id}/envio`).then(r => r.data),
+  // { celular, correo, mensaje, canales: ['WHATSAPP', 'CORREO'] } → { enviados, whatsappUrl, venceReferencia }
+  enviar: (id, payload) => api.post(`/gestor/tokens/${id}/envio`, payload).then(r => r.data),
+  copiado: (id) => api.post(`/gestor/tokens/${id}/copiado`),
+  ampliar: (id, dias = 2) => api.post(`/gestor/tokens/${id}/ampliar`, null, { params: { dias } }).then(r => r.data),
+  seguimiento: (id) => api.get(`/gestor/tokens/${id}/seguimiento`).then(r => r.data),
+
   revocar: (id) =>
     api.patch(`/gestor/tokens/${id}/revocar`),
 

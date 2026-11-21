@@ -76,6 +76,82 @@ public final class ServicioSpecifications {
         };
     }
 
+    /** PB-05: pertenece a alguno de los estados (p. ej. «Seguir la programación» = Programando + Reprogramado). Vacío = sin filtro. */
+    public static Specification<Servicio> conSubprocesoEnAlguno(java.util.Collection<EstadoSubproceso> estados) {
+        if (estados == null || estados.isEmpty()) return null;
+        return (root, query, cb) -> {
+            var sub = query.subquery(Integer.class);
+            var sp = sub.from(ServicioSubproceso.class);
+            sub.select(cb.literal(1)).where(cb.equal(sp.get("servicio"), root), sp.get("estado").in(estados));
+            return cb.exists(sub);
+        };
+    }
+
+    /** «ESTADO» o «ESTADO1,ESTADO2» → los estados; vacío = ninguno (sin filtro). */
+    public static List<EstadoSubproceso> estadosDeFiltro(String texto) {
+        if (texto == null || texto.isBlank()) return List.of();
+        List<EstadoSubproceso> estados = new ArrayList<>();
+        for (String parte : texto.split(",")) {
+            EstadoSubproceso e = estadoDeFiltro(parte);
+            if (e != null) estados.add(e);
+        }
+        return estados;
+    }
+
+    /** PB-05: el grupo de tiempo (Vencidas · Vence hoy · Vence mañana · A tiempo · En pausa); dice lo mismo que {@code BucketTiempo.de}. */
+    public static Specification<Servicio> conBucket(com.polygraph.erp.shared.estados.BucketTiempo bucket) {
+        if (bucket == null) return null;
+        return (root, query, cb) -> {
+            var tiempo = root.get("estadoTiempo");
+            var dias = cb.coalesce(root.<Integer>get("diasRestantesHabiles"), 0);
+            var porVencer = cb.equal(tiempo, com.polygraph.erp.shared.enums.EstadoTiempo.POR_VENCER);
+            return switch (bucket) {
+                case VENCIDAS -> cb.equal(tiempo, com.polygraph.erp.shared.enums.EstadoTiempo.VENCIDA);
+                case EN_PAUSA -> cb.equal(tiempo, com.polygraph.erp.shared.enums.EstadoTiempo.EN_PAUSA);
+                case VENCE_HOY -> cb.and(porVencer, cb.lessThanOrEqualTo(dias, 0));
+                case VENCE_MANANA -> cb.and(porVencer, cb.equal(dias, 1));
+                case A_TIEMPO -> cb.or(cb.equal(tiempo, com.polygraph.erp.shared.enums.EstadoTiempo.A_TIEMPO), cb.and(porVencer, cb.greaterThanOrEqualTo(dias, 2)));
+            };
+        };
+    }
+
+    /** PB-05: el estudio (proceso) de la solicitud. */
+    public static Specification<Servicio> delProceso(Integer idProceso) {
+        if (idProceso == null) return null;
+        return (root, query, cb) -> cb.equal(root.get("proceso").get("idProceso"), idProceso);
+    }
+
+    /** PB-05: la persona responsable — ejecutor asignado o programador encargado de alguno de sus subprocesos. */
+    public static Specification<Servicio> conResponsable(Long idResponsable) {
+        if (idResponsable == null) return null;
+        return (root, query, cb) -> {
+            var sub = query.subquery(Integer.class);
+            var sp = sub.from(ServicioSubproceso.class);
+            sub.select(cb.literal(1)).where(cb.equal(sp.get("servicio"), root), cb.or(
+                    cb.equal(sp.get("usuarioAsignado").get("idUsuario"), idResponsable),
+                    cb.equal(sp.get("programadorResponsable").get("idUsuario"), idResponsable)));
+            return cb.exists(sub);
+        };
+    }
+
+    /** PB-05: estudios con la pasta emitida en el periodo (para «Mis solicitudes» filtrada por nivel y periodo) — null = sin límite. */
+    public static Specification<Servicio> solicitadaDesde(java.time.LocalDate desde) {
+        if (desde == null) return null;
+        return (root, query, cb) -> cb.greaterThanOrEqualTo(root.get("fechaSolicitud"), desde);
+    }
+
+    /** PB-05: el estudio tiene la pasta emitida y su nivel (el que vale: decidido o final) es el pedido. */
+    public static Specification<Servicio> conNivelEmitido(com.polygraph.erp.modules.riesgo.motor.ModeloRiesgo.NivelRiesgo nivel) {
+        if (nivel == null) return null;
+        return (root, query, cb) -> {
+            var sub = query.subquery(Long.class);
+            var c = sub.from(com.polygraph.erp.modules.riesgo.entity.CalificacionRiesgo.class);
+            sub.select(cb.literal(1L)).where(cb.equal(c.get("servicio"), root), cb.isTrue(c.get("vigente")),
+                    cb.equal(cb.coalesce(c.get("nivelDecidido"), c.get("nivelFinal")), nivel));
+            return cb.and(cb.equal(root.get("pastaEstado"), com.polygraph.erp.shared.enums.PastaEstado.EMITIDA), cb.exists(sub));
+        };
+    }
+
     /** Convierte el texto del filtro («EN_EJECUCION», «en_ejecucion»...) en el estado; vacío = sin filtro; un valor que no es uno de los siete, 400. */
     public static EstadoSubproceso estadoDeFiltro(String texto) {
         if (texto == null || texto.isBlank()) return null;
@@ -94,7 +170,11 @@ public final class ServicioSpecifications {
         return (root, query, cb) -> {
             var candidato = root.join("candidato", JoinType.LEFT);
             var proceso = root.join("proceso", JoinType.LEFT);
+            var cliente = root.join("cliente", JoinType.LEFT);
             List<Predicate> alguno = new ArrayList<>(List.of(
+                    cb.like(cb.lower(cb.coalesce(cliente.<String>get("razonSocial"), "")), patron),
+                    cb.like(cb.lower(cb.coalesce(cliente.<String>get("nombreComercial"), "")), patron),
+                    cb.like(cb.lower(cb.concat(cb.concat(cb.coalesce(cliente.<String>get("nombre"), ""), " "), cb.coalesce(cliente.<String>get("apellido"), ""))), patron),
                     cb.like(cb.lower(candidato.get("nombres")), patron),
                     cb.like(cb.lower(candidato.get("apellidos")), patron),
                     cb.like(cb.lower(cb.concat(cb.concat(candidato.get("nombres"), " "), candidato.get("apellidos"))), patron),

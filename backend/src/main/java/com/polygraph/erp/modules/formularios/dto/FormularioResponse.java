@@ -63,7 +63,12 @@ public record FormularioResponse(
         // LB-04: los periodos sin empleo que el evaluado explicó en su hoja de vida (fecha_inicio, fecha_fin, actividad, justificacion, quien_confirma); solo lectura.
         List<Map<String, String>> inactividadesDeclaradas,
         // AC-02: el evaluado marcó «No tengo estudios para registrar».
-        boolean sinEstudiosDeclarado
+        boolean sinEstudiosDeclarado,
+        // PB-02: la conclusión que escribe quien ejecuta y lo que se publicó (conclusión final, nivel, fecha y quién ajustó algo)
+        String conclusion,
+        String conclusionPublicada,
+        String nivelPublicado,
+        java.time.LocalDateTime fechaPublicado
 ) {
     /** valores solo aplica a secciones CAMPOS (idColumna -> valor); filas solo a secciones
      *  TABLA. El campo que no aplica llega vacío/null. orden: para intercalar en el mismo orden

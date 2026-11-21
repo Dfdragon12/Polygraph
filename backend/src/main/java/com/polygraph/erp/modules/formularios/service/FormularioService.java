@@ -538,7 +538,7 @@ public class FormularioService {
                             // Las columnas automáticas nunca se guardan a mano — su valor siempre
                             // se resuelve en vivo (ver obtener()).
                             if (columna == null || columna.esAutomatica()) continue;
-                            // NS-07: la criticidad la fijó el cliente en la solicitud. Solo el gestor (o el admin) la cambia, y el cambio va a la solicitud;
+                            // NS-07: la criticidad la fijó el cliente en la solicitud. Solo el gestor del cliente la cambia, y el cambio va a la solicitud;
                             // para los demás el valor enviado se ignora. Nunca queda una segunda copia en el formulario.
                             if (esCriticidadDeSolicitud(subproceso, columna)) {
                                 cambiarCriticidadDeSolicitud(subproceso, e.getValue(), actor);
@@ -683,7 +683,8 @@ public class FormularioService {
                 servicio != null && servicio.getProceso() != null ? servicio.getProceso().getAniosPeriodoLaboral() : null,
                 servicio != null ? servicio.getFechaSolicitud() : null,
                 candidato != null ? candidatoInfoService.resolverTablasFijas(candidato).getOrDefault("inactividades", List.of()) : List.of(),
-                candidatoInfoService.declaroSinEstudios(candidato)
+                candidatoInfoService.declaroSinEstudios(candidato),
+                subproceso.getConclusion(), subproceso.getConclusionPublicada(), subproceso.getNivelPublicado(), subproceso.getFechaPublicado()
         );
     }
 
@@ -912,7 +913,7 @@ public class FormularioService {
 
     /** Solo gestor o admin; si el valor es distinto, se actualiza la solicitud, queda quién lo cambió y se recalcula el riesgo (evento de guardar). */
     private void cambiarCriticidadDeSolicitud(ServicioSubproceso subproceso, String valor, Usuario actor) {
-        if (actor == null || (actor.getRol() != Rol.GESTOR && actor.getRol() != Rol.ADMIN_POLYGRAPH)) return;
+        if (actor == null || actor.getRol() != Rol.GESTOR) return;   // solo el gestor del cliente cambia la criticidad (AccesoGestor ya validó que es su cliente)
         var nueva = com.polygraph.erp.modules.riesgo.hallazgos.MotorHallazgos.criticidad(valor);
         var servicio = subproceso.getServicio();
         if (nueva == null || nueva == servicio.getCriticidadCargo()) return;

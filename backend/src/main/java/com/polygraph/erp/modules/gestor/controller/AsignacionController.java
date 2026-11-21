@@ -4,6 +4,10 @@ import com.polygraph.erp.modules.auth.entity.Usuario;
 import com.polygraph.erp.modules.auth.repository.UsuarioRepository;
 import com.polygraph.erp.modules.gestor.dto.AsignacionResponse;
 import com.polygraph.erp.modules.gestor.dto.AsignarMasivoRequest;
+import com.polygraph.erp.modules.gestor.dto.ConclusionSubprocesoRequest;
+import com.polygraph.erp.modules.gestor.dto.PublicarSubprocesoRequest;
+import com.polygraph.erp.modules.gestor.dto.SolicitarCorreccionRequest;
+import com.polygraph.erp.modules.gestor.service.PublicacionSubprocesoService;
 import com.polygraph.erp.modules.gestor.dto.AsignarRequest;
 import com.polygraph.erp.modules.gestor.dto.ConfirmarAsistenciaRequest;
 import com.polygraph.erp.modules.gestor.dto.ConteoAsignacionesResponse;
@@ -54,13 +58,15 @@ import java.util.Set;
 public class AsignacionController {
 
     private static final Set<Rol> ROLES_PROGRAMADOR = Set.of(Rol.POLIGRAFISTA, Rol.VISITADOR);
-    private static final Set<Rol> ROLES_GESTOR = Set.of(Rol.ANALISTA_INTERNO);
+    /** PB-01: el gestor revisa, devuelve y publica CUALQUIER subproceso de los clientes que gestiona (análisis, poligrafía y visita); AccesoGestor valida el cliente. */
+    private static final Set<Rol> ROLES_GESTOR = Set.of(Rol.ANALISTA_INTERNO, Rol.POLIGRAFISTA, Rol.VISITADOR);
     private static final Set<Rol> ROLES_ANALISTA = Set.of(Rol.ANALISTA_INTERNO);
     /** POLIGRAFISTA/VISITADOR, igual que ANALISTA_INTERNO, solo ven y completan SUS PROPIOS
      *  subprocesos ya asignados por PROGRAMADOR — no asignan ni reprograman. */
     private static final Set<Rol> ROLES_AUTOGESTION = Set.of(Rol.ANALISTA_INTERNO, Rol.POLIGRAFISTA, Rol.VISITADOR);
 
     private final AsignacionService asignacionService;
+    private final PublicacionSubprocesoService publicacionService;
     private final CitaCandidatoGestorService citaCandidatoGestorService;
     private final UsuarioRepository usuarioRepository;
 
@@ -184,6 +190,38 @@ public class AsignacionController {
     public ResponseEntity<AsignacionResponse> aprobar(@PathVariable Long id, Authentication auth) {
         Usuario actor = resolverUsuario(auth);
         return ResponseEntity.ok(asignacionService.aprobar(id, actor, rolesPermitidos(actor)));
+    }
+
+    /** PB-02: publicar un subproceso con la conclusión y la calificación que verá el cliente (reemplaza a «aprobar»). */
+    @PostMapping("/{id}/publicar")
+    @PreAuthorize("hasAnyRole('GESTOR', 'PROGRAMADOR')")
+    public ResponseEntity<AsignacionResponse> publicar(@PathVariable Long id, @RequestBody PublicarSubprocesoRequest request, Authentication auth) {
+        Usuario actor = resolverUsuario(auth);
+        return ResponseEntity.ok(publicacionService.publicar(id, request, actor, rolesPermitidos(actor)));
+    }
+
+    /** PB-02: quien ejecuta escribe su conclusión (la ve el gestor al publicar). */
+    @PutMapping("/{id}/conclusion")
+    @PreAuthorize("hasAnyRole('ANALISTA_INTERNO', 'POLIGRAFISTA', 'VISITADOR')")
+    public ResponseEntity<Void> conclusion(@PathVariable Long id, @Valid @RequestBody ConclusionSubprocesoRequest request, Authentication auth) {
+        publicacionService.guardarConclusion(id, request.conclusion(), resolverUsuario(auth));
+        return ResponseEntity.noContent().build();
+    }
+
+    /** PB-02: el ejecutor pide corregir un informe ya publicado; le llega al gestor. */
+    @PostMapping("/{id}/solicitar-correccion")
+    @PreAuthorize("hasAnyRole('ANALISTA_INTERNO', 'POLIGRAFISTA', 'VISITADOR')")
+    public ResponseEntity<Void> solicitarCorreccion(@PathVariable Long id, @Valid @RequestBody SolicitarCorreccionRequest request, Authentication auth) {
+        publicacionService.solicitarCorreccion(id, request.motivo(), resolverUsuario(auth));
+        return ResponseEntity.noContent().build();
+    }
+
+    /** PB-02: quién cambió qué en el informe (conclusión, nivel, publicación). */
+    @GetMapping("/{id}/historial-publicacion")
+    public ResponseEntity<List<java.util.Map<String, Object>>> historialPublicacion(@PathVariable Long id, Authentication auth) {
+        Usuario actor = resolverUsuario(auth);
+        asignacionService.historial(id, actor, rolesPermitidos(actor));   // mismo permiso que el historial de la asignación
+        return ResponseEntity.ok(publicacionService.historial(id));
     }
 
     @PatchMapping("/{id}/devolver")

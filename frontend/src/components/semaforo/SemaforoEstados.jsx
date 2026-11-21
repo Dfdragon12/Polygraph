@@ -44,10 +44,10 @@ export default function SemaforoEstados({ seleccionado = '', onSeleccionar, filt
           const cantidad = porSubprocesos ? e.subprocesos : e.servicios
           return (
             <button key={e.codigo} type="button" aria-pressed={activo} onClick={() => onSeleccionar?.(activo ? '' : e.codigo)}
-              className={`text-left bg-white rounded-xl border p-4 shadow-sm transition-all hover:shadow-md ${activo ? 'ring-2' : 'border-gray-200'}`}
-              style={activo ? { borderColor: e.color, '--tw-ring-color': e.color, backgroundColor: `${e.color}12` } : undefined}>
+              className={`text-left bg-white rounded-xl border p-4 shadow-sm transition-all hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${activo ? 'border-2' : 'border-gray-200'}`}
+              style={activo ? { borderColor: e.color, backgroundColor: `${e.color}12` } : undefined}>
               <span className="flex items-center gap-2 mb-1.5">
-                <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: e.color }} />
+                <span aria-hidden="true" className="h-[9px] w-[9px] rounded-full flex-shrink-0" style={{ backgroundColor: e.color }} />
                 <span className="text-xs font-semibold text-gray-800">{e.nombre}</span>
               </span>
               <span className="block text-3xl font-bold text-gray-900 tabular-nums">{cantidad}</span>
