@@ -58,6 +58,7 @@ public class CargaMasivaValidador {
     private final MoraService moraService;
     private final SolicitudExtraService solicitudExtraService;
     private final DiasHabilesService diasHabilesService;
+    private final com.polygraph.erp.modules.tienda.service.PrecioPospagoService precioPospago;
 
     @Transactional(readOnly = true)
     public Resultado validar(List<FilaCarga> filas, String emailUsuario, Map<String, Proceso> procesosPorNombre) {
@@ -80,6 +81,10 @@ public class CargaMasivaValidador {
             Proceso proceso = procesosPorNombre.get(normalizar(f.servicio()));
             if (proceso == null) motivos.add("Tipo de servicio no reconocido: " + (f.servicio().isBlank() ? "(vacío)" : f.servicio()));
             else if (!Boolean.TRUE.equals(proceso.getActivo())) motivos.add("El servicio '" + proceso.getNombreProceso() + "' no está disponible");
+            // LP-05: un cliente pospago solo pide lo que se le ofrece y tiene precio (la misma regla que aplica el servidor al crear la solicitud).
+            else if (cliente.getTipoCliente() == TipoCliente.POSPAGO && !precioPospago.disponibleParaCliente(proceso)) {
+                motivos.add(com.polygraph.erp.modules.tienda.service.PrecioPospagoService.NO_DISPONIBLE_EN_POSPAGO);
+            }
 
             Ciudad ciudad = null;
             if (f.ciudad().isBlank()) {
@@ -122,7 +127,7 @@ public class CargaMasivaValidador {
             BigDecimal cupo = clientePospagoRepository.findByIdCliente(cliente.getIdCliente())
                     .map(p -> p.getCreditoDisponible() != null ? p.getCreditoDisponible() : BigDecimal.ZERO).orElse(BigDecimal.ZERO);
             List<Costo> costos = validas.stream()
-                    .map(v -> new Costo(v.numero(), v.cedula(), (v.proceso().getValor() != null ? v.proceso().getValor() : BigDecimal.ZERO).add(v.recargo())))
+                    .map(v -> new Costo(v.numero(), v.cedula(), java.util.Optional.ofNullable(precioPospago.precioEfectivo(v.proceso())).orElse(BigDecimal.ZERO).add(v.recargo())))
                     .toList();
             errores.addAll(filasSinCupo(costos, cupo));
         } else {

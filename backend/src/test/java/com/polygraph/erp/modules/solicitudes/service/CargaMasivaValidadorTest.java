@@ -67,7 +67,7 @@ class CargaMasivaValidadorTest {
         mora = mock(MoraService.class);
         extras = mock(SolicitudExtraService.class);
         dias = mock(DiasHabilesService.class);
-        validador = new CargaMasivaValidador(usuarios, clientes, ciudades, servicios, bolsa, pospago, recargos, mora, extras, dias);
+        validador = new CargaMasivaValidador(usuarios, clientes, ciudades, servicios, bolsa, pospago, recargos, mora, extras, dias, mock(com.polygraph.erp.modules.tienda.service.PrecioPospagoService.class));
 
         when(usuarios.findByEmail("c@test.com")).thenReturn(Optional.of(Usuario.builder().idUsuario(1L).idCliente(7).build()));
         Cliente cliente = new Cliente();

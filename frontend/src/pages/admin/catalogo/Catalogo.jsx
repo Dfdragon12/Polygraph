@@ -1429,6 +1429,9 @@ export default function Catalogo() {
   const [toast, setToast]     = useState(null)
 
   const mostrarToast = useCallback((mensaje, tipo = 'exito') => setToast({ mensaje, tipo }), [])
+  // LP-04: cuántos precios de la Lista pospago están escritos y sin guardar (para avisar al cambiar de pestaña)
+  const pospagoSinGuardar = useRef(0)
+  const avisarPospagoSinGuardar = useCallback((n) => { pospagoSinGuardar.current = n }, [])
 
   /* ── Clasificaciones ── */
   const [clasificaciones,         setClasificaciones]         = useState([])
@@ -1626,6 +1629,8 @@ export default function Catalogo() {
           <p className="text-sm text-gray-500 mt-0.5">
             {pestana === 'planes'
               ? 'Planes, IVA e interruptores de la tienda prepago'
+              : pestana === 'pospago'
+              ? 'Precios que pagan los clientes pospago por cada servicio.'
               : pestana === 'progresos'
               ? 'Subprocesos disponibles para asignar a procesos'
               : pestana === 'clasificaciones'
@@ -1683,7 +1688,11 @@ export default function Catalogo() {
       <div className="flex gap-0.5 mb-5 p-1 bg-gray-100 rounded-xl w-fit border border-gray-200/60">
         {PESTANAS.map(p => (
           <button key={p.id}
-            onClick={() => { setPestana(p.id); if (p.id !== 'procesos' || clasificacionActiva) volverAlGrid() }}
+            onClick={() => {
+              if (pestana === 'pospago' && p.id !== 'pospago' && pospagoSinGuardar.current > 0
+                && !window.confirm(`Tienes ${pospagoSinGuardar.current} precios sin guardar. ¿Salir sin guardar?`)) return
+              setPestana(p.id); if (p.id !== 'procesos' || clasificacionActiva) volverAlGrid()
+            }}
             className={`flex items-center gap-2.5 px-5 py-2 rounded-[10px] text-sm font-medium transition-all duration-150 ${
               pestana === p.id
                 ? 'bg-white shadow text-primary-700 ring-1 ring-gray-200/80'
@@ -1734,7 +1743,7 @@ export default function Catalogo() {
       ) : pestana === 'planes' ? (
         <PlanesTienda onToast={mostrarToast} />
       ) : pestana === 'pospago' ? (
-        <ListaPospago />
+        <ListaPospago onToast={mostrarToast} onSinGuardar={avisarPospagoSinGuardar} />
       ) : pestana === 'progresos' ? (
         <>
           <BarraFiltros

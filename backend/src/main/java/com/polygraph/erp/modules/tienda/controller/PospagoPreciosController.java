@@ -88,7 +88,7 @@ public class PospagoPreciosController {
         List<Fila> filas = service.lista();
         try (XSSFWorkbook libro = new XSSFWorkbook(); ByteArrayOutputStream salida = new ByteArrayOutputStream()) {
             Sheet hoja = libro.createSheet("Lista pospago");
-            String[] titulos = {"Servicio", "Precio pospago", "Origen", "IVA", "Precio con IVA", "Ofrecido", "Margen %", "Observación"};
+            String[] titulos = {"Servicio", "Precio pospago", "Origen", "IVA", "Precio con IVA", "Ofrecido", "Margen %", "Observación", "Plan de 100 (referencia)", "Actualizado por", "Actualizado en"};
             Row cab = hoja.createRow(0);
             for (int i = 0; i < titulos.length; i++) cab.createCell(i).setCellValue(titulos[i]);
             int r = 1;
@@ -96,12 +96,15 @@ public class PospagoPreciosController {
                 Row row = hoja.createRow(r++);
                 row.createCell(0).setCellValue(f.servicio());
                 numero(row.createCell(1), f.precio());
-                row.createCell(2).setCellValue(f.origen());
+                row.createCell(2).setCellValue("MANUAL".equals(f.modo()) ? "Manual" : "Automático");
                 numero(row.createCell(3), f.iva());
                 numero(row.createCell(4), f.precioConIva());
                 row.createCell(5).setCellValue(f.ofrecido() ? "Sí" : "No");
                 numero(row.createCell(6), f.margenPorcentaje());
-                row.createCell(7).setCellValue(f.problema() != null ? f.problema() : (f.margenBajo() ? "Margen bajo el mínimo" : ""));
+                row.createCell(7).setCellValue(f.precio() == null ? "Sin precio" : (f.margenBajo() ? "Margen bajo el mínimo" : ""));
+                numero(row.createCell(8), f.precioPlan100());
+                row.createCell(9).setCellValue(f.actualizadoPor() == null ? "" : f.actualizadoPor());
+                row.createCell(10).setCellValue(f.actualizadoEn() == null ? "" : f.actualizadoEn().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")));
             }
             for (int i = 0; i < titulos.length; i++) hoja.autoSizeColumn(i);
             libro.write(salida);

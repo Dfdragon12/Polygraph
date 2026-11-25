@@ -43,7 +43,7 @@ class TiendaTp11Test {
         when(parametros.decimal("margenMinimoPorcentaje")).thenReturn(new BigDecimal("30"));
         when(iva.porcentaje()).thenReturn(new BigDecimal("19"));
         when(procesos.findAll()).thenReturn(catalogo);
-        servicio = new PrecioPospagoService(planes, parametros, iva, procesos);
+        servicio = new PrecioPospagoService(planes, parametros, iva, procesos, mock(com.polygraph.erp.modules.auth.repository.UsuarioRepository.class));
     }
 
     private PlanPublicoResponse plan(int unidades, String unitario) {
@@ -68,7 +68,8 @@ class TiendaTp11Test {
         assertThat(fila.precio()).isEqualByComparingTo("32000");
         assertThat(fila.iva()).isEqualByComparingTo("6080");
         assertThat(fila.precioConIva()).isEqualByComparingTo("38080");
-        assertThat(fila.origen()).isEqualTo("Auto · plan de 100");
+        assertThat(fila.modo()).isEqualTo("AUTO");
+        assertThat(fila.precioPlan100()).isEqualByComparingTo("32000");
     }
 
     @Test
@@ -90,7 +91,7 @@ class TiendaTp11Test {
         assertThat(servicio.precioVigente(p)).contains(new BigDecimal("50000"));
         when(planes.planesDe(p)).thenReturn(List.of(plan(1, "300000"), plan(100, "200000")));
         assertThat(servicio.precioVigente(p)).contains(new BigDecimal("50000"));
-        assertThat(servicio.lista().get(0).origen()).isEqualTo("Precio propio");
+        assertThat(servicio.lista().get(0).modo()).isEqualTo("MANUAL");
     }
 
     @Test

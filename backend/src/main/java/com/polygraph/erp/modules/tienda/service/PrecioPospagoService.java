@@ -1,5 +1,7 @@
 package com.polygraph.erp.modules.tienda.service;
 
+import com.polygraph.erp.modules.auth.entity.Usuario;
+import com.polygraph.erp.modules.auth.repository.UsuarioRepository;
 import com.polygraph.erp.modules.clientes.entity.Cliente;
 import com.polygraph.erp.modules.servicios.entity.Proceso;
 import com.polygraph.erp.modules.servicios.repository.ProcesoRepository;
@@ -16,8 +18,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import java.util.Optional;
 
 /**
@@ -40,10 +46,16 @@ public class PrecioPospagoService {
     private final ParametrosTiendaService parametros;
     private final IvaService iva;
     private final ProcesoRepository procesoRepository;
+    private final UsuarioRepository usuarioRepository;
 
-    /** Una fila de la lista pospago (la del administrador trae origen y margen; la del cliente solo precio). */
-    public record Fila(Integer idProceso, String servicio, String tituloComercial, BigDecimal precio, BigDecimal iva, BigDecimal precioConIva,
-                       String origen, ModoPrecioPospago modo, boolean ofrecido, BigDecimal margenPorcentaje, boolean margenBajo, String problema) {}
+    /**
+     * Una fila de la lista pospago del administrador (LP-02). {@code modo}: AUTO (sigue al plan de 100) o MANUAL (precio propio).
+     * {@code precio} es el efectivo, sin IVA; null = «Sin precio». {@code visibleParaCliente} = ofrecido y con precio.
+     */
+    public record Fila(Integer idProceso, String servicio, String tituloComercial, BigDecimal precioPlan100, String modo, BigDecimal precioManual,
+                       BigDecimal precio, boolean aplicaIva, BigDecimal iva, BigDecimal precioConIva, boolean ofrecido,
+                       BigDecimal margenPorcentaje, boolean margenBajo, boolean visibleParaCliente,
+                       String actualizadoPor, LocalDateTime actualizadoEn) {}
 
     /** Lo que ve un cliente pospago: sin origen ni margen. */
     public record FilaCliente(Integer idProceso, String servicio, String tituloComercial, BigDecimal precio, BigDecimal iva, BigDecimal precioConIva) {}
@@ -71,43 +83,88 @@ public class PrecioPospagoService {
         return planes.planesDe(p).stream().filter(pl -> pl.unidades() == PLAN_BASE).findFirst().map(PlanPublicoResponse::precioUnitario);
     }
 
+    /**
+     * LP-02: EL precio con el que se cobra, se muestra y se calcula el margen de un servicio pospago (sin IVA). null = «Sin precio».
+     * Es el único punto de entrada: Nueva solicitud, carga masiva, el movimiento de cupo y la lista del administrador lo usan.
+     */
+    @Transactional(readOnly = true)
+    public BigDecimal precioEfectivo(Proceso p) {
+        return precioVigente(p).orElse(null);
+    }
+
+    @Transactional(readOnly = true)
+    public BigDecimal precioEfectivo(Integer idProceso) {
+        return procesoRepository.findById(idProceso).map(this::precioEfectivo).orElse(null);
+    }
+
+    /** Referencia automática: el precio por unidad del plan de 100 de la lista prepago (null si el servicio no lo tiene). */
+    @Transactional(readOnly = true)
+    public BigDecimal precioPlan100(Proceso p) {
+        return planes.planesDe(p).stream().filter(pl -> pl.unidades() == PLAN_BASE).findFirst().map(PlanPublicoResponse::precioUnitario).orElse(null);
+    }
+
     /** Origen que queda guardado en el cargo: PLAN_100, PROPIO, o BASE con el interruptor apagado. */
     public String codigoOrigen(Proceso p) {
         return activo() ? modo(p).name() : "BASE";
+    }
+
+    /** LP-05: el mismo texto para el servidor (Nueva solicitud) y la carga masiva cuando un servicio no se ofrece en pospago o no tiene precio. */
+    public static final String NO_DISPONIBLE_EN_POSPAGO = "Este servicio no está disponible en tu plan pospago. Escríbele a tu gestor.";
+
+    /** ¿Se puede pedir este servicio en pospago? Ofrecido y con precio (con el interruptor apagado, el precio base de siempre). */
+    public boolean disponibleParaCliente(Proceso p) {
+        return ofrecido(p) && precioEfectivo(p) != null;
     }
 
     /** El precio con el que se cobra una solicitud pospago nueva. 400 si el servicio no se ofrece en pospago o no tiene precio. */
     @Transactional(readOnly = true)
     public BigDecimal precioParaCobrar(Proceso p) {
         if (!ofrecido(p)) {
-            throw new ApiException("El servicio '" + p.getNombreProceso() + "' no está disponible para tu cuenta pospago", HttpStatus.BAD_REQUEST);
+            throw new ApiException(NO_DISPONIBLE_EN_POSPAGO, HttpStatus.BAD_REQUEST);
         }
-        return precioVigente(p).orElseThrow(() -> new ApiException(
-                "El proceso '" + p.getNombreProceso() + "' no tiene un precio definido para clientes pospago", HttpStatus.BAD_REQUEST));
+        return precioVigente(p).orElseThrow(() -> new ApiException(NO_DISPONIBLE_EN_POSPAGO, HttpStatus.BAD_REQUEST));
     }
 
     // ───────────────────────── listas ─────────────────────────
 
-    /** Lista completa para el administrador: todos los servicios activos con su precio, origen, IVA, si se ofrece y margen. */
+    /** Lista completa para el administrador: todos los servicios activos con su precio efectivo, modo, IVA, si se ofrece y margen. */
     @Transactional(readOnly = true)
     public List<Fila> lista() {
         BigDecimal pct = iva.porcentaje();
         BigDecimal minimo = parametros.decimal("margenMinimoPorcentaje");
-        return procesoRepository.findAll().stream()
+        List<Proceso> activos = procesoRepository.findAll().stream()
                 .filter(p -> Boolean.TRUE.equals(p.getActivo()))
                 .sorted(Comparator.comparing(Proceso::getNombreProceso, String.CASE_INSENSITIVE_ORDER))
-                .map(p -> fila(p, pct, minimo))
                 .toList();
+        List<Long> ids = activos.stream().map(Proceso::getPrecioPospagoActualizadoPor).filter(java.util.Objects::nonNull).distinct().toList();
+        Map<Long, String> nombres = ids.isEmpty() ? Map.of() : usuarioRepository.findAllById(ids).stream()
+                .collect(Collectors.toMap(u -> u.getIdUsuario().longValue(), PrecioPospagoService::nombreDe));
+        return activos.stream().map(p -> fila(p, pct, minimo, nombres)).toList();
     }
 
-    Fila fila(Proceso p, BigDecimal pct, BigDecimal minimo) {
-        Optional<BigDecimal> precio = precioVigente(p);
-        BigDecimal valorIva = precio.map(v -> IvaCalculadora.iva(v, pct, !Boolean.FALSE.equals(p.getAplicaIva()))).orElse(null);
-        BigDecimal margen = precio.map(v -> margen(v, p.getCostoDirecto())).orElse(null);
-        String origen = modo(p) == ModoPrecioPospago.PROPIO ? "Precio propio" : "Auto · plan de 100";
-        String problema = precio.isEmpty() && ofrecido(p) ? "Se ofrece en pospago y no tiene precio" : null;
-        return new Fila(p.getIdProceso(), p.getNombreProceso(), p.getTituloComercial(), precio.orElse(null), valorIva,
-                precio.map(v -> v.add(valorIva)).orElse(null), origen, modo(p), ofrecido(p), margen, margen != null && margen.compareTo(minimo) < 0, problema);
+    /** La fila de UN servicio, con el mismo formato de la lista (la devuelve el PUT al guardar). */
+    @Transactional(readOnly = true)
+    public Fila filaDe(Proceso p) {
+        Long quien = p.getPrecioPospagoActualizadoPor();
+        Map<Long, String> nombres = quien == null ? Map.of() : usuarioRepository.findById(quien).map(u -> Map.of(quien, nombreDe(u))).orElse(Map.of());
+        return fila(p, iva.porcentaje(), parametros.decimal("margenMinimoPorcentaje"), nombres);
+    }
+
+    Fila fila(Proceso p, BigDecimal pct, BigDecimal minimo, Map<Long, String> nombres) {
+        BigDecimal precio = precioEfectivo(p);
+        boolean aplicaIva = !Boolean.FALSE.equals(p.getAplicaIva());
+        BigDecimal valorIva = precio == null ? null : IvaCalculadora.iva(precio, pct, aplicaIva);
+        BigDecimal margen = precio == null ? null : margen(precio, p.getCostoDirecto());
+        boolean manual = modo(p) == ModoPrecioPospago.PROPIO;
+        Long quien = p.getPrecioPospagoActualizadoPor();
+        return new Fila(p.getIdProceso(), p.getNombreProceso(), p.getTituloComercial(), precioPlan100(p), manual ? "MANUAL" : "AUTO",
+                manual ? p.getPrecioPospagoPropio() : null, precio, aplicaIva, valorIva, precio == null ? null : precio.add(valorIva), ofrecido(p),
+                margen, margen != null && margen.compareTo(minimo) < 0, ofrecido(p) && precio != null,
+                quien == null ? null : nombres.get(quien), p.getPrecioPospagoActualizadoEn());
+    }
+
+    private static String nombreDe(Usuario u) {
+        return ((u.getNombre() == null ? "" : u.getNombre()) + " " + (u.getApellido() == null ? "" : u.getApellido())).trim();
     }
 
     /** Lista del cliente pospago: solo los servicios que se le ofrecen y tienen precio. 403 si el cliente no es pospago (nunca se le muestra a un prepago). */

@@ -118,6 +118,13 @@ public class Proceso {
     @Column(name = "modo_precio_pospago", nullable = false, length = 20)
     private com.polygraph.erp.shared.enums.ModoPrecioPospago modoPrecioPospago = com.polygraph.erp.shared.enums.ModoPrecioPospago.PLAN_100;
 
+    /** LP-01: quién y cuándo cambió por última vez el precio pospago o «ofrecido» (null = nunca desde la lista pospago). */
+    @Column(name = "precio_pospago_actualizado_por")
+    private Long precioPospagoActualizadoPor;
+
+    @Column(name = "precio_pospago_actualizado_en")
+    private java.time.LocalDateTime precioPospagoActualizadoEn;
+
     /** Formato adicional que el cliente diligencia al solicitar este proceso (poligrafías); null = ninguno. */
     @Enumerated(EnumType.STRING)
     @Column(name = "formato_solicitud", length = 20)
