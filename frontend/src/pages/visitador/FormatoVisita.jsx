@@ -4,6 +4,7 @@ import formulariosService from '../../services/formulariosService'
 import asignacionService from '../../services/asignacionService'
 import Formulario from '../shared/Formulario'
 import Toast from '../../components/Toast'
+import AvisosInforme from '../../components/informe/AvisosInforme'
 import FichaCandidato from '../../components/FichaCandidato'
 import NovedadesSubproceso from '../../components/NovedadesSubproceso'
 import SoportesInforme from '../../components/SoportesInforme'
@@ -452,7 +453,7 @@ export function FormatoVisita({ inicial, idServicioSubproceso }) {
           </p>
         </div>
         <div className="flex flex-col items-end gap-2">
-          <p className={`text-xs ${fallido ? 'text-red-600' : 'text-gray-700'}`} aria-live="polite">{textoGuardado}</p>
+          <p className={`text-xs ${fallido ? 'text-red-600' : 'text-gray-700'}`} aria-live="polite">{soloLectura ? 'Solo lectura' : textoGuardado}</p>
           <div className="flex gap-2">
             {!soloLectura && (
               <button type="button" onClick={() => guardar(false)} disabled={guardando || !sucio}
@@ -464,13 +465,18 @@ export function FormatoVisita({ inicial, idServicioSubproceso }) {
         </div>
       </div>
 
-      <div className="mb-3" role="group" aria-label="Avance de la visita">
-        <p className="text-xs text-gray-800 mb-1">Avance: {avanceLlenos} de {avanceTotal} campos diligenciados</p>
-        <div className="h-2 bg-gray-200 rounded" role="progressbar" aria-valuemin={0} aria-valuemax={100}
-          aria-valuenow={avanceTotal ? Math.round(avanceLlenos / avanceTotal * 100) : 0} aria-label="Avance de la visita">
-          <div className="h-2 bg-primary-600 rounded" style={{ width: `${avanceTotal ? Math.round(avanceLlenos / avanceTotal * 100) : 0}%` }} />
+      {/* PC-04: enviado, devuelto o publicado (con «Solicitar corrección»): el mismo aviso en todos los formatos, arriba. */}
+      <AvisosInforme meta={inicial} esEjecutor idServicioSubproceso={idServicioSubproceso} onToast={m => setToast({ mensaje: m, tipo: 'exito' })} />
+
+      {!soloLectura && (
+        <div className="mb-3" role="group" aria-label="Avance de la visita">
+          <p className="text-xs text-gray-800 mb-1">Avance: {avanceLlenos} de {avanceTotal} campos diligenciados</p>
+          <div className="h-2 bg-gray-200 rounded" role="progressbar" aria-valuemin={0} aria-valuemax={100}
+            aria-valuenow={avanceTotal ? Math.round(avanceLlenos / avanceTotal * 100) : 0} aria-label="Avance de la visita">
+            <div className="h-2 bg-primary-600 rounded" style={{ width: `${avanceTotal ? Math.round(avanceLlenos / avanceTotal * 100) : 0}%` }} />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Las 3 fases */}
       <nav aria-label="Fases del formato" className="grid grid-cols-3 gap-2 mb-5">
@@ -502,7 +508,7 @@ export function FormatoVisita({ inicial, idServicioSubproceso }) {
               className="w-full min-h-11 px-4 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-800">
               {verCaso ? 'Ocultar la información del caso' : 'Información del caso'}
             </button>
-            {verCaso && <PanelCaso ficha={ficha} nota={inicial.observacionesAsignacion} resumen={resumen} />}
+            {verCaso && <PanelCaso ficha={ficha} nota={inicial.devolucion ? null : inicial.observacionesAsignacion} resumen={resumen} />}
           </div>
         ) : (
           <aside aria-label={`Temas de la fase ${fase.id}`} className="self-start sticky top-0 space-y-3 overflow-y-auto pr-1" style={{ maxHeight: 'calc(100vh - 6rem)' }}>
@@ -527,7 +533,7 @@ export function FormatoVisita({ inicial, idServicioSubproceso }) {
               })}
             </ul>
             <hr className="border-gray-200" />
-            <PanelCaso ficha={ficha} nota={inicial.observacionesAsignacion} resumen={resumen} />
+            <PanelCaso ficha={ficha} nota={inicial.devolucion ? null : inicial.observacionesAsignacion} resumen={resumen} />
           </aside>
         )}
 

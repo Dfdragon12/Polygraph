@@ -135,11 +135,16 @@ export default function RevisionEnvio({ etiquetaEnvio = 'Enviar a revisión del 
           </div>
         ) : (
           <div>
-            <button type="button" onClick={() => setConfirmando(true)} disabled={total > 0}
+            <button type="button" onClick={() => setConfirmando(true)} disabled={total > 0} aria-describedby={total > 0 ? 'razon-envio-fase' : undefined}
               className="min-h-11 px-5 text-sm font-semibold rounded-lg bg-primary-600 hover:bg-primary-700 disabled:bg-gray-300 disabled:text-gray-700 text-white">
               {etiquetaEnvio}
             </button>
-            {total > 0 && <p className="mt-2 text-sm text-gray-800">Faltan {total} {plural(total)}. Complétalas para poder enviar.</p>}
+            {/* PC-04: un botón desactivado dice por qué: qué falta y dónde. */}
+            {total > 0 && (
+              <p id="razon-envio-fase" className="mt-2 text-sm text-gray-800">
+                Se habilita cuando completes lo que falta ({total} {plural(total)}): {grupos.map(g => g.titulo).join(', ')}.
+              </p>
+            )}
           </div>
         )}
       </section>

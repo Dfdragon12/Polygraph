@@ -200,6 +200,13 @@ public class AsignacionController {
         return ResponseEntity.ok(publicacionService.publicar(id, request, actor, rolesPermitidos(actor)));
     }
 
+    /** PC-02: lo que la ventana Publicar muestra al abrirse: conclusión del ejecutor, calificación sugerida y si este subproceso la necesita. */
+    @GetMapping("/{id}/publicacion")
+    @PreAuthorize("hasAnyRole('GESTOR', 'PROGRAMADOR')")
+    public ResponseEntity<PublicacionSubprocesoService.DatosPublicacion> datosPublicacion(@PathVariable Long id, Authentication auth) {
+        return ResponseEntity.ok(publicacionService.datosParaPublicar(id, resolverUsuario(auth)));
+    }
+
     /** PB-02: quien ejecuta escribe su conclusión (la ve el gestor al publicar). */
     @PutMapping("/{id}/conclusion")
     @PreAuthorize("hasAnyRole('ANALISTA_INTERNO', 'POLIGRAFISTA', 'VISITADOR')")
@@ -211,9 +218,8 @@ public class AsignacionController {
     /** PB-02: el ejecutor pide corregir un informe ya publicado; le llega al gestor. */
     @PostMapping("/{id}/solicitar-correccion")
     @PreAuthorize("hasAnyRole('ANALISTA_INTERNO', 'POLIGRAFISTA', 'VISITADOR')")
-    public ResponseEntity<Void> solicitarCorreccion(@PathVariable Long id, @Valid @RequestBody SolicitarCorreccionRequest request, Authentication auth) {
-        publicacionService.solicitarCorreccion(id, request.motivo(), resolverUsuario(auth));
-        return ResponseEntity.noContent().build();
+    public ResponseEntity<PublicacionSubprocesoService.CorreccionSolicitada> solicitarCorreccion(@PathVariable Long id, @Valid @RequestBody SolicitarCorreccionRequest request, Authentication auth) {
+        return ResponseEntity.ok(publicacionService.solicitarCorreccion(id, request.tipo(), request.motivo(), resolverUsuario(auth)));
     }
 
     /** PB-02: quién cambió qué en el informe (conclusión, nivel, publicación). */

@@ -58,6 +58,9 @@ public class FormularioService {
     private FotoEvaluadoService fotoEvaluadoService;
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private HistorialPreguntasService historialPreguntas;
+    /** PC-04 · Opcional (como los anteriores): qué pasó con el informe después de enviarlo (publicado o devuelto). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private SeguimientoInformeService seguimientoInforme;
 
     private static final String CATEGORIA_ARCHIVOS = "formularios";
 
@@ -425,6 +428,9 @@ public class FormularioService {
             if (omitidas.contains(seccion.getIdSeccion())) continue;
             for (FormularioColumna c : seccion.getColumnas()) {
                 if (!Boolean.TRUE.equals(c.getActivo()) || !Boolean.TRUE.equals(c.getObligatorio())) continue;
+                // PC-09: la criticidad que fijó el cliente al solicitar ya está resuelta (NS-07: nadie la guarda en el formulario). Exigirla aquí dejaba sin poder enviar
+                // a revisión los formatos donde es obligatoria (académica, laboral, personal, financiero y visita) en toda solicitud nueva.
+                if (esCriticidadDeSolicitud(subproceso, c)) continue;
                 String etiqueta = seccion.getNombre() + " › " + (c.getNombre() != null ? c.getNombre() : c.getClave());
                 if (seccion.getTipo() == TipoSeccionFormulario.CAMPOS) {
                     boolean lleno = datos.stream().anyMatch(d -> d.getFila() == null && d.getColumna().getIdColumna().equals(c.getIdColumna())
@@ -684,7 +690,9 @@ public class FormularioService {
                 servicio != null ? servicio.getFechaSolicitud() : null,
                 candidato != null ? candidatoInfoService.resolverTablasFijas(candidato).getOrDefault("inactividades", List.of()) : List.of(),
                 candidatoInfoService.declaroSinEstudios(candidato),
-                subproceso.getConclusion(), subproceso.getConclusionPublicada(), subproceso.getNivelPublicado(), subproceso.getFechaPublicado()
+                subproceso.getConclusion(), subproceso.getConclusionPublicada(), subproceso.getNivelPublicado(), subproceso.getFechaPublicado(),
+                seguimientoInforme == null ? null : seguimientoInforme.publicacion(subproceso),
+                seguimientoInforme == null ? null : seguimientoInforme.devolucion(subproceso)
         );
     }
 
@@ -754,7 +762,9 @@ public class FormularioService {
                 .filter(s -> !omitidas.contains(s.getIdSeccion()))
                 .filter(s -> !congelado || s.getVersionCreacion() <= subproceso.getVersionPlantilla())
                 .flatMap(s -> s.getColumnas().stream())
-                .filter(c -> Boolean.TRUE.equals(c.getActivo()) && !c.esAutomatica())
+                // PC-09: la criticidad que fijó el cliente en la solicitud no la diligencia ni la guarda el analista (NS-07); contarla como «por llenar» dejaba
+                // «Datos del evaluado» siempre incompleta y la poligrafía/antecedentes de una solicitud nueva no se podía enviar a revisión.
+                .filter(c -> Boolean.TRUE.equals(c.getActivo()) && !c.esAutomatica() && !esCriticidadDeSolicitud(subproceso, c))
                 .map(FormularioColumna::getIdColumna)
                 .collect(Collectors.toSet());
         int total = columnasActivasIds.size();
@@ -792,7 +802,7 @@ public class FormularioService {
         for (FormularioSeccion s : seccionesVigentes) {
             double fraccion;
             if (s.getTipo() == TipoSeccionFormulario.CAMPOS) {
-                List<Integer> cols = s.getColumnas().stream().filter(c -> Boolean.TRUE.equals(c.getActivo()) && !c.esAutomatica())
+                List<Integer> cols = s.getColumnas().stream().filter(c -> Boolean.TRUE.equals(c.getActivo()) && !c.esAutomatica() && !esCriticidadDeSolicitud(subproceso, c))
                         .map(FormularioColumna::getIdColumna).toList();
                 if (cols.isEmpty()) continue;
                 fraccion = cols.stream().filter(llenosIds::contains).count() / (double) cols.size();

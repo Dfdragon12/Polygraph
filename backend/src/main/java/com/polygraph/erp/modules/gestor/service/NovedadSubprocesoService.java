@@ -143,6 +143,31 @@ public class NovedadSubprocesoService {
         return toResponse(novedad, List.of());
     }
 
+    /**
+     * PC-04 · «Solicitar corrección» de un informe ya PUBLICADO: queda como novedad de ese subproceso, del tipo del motivo (CORRECCION_*), para que el gestor la vea y
+     * la atienda con las herramientas de siempre. {@link #registrar} no admite un subproceso publicado, por eso esto es aparte. El cliente no la ve (visible_cliente = false).
+     * No avisa: quien la pide ({@code PublicacionSubprocesoService}) le manda al gestor UN aviso con el motivo.
+     */
+    @Transactional
+    public NovedadSubproceso registrarCorreccion(ServicioSubproceso subproceso, String claveTipo, String descripcion, Usuario actor) {
+        if (!esEjecutorAsignado(subproceso, actor)) {
+            throw new ApiException("Solo quien ejecutó este informe puede pedir su corrección.", HttpStatus.FORBIDDEN);
+        }
+        if (subproceso.getEstado() != EstadoSubproceso.PUBLICADO) {
+            throw new ApiException("Solo se pide corrección de un informe publicado.", HttpStatus.CONFLICT);
+        }
+        TipoNovedad tipo = tipoNovedadRepository.findByClave(claveTipo)
+                .filter(t -> Boolean.TRUE.equals(t.getActivo()) && Boolean.TRUE.equals(t.getCategoria().getActivo()))
+                .filter(t -> t.aplicaA(subproceso.getTipoProgreso().getRolResponsable()))
+                .orElseThrow(() -> new ApiException("Ese motivo de corrección no está disponible. Elige otro.", HttpStatus.BAD_REQUEST));
+        NovedadSubproceso novedad = novedadRepository.save(NovedadSubproceso.builder()
+                .servicioSubproceso(subproceso).tipo(tipo)
+                .descripcion(descripcion.length() > 2000 ? descripcion.substring(0, 2000) : descripcion)
+                .registradoPor(actor).build());
+        log.info("Corrección solicitada como novedad: novedad={}, subproceso={}, tipo={}, actor={}", novedad.getId(), subproceso.getId(), claveTipo, actor.getIdUsuario());
+        return novedad;
+    }
+
     /** Cuando analista/poligrafista/visitador devuelve un documento del candidato desde "Soportes"
      *  (Denegado, Ilegible, Vencido, Incompleto, No corresponde — un tipo de novedad por motivo, V199),
      *  queda registrado como novedad de SU subproceso — gestor y programador se enteran igual que

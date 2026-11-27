@@ -80,6 +80,28 @@ public class ServicioSubproceso {
     @Column(name = "publicado_por")
     private Long publicadoPor;
 
+    /** PC-04: la última devolución (motivo, detalle, quién y cuándo). Va con la marca {@code devuelto}: se llena al devolver y se limpia cuando el ejecutor vuelve a enviar. */
+    @Column(name = "motivo_devolucion", length = 400)
+    private String motivoDevolucion;
+
+    @Column(name = "detalle_devolucion", columnDefinition = "TEXT")
+    private String detalleDevolucion;
+
+    @Column(name = "devuelto_por")
+    private Long devueltoPor;
+
+    @Column(name = "fecha_devuelto")
+    private LocalDateTime fechaDevuelto;
+
+    /** Deja la marca {@code devuelto} y los datos de su devolución en blanco (el ejecutor volvió a enviar, o el informe se publicó). */
+    public void limpiarDevolucion() {
+        this.devuelto = false;
+        this.motivoDevolucion = null;
+        this.detalleDevolucion = null;
+        this.devueltoPor = null;
+        this.fechaDevuelto = null;
+    }
+
     @Column(name = "observaciones", columnDefinition = "TEXT")
     private String observaciones;
 

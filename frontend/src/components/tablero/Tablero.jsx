@@ -236,11 +236,10 @@ export function BarraEstados({ titulo, descripcion, estados, destacado, onClick 
           {descripcion && <p className="text-xs text-gray-500">{descripcion}</p>}
         </div>
         <div className="flex items-baseline gap-4 text-right">
-          {destacado && <>
+          {/* PC-04: contadores sin porcentajes ni «en total», como en el resto de módulos (un servicio puede estar en varios estados). */}
+          {destacado && (
             <div><p className="text-2xl font-bold tabular-nums text-gray-900">{destacado.valor}</p><p className="text-[11px] text-gray-500">{destacado.etiqueta}</p></div>
-            <div className="h-8 w-px bg-gray-200" />
-          </>}
-          <div><p className="text-2xl font-bold tabular-nums text-gray-400">{total}</p><p className="text-[11px] text-gray-500">en total</p></div>
+          )}
         </div>
       </div>
 
@@ -261,7 +260,6 @@ export function BarraEstados({ titulo, descripcion, estados, destacado, onClick 
             </span>
             <span className="mt-0.5 flex items-baseline gap-1.5">
               <span className="text-lg font-semibold tabular-nums text-gray-900">{x.value}</span>
-              <span className="text-[11px] text-gray-400">{total > 0 ? `${Math.round((x.value / total) * 100)}%` : ''}</span>
             </span>
           </button>
         ))}

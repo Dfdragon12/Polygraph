@@ -77,7 +77,8 @@ class EmisionEstudioServiceTest {
         documentos = mock(DocumentoEstudioRepository.class);
         cola = mock(ColaTrabajosService.class);
         UsuarioRepository usuarios = mock(UsuarioRepository.class);
-        servicio = new EmisionEstudioService(servicios, subprocesos, usuarios, riesgo, cancelacion, documentos, cola, mock(JdbcTemplate.class), mock(AlmacenTrabajos.class));
+        servicio = new EmisionEstudioService(servicios, subprocesos, usuarios, riesgo, cancelacion, documentos, cola, mock(JdbcTemplate.class), mock(AlmacenTrabajos.class),
+                mock(com.polygraph.erp.shared.repository.NotificacionRepository.class));
         s = Servicio.builder().idServicio(52).cliente(Cliente.builder().idCliente(1).build()).estado(EstadoServicio.FINALIZADO).build();
         when(sesion.getUsername()).thenReturn("g@x.co");
         when(usuarios.findByEmail("g@x.co")).thenReturn(Optional.of(gestor));
@@ -98,7 +99,7 @@ class EmisionEstudioServiceTest {
         when(subprocesos.findByServicio_IdServicioOrderByTipoProgreso_OrdenAsc(52)).thenReturn(List.of(sp(1, "Antecedentes", EstadoSubproceso.PUBLICADO), sp(2, "Visita", EstadoSubproceso.EN_EJECUCION)));
         assertThatThrownBy(() -> servicio.emitir(52, new EmitirEstudioRequest("FINAL", "Nota", false, null), sesion))
                 .isInstanceOf(ApiException.class).hasMessageContaining("faltan por publicar Visita");
-        verify(cancelacion, never()).cambiarEstado(any(), any(), any());
+        verify(cancelacion, never()).publicarEstudioSinAviso(any(), any(), any());
         assertThat(s.getPastaEstado()).isEqualTo(PastaEstado.PENDIENTE);
     }
 
@@ -121,7 +122,7 @@ class EmisionEstudioServiceTest {
         assertThat(r.version()).isEqualTo(1);
         assertThat(s.getPastaEstado()).isEqualTo(PastaEstado.PRELIMINAR);
         assertThat(s.getConceptoGestor()).isEqualTo("Pendiente la visita");
-        verify(cancelacion, never()).cambiarEstado(any(), any(), any());
+        verify(cancelacion, never()).publicarEstudioSinAviso(any(), any(), any());
         ArgumentCaptor<DocumentoEstudio> c = ArgumentCaptor.forClass(DocumentoEstudio.class);
         verify(documentos).save(c.capture());
         assertThat(c.getValue().getNivel()).isNull();
@@ -142,12 +143,14 @@ class EmisionEstudioServiceTest {
         assertThat(r.version()).isEqualTo(2);
         verify(documentos).invalidar(52);
         ArgumentCaptor<CambioEstadoRequest> c = ArgumentCaptor.forClass(CambioEstadoRequest.class);
-        verify(cancelacion).cambiarEstado(eq(52), c.capture(), any());
+        verify(cancelacion).publicarEstudioSinAviso(eq(52), c.capture(), any());   // sin avisar al cliente: el aviso sale cuando el PDF queda LISTO
         assertThat(c.getValue().estado()).isEqualTo("PUBLICADO");
         assertThat(c.getValue().observacion()).isEqualTo("Todo en orden");
-        verify(cola, never()).encolar(any(), any(), any());                       // todavía no hay commit
+        verify(cola, never()).encolarTrasCommit(any(), any(), any());              // todavía no hay commit
         for (TransactionSynchronization t : TransactionSynchronizationManager.getSynchronizations()) t.afterCommit();
-        verify(cola).encolar(eq(com.polygraph.erp.shared.enums.TipoTrabajo.ESTUDIO_PDF), any(), any());
+        // PC-01: en una transacción NUEVA (REQUIRES_NEW): un INSERT que se uniera a la ya cerrada nunca se confirmaría
+        verify(cola).encolarTrasCommit(eq(com.polygraph.erp.shared.enums.TipoTrabajo.ESTUDIO_PDF), any(), any());
+        verify(cola, never()).encolar(any(), any(), any());
     }
 
     @Test

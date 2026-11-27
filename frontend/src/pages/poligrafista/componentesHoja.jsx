@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import CampoDinero from '../visitador/CampoDinero'
 import CampoFecha from '../../components/CampoFecha'
 import { Link } from 'react-router-dom'
+import AvisoConclusion from '../../components/AvisoConclusion'
 import { InputPorTipo } from '../shared/Formulario'
 import { tituloLimpio } from './revisionFormato'
 
@@ -95,6 +96,7 @@ export function CampoHoja({ c, value, onChange, disabled, idServicioSubproceso, 
       ) : (
         <div className={enLinea ? 'min-w-0 flex-1 basis-48' : 'mt-1'}>
           <InputHoja id={id} c={c} value={value} onChange={onChange} disabled={disabled || c.automatico} idServicioSubproceso={idServicioSubproceso} onError={onError} />
+          {c.esConclusion && !disabled && <AvisoConclusion texto={value} />}
         </div>
       )}
     </div>

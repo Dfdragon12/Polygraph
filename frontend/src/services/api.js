@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { tokenProveedor, enModoProveedor, CABECERA_PROVEEDOR } from './accesoProveedor'
+import { recordarRuta } from '../utils/rutaDeRetorno'
 
 const api = axios.create({
   baseURL: '/api/v1',
@@ -28,6 +29,8 @@ api.interceptors.request.use((config) => {
 })
 
 function limpiarSesionYRedirigir() {
+  // PC-06: la sesión venció (no la cerró la persona): se recuerda dónde estaba para volver ahí al entrar de nuevo.
+  try { recordarRuta(JSON.parse(localStorage.getItem('usuario'))?.id) } catch { /* sin usuario guardado */ }
   localStorage.removeItem('token')
   localStorage.removeItem('refreshToken')
   localStorage.removeItem('usuario')

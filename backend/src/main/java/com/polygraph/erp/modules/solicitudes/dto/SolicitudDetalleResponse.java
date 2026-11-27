@@ -52,7 +52,8 @@ public record SolicitudDetalleResponse(
         String notaGestor,
         EstudioPdfResponse estudioPdf
 ) {
-    public record EstudioPdfResponse(Integer version, String estado, Integer paginas, String tipo) {}
+    /** disponible = la regla única EstudioListo (publicado, pasta emitida y PDF LISTO): lo único que habilita «Tu informe está listo» y la descarga. */
+    public record EstudioPdfResponse(Integer version, String estado, Integer paginas, String tipo, boolean disponible) {}
 
     /** Cuánto le vale la solicitud al cliente.
      *  POSPAGO: valores exactos del cargo de esta solicitud (movimientos_credito_pospago) y su factura.

@@ -85,7 +85,10 @@ public record AsignacionResponse(
         String conclusion,
         String conclusionPublicada,
         String nivelPublicado,
-        BigDecimal puntajePublicado
+        BigDecimal puntajePublicado,
+        // PC-04: la devolución vigente (solo con la marca «devuelto»): el motivo de la lista y lo que el gestor explicó. La marca no es un estado.
+        String motivoDevolucion,
+        String detalleDevolucion
 ) {
     public AsignacionResponse conRiesgo(boolean califica, String nivel, BigDecimal puntaje, boolean critico) {
         return new AsignacionResponse(id, idServicio, nombresEvaluado, apellidosEvaluado, cedulaEvaluado, cargo, proceso,
@@ -94,7 +97,7 @@ public record AsignacionResponse(
                 observaciones, idCiudad, nombreCiudad, estadoConfirmacion, notasConfirmacion, idProgramadorResponsable,
                 nombreProgramadorResponsable, versionPlantilla, versionPlantillaActual, lugar,
                 documentosPorRevisar, documentosDevueltos, novedadesAbiertas, califica, nivel, puntaje, critico,
-                iniciado, devuelto, reprogramaciones, tiempo, evaluadoAvisado, noHaLlegadoDisponible, noSePresentoDisponible, porConfirmar, atrasadoAgenda, diasHabilesAtrasoAgenda, conclusion, conclusionPublicada, nivelPublicado, puntajePublicado);
+                iniciado, devuelto, reprogramaciones, tiempo, evaluadoAvisado, noHaLlegadoDisponible, noSePresentoDisponible, porConfirmar, atrasadoAgenda, diasHabilesAtrasoAgenda, conclusion, conclusionPublicada, nivelPublicado, puntajePublicado, motivoDevolucion, detalleDevolucion);
     }
 
     public AsignacionResponse conIndicadores(int documentosPorRevisar, int documentosDevueltos, int novedadesAbiertas) {
@@ -105,6 +108,6 @@ public record AsignacionResponse(
                 nombreProgramadorResponsable, versionPlantilla, versionPlantillaActual, lugar,
                 documentosPorRevisar, documentosDevueltos, novedadesAbiertas,
                 riesgoCalifica, riesgoNivel, riesgoPuntaje, riesgoCritico,
-                iniciado, devuelto, reprogramaciones, tiempo, evaluadoAvisado, noHaLlegadoDisponible, noSePresentoDisponible, porConfirmar, atrasadoAgenda, diasHabilesAtrasoAgenda, conclusion, conclusionPublicada, nivelPublicado, puntajePublicado);
+                iniciado, devuelto, reprogramaciones, tiempo, evaluadoAvisado, noHaLlegadoDisponible, noSePresentoDisponible, porConfirmar, atrasadoAgenda, diasHabilesAtrasoAgenda, conclusion, conclusionPublicada, nivelPublicado, puntajePublicado, motivoDevolucion, detalleDevolucion);
     }
 }

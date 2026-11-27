@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, Fragment } from 'react'
 import trabajoService from '../../services/trabajoService'
 import Toast from '../../components/Toast'
+import DiagnosticoServidor from '../../components/admin/DiagnosticoServidor'
 import { ConfirmModal } from '../../components/ui/Modal'
 import { useIntervaloVisible } from '../../hooks/useIntervaloVisible'
 import {
@@ -16,6 +17,8 @@ const ETIQUETA_TIPO = {
   CARGA_MASIVA: 'Carga masiva',
   INFORME_PDF: 'Informe PDF (cliente)',
   FORMULARIO_PDF: 'PDF de formulario (interno)',
+  ESTUDIO_PDF: 'PDF del estudio completo',
+  RECALCULO_TIEMPO: 'Recalcular tiempos',
 }
 const ESTADOS = [
   { valor: '', etiqueta: 'Todos' },
@@ -188,6 +191,8 @@ export default function TrabajosSegundoPlano() {
 
       <AlertaError mensaje={error} onCerrar={() => setError(null)} />
 
+      <div className="mb-5"><DiagnosticoServidor /></div>
+
       {!metricas ? (
         <EsqueletoPagina indicadores={4} bloques={2} />
       ) : (
@@ -210,7 +215,7 @@ export default function TrabajosSegundoPlano() {
                 ))}
                 {metricas.asincronoGeneral && (
                   <Uso etiqueta="Correos, notificaciones y pagos" usado={metricas.asincronoGeneral.enCola} maximo={metricas.asincronoGeneral.capacidadCola}
-                    nota={`Cola en memoria · ${metricas.asincronoGeneral.enCurso} de ${metricas.asincronoGeneral.hilos} hilos trabajando`} />
+                    nota={`Tareas rápidas (correos, avisos, pagos): se pierden si el servidor se reinicia · ${metricas.asincronoGeneral.enCurso} de ${metricas.asincronoGeneral.hilos} hilos trabajando`} />
                 )}
               </div>
             </TarjetaSeccion>
@@ -277,6 +282,7 @@ export default function TrabajosSegundoPlano() {
                           onClick={() => setAbierto(abierto === t.id ? null : t.id)}>
                           <td className="px-5 py-3">
                             <p className="font-medium text-gray-900">{ETIQUETA_TIPO[t.tipo] ?? t.tipo}</p>
+                            {t.idServicio != null && <p className="text-xs font-medium text-gray-700">Servicio #{t.idServicio}{t.version != null ? ` · v${t.version}` : ''}</p>}
                             <p className="text-xs text-gray-400" title={fecha(t.fechaCreacion)}>{haceCuanto(t.fechaCreacion)}</p>
                           </td>
                           <td className="px-4 py-3"><ChipEstado estado={t.estado} progreso={t.progreso} /></td>

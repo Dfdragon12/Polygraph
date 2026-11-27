@@ -83,6 +83,7 @@ public class EvaluadoController {
     public ResponseEntity<Void> enviarFormulario(
             @PathVariable String token,
             @Valid @RequestBody HojaVidaRequest request) {
+        evaluadoService.exigirMinimosDelEnlace(token, request);   // PC-09: experiencia y 4 referencias, solo en el enlace completo (antes lo hacía el DTO y rechazaba el corto)
         evaluadoService.enviarFormulario(token, request);
         return ResponseEntity.ok().build();
     }

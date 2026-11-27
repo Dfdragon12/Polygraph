@@ -7,6 +7,8 @@ import com.polygraph.erp.shared.enums.EstadoTrabajo;
 import com.polygraph.erp.shared.enums.TipoTrabajo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -33,6 +35,24 @@ public class LimpiezaTrabajosJob {
     private final AlmacenTrabajos almacen;
     private final ColaTrabajosService cola;
     private final TransactionTemplate transaccion;
+
+    /**
+     * PC-01: al arrancar, todo lo que quedó en PROCESANDO se interrumpió con el reinicio (este servidor es el único que despacha): vuelve a la cola, o queda
+     * FALLIDO (reintentable en Admin › Trabajos) si ya no le quedan intentos. Lo que está EN_COLA sigue su curso: el despachador lo toma solo.
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void rescatarAlArrancar() {
+        if (!propiedades.isHabilitado()) return;
+        try {
+            transaccion.executeWithoutResult(s -> {
+                for (TipoTrabajo tipo : TipoTrabajo.values()) {
+                    repository.findByTipoAndEstadoAndFechaInicioBefore(tipo, EstadoTrabajo.PROCESANDO, LocalDateTime.now()).forEach(this::rescatar);
+                }
+            });
+        } catch (Exception e) {
+            log.error("No se pudieron retomar los trabajos que estaban procesándose al reiniciar: {}", e.getMessage(), e);
+        }
+    }
 
     @Scheduled(fixedDelay = 5 * 60 * 1000, initialDelay = 60 * 1000)
     public void rescatarAtascados() {

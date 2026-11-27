@@ -13,6 +13,7 @@ import com.polygraph.erp.modules.servicios.entity.LinkCandidato;
 import com.polygraph.erp.modules.servicios.entity.Servicio;
 import com.polygraph.erp.modules.servicios.repository.LinkCandidatoRepository;
 import com.polygraph.erp.shared.enums.TipoEnlace;
+import com.polygraph.erp.shared.estados.EstadoEnlaceCandidato;
 import com.polygraph.erp.shared.exceptions.ApiException;
 import com.polygraph.erp.shared.service.CalendarioHabilService;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +36,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * PB-04: enviar el enlace al candidato y seguirlo. El tipo (corto o completo) lo decide el sistema. Canales: correo (sale solo) y WhatsApp (se arma el
@@ -66,8 +68,9 @@ public class EnvioEnlaceService {
 
     public record Seccion(String titulo, String detalle) {}
 
+    /** venceReferencia: la vigencia que tendrá el envío que se haga AHORA (2 días hábiles desde hoy, PC-03), no la de un envío anterior. envios: el historial, del más reciente al más antiguo. */
     public record Contexto(Long idLink, Integer idServicio, String tipoEnlace, String etiqueta, List<Seccion> secciones, String celular, String correo,
-                           String mensaje, LocalDate venceReferencia, String url, String estadoEnlace) {}
+                           String mensaje, LocalDate venceReferencia, String url, String estadoEnlace, List<HistorialEnvios.Envio> envios) {}
 
     public record Paso(String clave, String titulo, String detalle, String estado, LocalDateTime fecha) {}
 
@@ -84,11 +87,28 @@ public class EnvioEnlaceService {
         Servicio s = link.getServicio();
         TipoEnlace tipo = evaluadoService.tipoDeEnlace(s);
         Candidato c = s.getCandidato();
-        LocalDate vence = referencia(link);
+        // PC-03 C: cada envío recalcula la vigencia desde AHORA. La ventana y el mensaje usan esa fecha, nunca la de un envío anterior (ya pasada).
+        LocalDate vence = vigenciaDeUnEnvioHoy();
         String url = urlDe(link);
         return new Contexto(link.getId(), s.getIdServicio(), tipo.name(), etiqueta(tipo), secciones(tipo),
                 c == null ? null : c.getCelular(), c == null ? null : c.getEmailPrincipal(),
-                mensajePlantilla(s, c, url, vence), vence, url, EstadoLink.de(link).name());
+                mensajePlantilla(s, c, url, vence), vence, url, EstadoLink.de(link).name(), historialDe(link));
+    }
+
+    /** La vigencia de un envío hecho hoy: 2 días hábiles (con festivos). */
+    LocalDate vigenciaDeUnEnvioHoy() {
+        return calendario.sumarDiasHabiles(calendario.hoy(), VIGENCIA_DIAS_HABILES);
+    }
+
+    /** UNO por envío o reenvío: fecha, canales, quién y hasta cuándo valía. El primer envío nunca se pisa. */
+    List<HistorialEnvios.Envio> historialDe(LinkCandidato link) {
+        List<HistorialEnvios.Fila> filas = jdbc.query(
+                "SELECT e.id, e.id_envio, e.canal, e.fecha, e.vigencia_hasta, TRIM(COALESCE(u.nombre,'') || ' ' || COALESCE(u.apellido,'')) AS usuario "
+                        + "FROM envios_enlace e LEFT JOIN usuarios u ON u.id_usuario = e.id_usuario WHERE e.id_link = ? ORDER BY e.fecha, e.id",
+                (rs, n) -> new HistorialEnvios.Fila(rs.getLong("id"), rs.getString("id_envio"), rs.getString("canal"), rs.getTimestamp("fecha").toLocalDateTime(),
+                        rs.getDate("vigencia_hasta") == null ? null : rs.getDate("vigencia_hasta").toLocalDate(), rs.getString("usuario")),
+                link.getId());
+        return HistorialEnvios.agrupar(filas);
     }
 
     static String etiqueta(TipoEnlace t) {
@@ -109,7 +129,8 @@ public class EnvioEnlaceService {
     String mensajePlantilla(Servicio s, Candidato c, String url, LocalDate vence) {
         String nombre = c == null ? "" : c.getNombres().trim();
         String empresa = s.getCliente() == null ? "tu empleador" : nombreCliente(s.getCliente());
-        return "Hola, " + nombre + ". Te escribimos de Polygraph Service. " + empresa + " nos pidió tu estudio de seguridad"
+        // PC-03 E: el servicio que se pidió, con su nombre («tu prueba de poligrafía pre empleo»); «estudio de seguridad» solo si el servicio se llama así.
+        return "Hola, " + nombre + ". Te escribimos de Polygraph Service. " + empresa + " nos pidió " + FraseServicio.de(s.getProceso() == null ? null : s.getProceso().getNombreProceso())
                 + (s.getCargo() == null || s.getCargo().isBlank() ? "" : " para el cargo de " + s.getCargo()) + ".\n"
                 + "Llena tu información en este enlace seguro: " + url + "\n"
                 + "Para entrar, escribe tu número de cédula. Puedes guardar y seguir después. Te escribiremos un recordatorio hasta el "
@@ -135,16 +156,18 @@ public class EnvioEnlaceService {
         cambiarContacto(link, c, req, actor);
 
         LocalDateTime ahora = LocalDateTime.now();
-        LocalDate vence = calendario.sumarDiasHabiles(calendario.hoy(), VIGENCIA_DIAS_HABILES);
+        // PC-03 C: cada envío (y reenvío) recalcula la vigencia desde AHORA y la deja anotada en SU fila del historial; el primer envío no se toca.
+        LocalDate vence = vigenciaDeUnEnvioHoy();
         link.setFechaExpiracion(vence.atTime(LocalTime.of(23, 59, 59)));   // fecha de referencia, no cierra el acceso (V197)
         if (link.getEnviadoEn() == null) link.setEnviadoEn(ahora);
+        String idEnvio = UUID.randomUUID().toString();   // las filas de ESTE envío (una por canal) comparten el id
 
         List<String> enviados = new ArrayList<>();
         String whatsappUrl = null;
         if (canales.contains("CORREO")) {
             if (c.getEmailPrincipal() == null || c.getEmailPrincipal().isBlank()) throw new ApiException("El candidato no tiene correo. Escríbelo y reintenta.", HttpStatus.BAD_REQUEST);
             emailService.enviarLinkEvaluado(c.getEmailPrincipal(), nombreCompleto(c), link.getToken(), s.getProceso() == null ? null : s.getProceso().getNombreProceso());
-            registrar(link.getId(), "CORREO", c.getEmailPrincipal(), null, actor.getIdUsuario(), false);
+            registrar(link.getId(), "CORREO", c.getEmailPrincipal(), null, actor.getIdUsuario(), false, idEnvio, vence);
             enviados.add("CORREO");
         }
         if (canales.contains("WHATSAPP")) {
@@ -152,11 +175,11 @@ public class EnvioEnlaceService {
             if (tel.length() < 10) throw new ApiException("El celular del candidato no es válido. Corrígelo y reintenta.", HttpStatus.BAD_REQUEST);
             String mensaje = req.mensaje() == null || req.mensaje().isBlank() ? mensajePlantilla(s, c, urlDe(link), vence) : req.mensaje().trim();
             whatsappUrl = "https://wa.me/" + (tel.startsWith("57") && tel.length() == 12 ? tel : "57" + tel) + "?text=" + URLEncoder.encode(mensaje, StandardCharsets.UTF_8);
-            registrar(link.getId(), "WHATSAPP", c.getCelular(), "Abierto por el gestor desde WhatsApp", actor.getIdUsuario(), false);
+            registrar(link.getId(), "WHATSAPP", c.getCelular(), "Abierto por el gestor desde WhatsApp", actor.getIdUsuario(), false, idEnvio, vence);
             enviados.add("WHATSAPP");
         }
         if (canales.contains("COPIA")) {
-            registrar(link.getId(), "COPIA", null, "Copiado para enviarlo por fuera de la plataforma", actor.getIdUsuario(), false);
+            registrar(link.getId(), "COPIA", null, "Copiado para enviarlo por fuera de la plataforma", actor.getIdUsuario(), false, idEnvio, vence);
             enviados.add("COPIA");
         }
         log.info("Enlace enviado: link={}, servicio={}, canales={}, por={}", link.getId(), s.getIdServicio(), enviados, actor.getIdUsuario());
@@ -217,14 +240,19 @@ public class EnvioEnlaceService {
                         + "WHERE e.id_link = ? ORDER BY e.fecha", link.getId());
         List<Paso> pasos = new ArrayList<>();
 
-        List<Map<String, Object>> salidas = envios.stream().filter(e -> Set.of("CORREO", "WHATSAPP").contains(String.valueOf(e.get("canal")))).toList();
+        // PC-03: el envío del sistema anterior (ANTERIOR) también cuenta: si no, aquí diría «Sin enviar» mientras el cliente ve que sí se envió.
+        List<Map<String, Object>> salidas = envios.stream().filter(e -> Set.of("CORREO", "WHATSAPP", "ANTERIOR").contains(String.valueOf(e.get("canal")))).toList();
         if (salidas.isEmpty()) {
             pasos.add(new Paso("ENVIADO", "Sin enviar", "Todavía no se ha enviado por WhatsApp ni por correo", "PENDIENTE", null));
         } else {
-            String canales = salidas.stream().map(e -> "CORREO".equals(e.get("canal")) ? "correo" : "WhatsApp").distinct().reduce((a, b) -> a + " y " + b).orElse("");
             Map<String, Object> primera = salidas.get(0);
-            pasos.add(new Paso("ENVIADO", "Enviado por " + canales, primera.get("nombre") + " · " + salidas.stream().map(e -> String.valueOf(e.get("destino"))).distinct().reduce((a, b) -> a + " · " + b).orElse(""),
-                    "HECHO", ((Timestamp) primera.get("fecha")).toLocalDateTime()));
+            if ("ANTERIOR".equals(primera.get("canal"))) {
+                pasos.add(new Paso("ENVIADO", "Enviado", "Envío del sistema anterior · se anotó con la fecha de creación del enlace", "HECHO", ((Timestamp) primera.get("fecha")).toLocalDateTime()));
+            } else {
+                String canales = salidas.stream().filter(e -> !"ANTERIOR".equals(e.get("canal"))).map(e -> "CORREO".equals(e.get("canal")) ? "correo" : "WhatsApp").distinct().reduce((a, b) -> a + " y " + b).orElse("");
+                pasos.add(new Paso("ENVIADO", "Enviado por " + canales, primera.get("nombre") + " · " + salidas.stream().map(e -> String.valueOf(e.get("destino"))).distinct().reduce((a, b) -> a + " · " + b).orElse(""),
+                        "HECHO", ((Timestamp) primera.get("fecha")).toLocalDateTime()));
+            }
         }
 
         pasos.add(link.getFechaPrimerIngreso() != null
@@ -244,15 +272,19 @@ public class EnvioEnlaceService {
 
         Map<String, Object> recordatorio = envios.stream().filter(e -> "RECORDATORIO".equals(e.get("canal"))).reduce((a, b) -> b).orElse(null);
         LocalDate vence = referencia(link);
-        pasos.add(new Paso("VENCE", "Vence", recordatorio != null
+        boolean vencido = !enviado && !salidas.isEmpty() && vence.isBefore(calendario.hoy());
+        pasos.add(new Paso("VENCE", vencido ? "Venció" : "Vence", recordatorio != null
                 ? "Recordatorio automático · " + ((Timestamp) recordatorio.get("fecha")).toLocalDateTime().format(DateTimeFormatter.ofPattern("d/MM HH:mm"))
                 : "Recordatorio automático a las 24 h si no lo abre o no lo termina", enviado ? "HECHO" : "PENDIENTE", vence.atStartOfDay()));
         return pasos;
     }
 
-    /** Lo que el CLIENTE ve del enlace de su candidato (PB-05): cuándo se envió, si entró con su cédula, cuántas secciones lleva y el recordatorio. */
+    /**
+     * Lo que el CLIENTE ve del enlace de su candidato (PB-05). PC-03: {@code estado} y {@code texto} los calcula el servidor con una sola regla
+     * ({@link EstadoEnlaceCandidato}); las pantallas muestran ese texto y no arman frases con los demás datos, que quedan por si hacen falta.
+     */
     public record SeguimientoCliente(String tipoEnlace, LocalDateTime enviadoEn, LocalDateTime abiertoEn, int seccionesHechas, int seccionesTotal,
-                                     LocalDateTime recordatorioEn, LocalDate vence) {}
+                                     LocalDateTime recordatorioEn, LocalDate vence, String estado, String texto) {}
 
     @Transactional(readOnly = true)
     public SeguimientoCliente seguimientoParaCliente(LinkCandidato link) {
@@ -260,9 +292,13 @@ public class EnvioEnlaceService {
         TipoEnlace tipo = evaluadoService.tipoDeEnlace(s);
         int total = tipo == TipoEnlace.CORTO ? 3 : 5;
         Timestamp recordatorio = jdbc.queryForObject("SELECT MAX(fecha) FROM envios_enlace WHERE id_link = ? AND canal = 'RECORDATORIO'", Timestamp.class, link.getId());
-        return new SeguimientoCliente(tipo.name(), link.getEnviadoEn(), link.getFechaPrimerIngreso(),
-                Boolean.TRUE.equals(link.getUsado()) ? total : seccionesHechas(s, tipo), total,
-                recordatorio == null ? null : recordatorio.toLocalDateTime(), referencia(link));
+        boolean enviadoPorCandidato = Boolean.TRUE.equals(link.getUsado());
+        int hechas = enviadoPorCandidato ? total : seccionesHechas(s, tipo);
+        LocalDateTime recordatorioEn = recordatorio == null ? null : recordatorio.toLocalDateTime();
+        LocalDate vence = referencia(link);
+        var estado = EstadoEnlaceCandidato.calcular(new EstadoEnlaceCandidato.Datos(link.getEnviadoEn(), link.getFechaPrimerIngreso(), enviadoPorCandidato, link.getFechaUso(),
+                hechas, total, vence, recordatorioEn), calendario.hoy());
+        return new SeguimientoCliente(tipo.name(), link.getEnviadoEn(), link.getFechaPrimerIngreso(), hechas, total, recordatorioEn, vence, estado.estado().name(), estado.texto());
     }
 
     /** Cuántas de las secciones del enlace lleva diligenciadas, según el paso donde va su hoja de vida. */
@@ -287,8 +323,14 @@ public class EnvioEnlaceService {
     }
 
     void registrar(Long idLink, String canal, String destino, String detalle, Long idUsuario, boolean automatico) {
-        jdbc.update("INSERT INTO envios_enlace (id_link, canal, destino, detalle, id_usuario, automatico, fecha) VALUES (?,?,?,?,?,?,?)",
-                idLink, canal, destino, detalle, idUsuario, automatico, Timestamp.valueOf(LocalDateTime.now()));
+        registrar(idLink, canal, destino, detalle, idUsuario, automatico, null, null);
+    }
+
+    /** idEnvio y vigenciaHasta solo van en las filas de un envío (correo, WhatsApp, copia): agrupan sus canales y dicen hasta cuándo valía ese envío. */
+    void registrar(Long idLink, String canal, String destino, String detalle, Long idUsuario, boolean automatico, String idEnvio, LocalDate vigenciaHasta) {
+        jdbc.update("INSERT INTO envios_enlace (id_link, canal, destino, detalle, id_usuario, automatico, fecha, id_envio, vigencia_hasta) VALUES (?,?,?,?,?,?,?,?,?)",
+                idLink, canal, destino, detalle, idUsuario, automatico, Timestamp.valueOf(LocalDateTime.now()), idEnvio,
+                vigenciaHasta == null ? null : java.sql.Date.valueOf(vigenciaHasta));
     }
 
     private Usuario actor(String email) {

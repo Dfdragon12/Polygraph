@@ -1,0 +1,70 @@
+# PC-08 · Producción: dominio propio y HTTPS automático. NO es el docker-compose.yml de desarrollo (aquel publica la base de datos y pgAdmin al exterior).
+#
+#   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+#
+# Qué queda abierto al mundo: SOLO los puertos 80 y 443 de Caddy (el 80 únicamente para pedir el certificado y redirigir a https). La base de datos, el backend y el nginx del
+# frontend hablan entre sí por la red interna de Docker y no publican ningún puerto. Pasos completos, variables y cómo revisar que todo funcione: README.md, «Cómo publicar».
+# Sin probar en un servidor real todavía (ver el reporte PC-08): primera instalación, hacerla con calma y revisar Admin → Trabajos → «Diagnóstico del servidor».
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: polygraph_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-erp_polygraph}
+      POSTGRES_USER: ${DB_USER:-erp_user}
+      POSTGRES_PASSWORD: ${DB_PASS:?Define DB_PASS en el .env}
+    volumes:
+      - polygraph_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-erp_user} -d ${DB_NAME:-erp_polygraph}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    container_name: polygraph_backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+    volumes:
+      # Documentos de clientes, fotos, plantillas Word, PDF generados y trabajos: fuera del contenedor. SIN este volumen se pierde todo al recrearlo. Hacerle copia de seguridad.
+      - polygraph_uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    container_name: polygraph_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  # HTTPS automático (Let's Encrypt) para el dominio de DOMINIO. Requiere que el DNS del dominio apunte a este servidor y que los puertos 80 y 443 estén abiertos.
+  caddy:
+    image: caddy:2
+    container_name: polygraph_caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMINIO: ${DOMINIO:?Define DOMINIO en el .env (por ejemplo app.polygraph.co)}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+
+volumes:
+  polygraph_data:
+  polygraph_uploads:
+  caddy_data:
+  caddy_config:

@@ -2,6 +2,8 @@ import { precacheAndRoute, cleanupOutdatedCaches, matchPrecache } from 'workbox-
 
 const API_CACHE  = 'polygraph-api-v1'
 const FONT_CACHE = 'polygraph-fonts-v1'
+const ASSETS_CACHE = 'polygraph-assets-v1'   // PC-08: los pedazos de la app que se van usando (con hash en el nombre: nunca cambian)
+const MAX_ASSETS = 160
 
 /* ── Precache de los assets del build (JS/CSS/HTML con hash) ──
    self.__WB_MANIFEST lo reemplaza vite-plugin-pwa en build time con la lista real de
@@ -12,7 +14,7 @@ cleanupOutdatedCaches()
 self.skipWaiting()
 
 self.addEventListener('activate', event => {
-  const VALID = [API_CACHE, FONT_CACHE]
+  const VALID = [API_CACHE, FONT_CACHE, ASSETS_CACHE]
   event.waitUntil(
     caches.keys()
       .then(keys => Promise.all(
@@ -36,6 +38,12 @@ self.addEventListener('fetch', event => {
   // Fuentes de Google — cache first (largo plazo)
   if (url.hostname.includes('fonts.gstatic.com') || url.hostname.includes('fonts.googleapis.com')) {
     event.respondWith(cacheFirst(request, FONT_CACHE))
+    return
+  }
+
+  // PC-08: pedazos de la app por demanda (/assets/*.js|css con hash): cache-first. La primera vez van a la red; después salen del caché del dispositivo.
+  if (url.origin === self.location.origin && url.pathname.startsWith('/assets/')) {
+    event.respondWith(cacheFirst(request, ASSETS_CACHE).then(async (respuesta) => { recortarCache(ASSETS_CACHE, MAX_ASSETS); return respuesta }))
     return
   }
 
@@ -63,7 +71,7 @@ self.addEventListener('fetch', event => {
     )
   }
 
-  // Cualquier otro asset estático ya lo resuelve precacheAndRoute() arriba.
+  // Las imágenes y el paquete principal los resuelve precacheAndRoute() arriba; los pedazos por demanda, la regla de /assets/.
 })
 
 /* ── Estrategias ── */
@@ -77,6 +85,15 @@ async function cacheFirst(request, cacheName) {
     cache.put(request, response.clone())
   }
   return response
+}
+
+// Cada despliegue trae pedazos con nombre nuevo: se conservan los últimos MAX y se borran los más viejos para que el caché no crezca sin límite.
+async function recortarCache(cacheName, max) {
+  try {
+    const cache = await caches.open(cacheName)
+    const llaves = await cache.keys()
+    if (llaves.length > max) await Promise.all(llaves.slice(0, llaves.length - max).map(k => cache.delete(k)))
+  } catch { /* sin caché: no pasa nada */ }
 }
 
 async function networkFirst(request, cacheName, timeoutMs = 6000) {

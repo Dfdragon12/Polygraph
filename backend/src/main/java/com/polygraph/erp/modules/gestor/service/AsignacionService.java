@@ -103,6 +103,8 @@ public class AsignacionService {
     private final com.polygraph.erp.modules.servicios.repository.NovedadSubprocesoRepository novedadSubprocesoRepository;
     private final com.polygraph.erp.modules.riesgo.service.CalificacionRiesgoService calificacionRiesgoService;
     private final com.polygraph.erp.modules.formularios.service.FormularioService formularioService;
+    /** PC-02: de dónde sale la conclusión del ejecutor (el campo de su formato o el cuadro genérico). */
+    private final com.polygraph.erp.modules.formularios.service.ConclusionFormatoService conclusionFormato;
     private final org.springframework.context.ApplicationEventPublisher eventos;
     private final com.polygraph.erp.modules.catalogo.service.MotivoSubprocesoService motivoService;
     private final com.polygraph.erp.modules.servicios.service.RegistroCambiosService registroCambios;
@@ -754,13 +756,14 @@ public class AsignacionService {
             throw new ApiException("Hay respuestas determinantes sin explicación: " + String.join("; ", sinJustificar)
                     + ". Explica en qué te basas antes de enviarlo.", HttpStatus.CONFLICT);
         }
+        exigirConclusion(asignacion);
         asignacion.setEstado(EstadoSubproceso.FINALIZADO);
         registroCambios.registrar(asignacion, EstadoSubproceso.EN_EJECUCION, EstadoSubproceso.FINALIZADO, null, null, null, actor);
         // PF-09: al enviar el informe, el enlace del proveedor externo deja de servir.
         if (enlaceProveedorService != null) enlaceProveedorService.cerrarAlEnviar(asignacion.getId());
         asignacion.setFechaCompletado(LocalDateTime.now());
         asignacion.marcarIniciado(asignacion.getFechaCompletado());
-        asignacion.setDevuelto(false);   // lo corrigió y lo volvió a enviar: la marca DEVUELTO se limpia
+        asignacion.limpiarDevolucion();   // lo corrigió y lo volvió a enviar: la marca DEVUELTO y los datos de su devolución se limpian
         // Se congela AQUÍ, al completar — no en generarSubprocesos() — porque mientras sigue
         // ASIGNADO el subproceso debe seguir la plantilla vigente (si admin agrega una sección
         // mientras alguien todavía lo está llenando, sí debe verla). Recién al completarse deja
@@ -780,6 +783,22 @@ public class AsignacionService {
         notificarRevisorCompletado(asignacion, actor);
 
         return toResponse(asignacion);
+    }
+
+    /**
+     * PC-02: la conclusión es obligatoria al enviar a revisión y nunca dice «Favorable/Desfavorable» (el resultado lo da el nivel). Se copia a
+     * servicio_subprocesos.conclusion para que la ventana Publicar y el historial lean un solo lugar. Un tipo sin plantilla no tiene dónde escribirla.
+     */
+    void exigirConclusion(ServicioSubproceso asignacion) {
+        if (!formularioSeccionRepository.existsByTipoProgreso_IdTipoProgreso(asignacion.getTipoProgreso().getIdTipoProgreso())) return;
+        String conclusion = conclusionFormato.efectiva(asignacion);
+        if (conclusion == null) {
+            throw new ApiException("Escribe la conclusión antes de enviarlo: es lo que leerá el cliente.", HttpStatus.CONFLICT);
+        }
+        if (com.polygraph.erp.modules.formularios.service.ConclusionFormato.contieneFavorable(conclusion)) {
+            throw new ApiException(com.polygraph.erp.modules.formularios.service.ConclusionFormato.AVISO_FAVORABLE, HttpStatus.BAD_REQUEST);
+        }
+        asignacion.setConclusion(conclusion);
     }
 
     /** Al completar, el subproceso queda esperando que alguien lo apruebe o lo devuelva — antes
@@ -809,7 +828,7 @@ public class AsignacionService {
                         .tipo("SUBPROCESO_COMPLETADO")
                         .titulo(nombreProceso + " listo para revisar")
                         .mensaje(nombreActor + " completó \"" + nombreProceso + "\""
-                                + (evaluado.isBlank() ? "" : " de " + evaluado) + " — revísalo para aprobarlo o devolverlo.")
+                                + (evaluado.isBlank() ? "" : " de " + evaluado) + " — revísalo para publicarlo o devolverlo.")
                         .leida(false)
                         .fechaCreacion(LocalDateTime.now())
                         .realizadoPor(actor)
@@ -841,6 +860,11 @@ public class AsignacionService {
         registroCambios.registrar(asignacion, EstadoSubproceso.FINALIZADO, EstadoSubproceso.EN_EJECUCION, com.polygraph.erp.shared.estados.MaquinaEstadosSubproceso.Marca.DEVUELTO, motivo.nombre(), req.observacion(), actor);
         asignacion.setFechaCompletado(null);
         asignacion.setDevuelto(true);
+        // PC-04: motivo, detalle, quién y cuándo, aparte de «observaciones» (que se pisa al reasignar): lo leen la marca «Devuelto · motivo» y el aviso de arriba del formato.
+        asignacion.setMotivoDevolucion(motivo.nombre());
+        asignacion.setDetalleDevolucion(req.observacion() == null || req.observacion().isBlank() ? null : req.observacion().trim());
+        asignacion.setDevueltoPor(actor.getIdUsuario());
+        asignacion.setFechaDevuelto(LocalDateTime.now());
         asignacion.setObservaciones(detalle);
 
         historialAsignacionService.registrar(asignacion, AccionHistorialAsignacion.DEVUELTO,
@@ -966,20 +990,20 @@ public class AsignacionService {
         registroCambios.registrar(asignacion, EstadoSubproceso.FINALIZADO, EstadoSubproceso.PUBLICADO, null, null, null, actor);
         asignacion.setFechaPublicado(LocalDateTime.now());
         asignacion.marcarIniciado(asignacion.getFechaPublicado());
-        asignacion.setDevuelto(false);
+        asignacion.limpiarDevolucion();
 
         historialAsignacionService.registrar(asignacion, AccionHistorialAsignacion.PUBLICADO,
                 asignacion.getUsuarioAsignado(), asignacion.getUsuarioAsignado(),
                 asignacion.getFechaProgramada(), asignacion.getFechaProgramada(), actor, null);
-        recalcularEstadoServicio(asignacion.getServicio(), actor, "Subproceso aprobado.");
+        recalcularEstadoServicio(asignacion.getServicio(), actor, "Subproceso publicado.");
 
         Usuario usuarioAsignado = asignacion.getUsuarioAsignado();
         if (usuarioAsignado != null) {
             notificacionRepository.save(Notificacion.builder()
                     .usuario(usuarioAsignado)
                     .tipo("SUBPROCESO_PUBLICADO")
-                    .titulo(asignacion.getTipoProgreso().getNombreProgreso() + " aprobado")
-                    .mensaje("Tu trabajo en \"" + asignacion.getTipoProgreso().getNombreProgreso() + "\" quedó aprobado.")
+                    .titulo(asignacion.getTipoProgreso().getNombreProgreso() + " publicado")
+                    .mensaje("Tu trabajo en \"" + asignacion.getTipoProgreso().getNombreProgreso() + "\" quedó publicado.")
                     .leida(false)
                     .fechaCreacion(LocalDateTime.now())
                     .referenciaTipo("SERVICIO_SUBPROCESO")
@@ -988,7 +1012,7 @@ public class AsignacionService {
         }
 
         avisarPublicadoAlCliente(asignacion);
-        log.info("Subproceso aprobado/publicado: id={}, actor={}", id, actor.getIdUsuario());
+        log.info("Subproceso publicado: id={}, actor={}", id, actor.getIdUsuario());
         return toResponse(asignacion);
     }
 
@@ -1399,7 +1423,8 @@ public class AsignacionService {
                 ReglasCita.porConfirmar(esCita(a), a.getEstado(), Boolean.TRUE.equals(a.getIniciado()), a.getFechaProgramada(), ahoraEnColombia(), ReglasCita.TOLERANCIA_MINUTOS),
                 atrasado(a),
                 atrasado(a) ? calendario.diasHabilesEntre(a.getFechaProgramada().toLocalDate(), ahoraEnColombia().toLocalDate()) : 0,
-                a.getConclusion(), a.getConclusionPublicada(), a.getNivelPublicado(), a.getPuntajePublicado()
+                a.getConclusion(), a.getConclusionPublicada(), a.getNivelPublicado(), a.getPuntajePublicado(),
+                Boolean.TRUE.equals(a.getDevuelto()) ? a.getMotivoDevolucion() : null, Boolean.TRUE.equals(a.getDevuelto()) ? a.getDetalleDevolucion() : null
         );
     }
 }

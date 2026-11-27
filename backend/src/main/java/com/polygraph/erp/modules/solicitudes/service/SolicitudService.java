@@ -481,7 +481,7 @@ public class SolicitudService {
     private SolicitudDetalleResponse.EstudioPdfResponse estudioPdf(Servicio s) {
         if (s.getEstado() != EstadoServicio.PUBLICADO || s.getPastaEstado() != com.polygraph.erp.shared.enums.PastaEstado.EMITIDA) return null;
         return documentoEstudioRepository.findFirstByIdServicioAndVigenteTrueOrderByVersionDesc(s.getIdServicio())
-                .map(d -> new SolicitudDetalleResponse.EstudioPdfResponse(d.getVersion(), d.getEstado(), d.getPaginas(), d.getTipo())).orElse(null);
+                .map(d -> new SolicitudDetalleResponse.EstudioPdfResponse(d.getVersion(), d.getEstado(), d.getPaginas(), d.getTipo(), EstudioListo.paraCliente(s, d))).orElse(null);
     }
 
     private static boolean informeDisponible(Servicio servicio, ServicioSubproceso sp) {
@@ -544,6 +544,14 @@ public class SolicitudService {
     }
 
     public void cambiarEstado(Integer idServicio, CambioEstadoRequest request, UserDetails userDetails) {
+        cambiarEstado(idServicio, request, userDetails, true);
+    }
+
+    /**
+     * avisarPublicacion=false (PC-01): al emitir el estudio completo el cliente se entera cuando el PDF esté LISTO, no antes
+     * (EmisionEstudioService.marcarListo). Solo cambia el aviso de «Informe publicado»; todo lo demás es igual.
+     */
+    public void cambiarEstado(Integer idServicio, CambioEstadoRequest request, UserDetails userDetails, boolean avisarPublicacion) {
         Servicio servicio = servicioRepository.findById(idServicio)
                 .orElseThrow(() -> new ApiException("Servicio no encontrado", HttpStatus.NOT_FOUND));
 
@@ -601,7 +609,7 @@ public class SolicitudService {
                 .observacion(request.observacion())
                 .build());
 
-        notificarCambioEstadoAlCliente(servicio, nuevoEstado);
+        if (avisarPublicacion || nuevoEstado != EstadoServicio.PUBLICADO) notificarCambioEstadoAlCliente(servicio, nuevoEstado);
 
         log.info("Estado cambiado: servicio={}, {} → {}, usuario={}",
                 idServicio, estadoAnterior, nuevoEstado, userDetails.getUsername());

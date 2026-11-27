@@ -62,6 +62,7 @@ public class InicioClienteService {
     private final EnvioEnlaceService envioEnlaceService;
     private final EstadisticasEstudiosService estadisticasService;
     private final Clock reloj;
+    private final com.polygraph.erp.modules.solicitudes.repository.DocumentoEstudioRepository documentoEstudioRepository;
 
     // ───────────────────────── respuesta ─────────────────────────
 
@@ -69,7 +70,9 @@ public class InicioClienteService {
 
     /** completo: todos los subprocesos publicados y la pasta emitida («Publicado · estudio completo»); si no, «Publicado parcial · x de y informes». */
     public record Informe(Integer idServicio, String evaluado, String proceso, String cargo, int publicados, int vigentes, boolean completo, String nivel,
-                          LocalDateTime emitidoEn, String ultimoNombre, LocalDateTime ultimoFecha, Cumplimiento cumplimiento, boolean nuevo) {}
+                          LocalDateTime emitidoEn, String ultimoNombre, LocalDateTime ultimoFecha, Cumplimiento cumplimiento, boolean nuevo,
+                          /** PC-01: estado del PDF del estudio (null = todavía no hay uno, GENERANDO, LISTO, ERROR) y si el cliente ya puede descargarlo. */
+                          String pdfEstado, boolean pdfDisponible) {}
 
     public record CandidatoPendiente(Integer idServicio, String evaluado, String proceso, List<ResumenEstado> resumen, TiempoServicio tiempo, LocalDate fechaEntrega,
                                      SeguimientoCliente seguimiento) {}
@@ -110,6 +113,8 @@ public class InicioClienteService {
         Map<Integer, CalificacionRiesgo> riesgo = calificacionRepository.findByVigenteTrueAndServicio_IdServicioIn(ids).stream()
                 .collect(Collectors.toMap(c -> c.getServicio().getIdServicio(), c -> c, (a, b) -> a));
 
+        Map<Integer, com.polygraph.erp.modules.solicitudes.entity.DocumentoEstudio> pdfs = documentoEstudioRepository.findByIdServicioInAndVigenteTrue(ids).stream()
+                .collect(Collectors.toMap(d -> d.getIdServicio(), d -> d, (a, b) -> a.getVersion() >= b.getVersion() ? a : b));
         List<Informe> lista = new ArrayList<>();
         for (Integer id : ids) {
             List<ServicioSubproceso> lista1 = sps.getOrDefault(id, List.of());
@@ -123,9 +128,12 @@ public class InicioClienteService {
             var nivelVale = c == null ? null : c.getNivelDecidido() != null ? c.getNivelDecidido() : c.getNivelFinal();
             String nivel = completo && nivelVale != null ? nivelVale.name() : null;   // el estudio parcial no muestra nivel
             LocalDateTime ultimoFecha = ultimo == null ? null : ultimo.getFechaPublicado();
-            boolean nuevo = desde != null && ((ultimoFecha != null && ultimoFecha.isAfter(desde)) || (completo && s.getEmitidoEn() != null && s.getEmitidoEn().isAfter(desde)));
+            var pdf = pdfs.get(id);
+            boolean pdfListo = com.polygraph.erp.modules.solicitudes.service.EstudioListo.paraCliente(s, pdf);
+            boolean nuevo = desde != null && ((ultimoFecha != null && ultimoFecha.isAfter(desde)) || (pdfListo && s.getEmitidoEn() != null && s.getEmitidoEn().isAfter(desde)));
             lista.add(new Informe(id, evaluado(s), s.getProceso() != null ? s.getProceso().getNombreProceso() : null, s.getCargo(), avance.publicados(), avance.vigentes(),
-                    completo, nivel, s.getEmitidoEn(), ultimo == null ? null : ultimo.getTipoProgreso().getNombreProgreso(), ultimoFecha, s.getCumplimiento(), nuevo));
+                    completo, nivel, s.getEmitidoEn(), ultimo == null ? null : ultimo.getTipoProgreso().getNombreProgreso(), ultimoFecha, s.getCumplimiento(), nuevo,
+                    completo && pdf != null ? pdf.getEstado() : null, pdfListo));
         }
         lista.sort(Comparator.comparing((Informe i) -> momento(i)).reversed());
         return lista.size() > INFORMES ? lista.subList(0, INFORMES) : lista;

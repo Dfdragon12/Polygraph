@@ -30,7 +30,7 @@ const ANCHO_MENU = 208 // w-52
  * la opción visible pero no clickeable (ej. "Eliminar" bloqueado porque el registro está en uso);
  * `title` en ese caso explica el porqué en el tooltip.
  */
-function MenuAcciones({ opciones }) {
+function MenuAcciones({ opciones, etiqueta = 'Más acciones' }) {
   const [abierto, setAbierto] = useState(false)
   const [posicion, setPosicion] = useState(null)
   const botonRef = useRef(null)
@@ -68,10 +68,14 @@ function MenuAcciones({ opciones }) {
     // Se cierra en scroll/resize en vez de reposicionarse en vivo — más simple y evita que el
     // menú quede "flotando" desalineado de su botón mientras la tabla se desplaza.
     const cerrar = () => setAbierto(false)
+    // PC-06: Esc cierra el menú y el foco vuelve al botón de tres puntos.
+    const cerrarConEsc = (e) => { if (e.key === 'Escape') { setAbierto(false); botonRef.current?.focus() } }
+    document.addEventListener('keydown', cerrarConEsc)
     document.addEventListener('mousedown', cerrarPorClickFuera)
     window.addEventListener('scroll', cerrar, true)
     window.addEventListener('resize', cerrar)
     return () => {
+      document.removeEventListener('keydown', cerrarConEsc)
       document.removeEventListener('mousedown', cerrarPorClickFuera)
       window.removeEventListener('scroll', cerrar, true)
       window.removeEventListener('resize', cerrar)
@@ -82,7 +86,8 @@ function MenuAcciones({ opciones }) {
 
   return (
     <div className="relative inline-block">
-      <button type="button" ref={botonRef} onClick={alternar}
+      {/* PC-03: el botón de tres puntos lleva nombre («Más acciones del estudio 47»); sin él un lector de pantalla solo decía «botón». */}
+      <button type="button" ref={botonRef} onClick={alternar} aria-label={etiqueta}
         className="p-1.5 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors">
         <IconoPuntos />
       </button>
@@ -98,7 +103,7 @@ function MenuAcciones({ opciones }) {
         >
           {visibles.map((op, i) => (
             <button key={i} type="button" disabled={op.disabled} title={op.title}
-              onClick={() => { setAbierto(false); op.onClick() }}
+              onClick={() => { botonRef.current?.focus(); setAbierto(false); op.onClick() }}   /* el foco vuelve al botón de tres puntos: si la opción abre una ventana, al cerrarla se regresa ahí */
               className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors ${
                 op.disabled ? 'text-gray-300 cursor-not-allowed' : `hover:bg-gray-50 ${op.destacado ?? 'text-gray-700'}`}`}>
               {op.icono}

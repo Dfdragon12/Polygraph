@@ -1,93 +1,98 @@
+import { lazy, Suspense, useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import { CarritoProvider } from './context/CarritoContext'
 import { useAuth } from './hooks/useAuth'
 import useInactivityLogout from './hooks/useInactivityLogout'
+import { prepararAvisos } from './components/Toast'
 import ProtectedRoute from './components/ProtectedRoute'
 import OfflineIndicator from './components/OfflineIndicator'
 import PWAInstallBanner from './components/PWAInstallBanner'
 import { ConfirmModal } from './components/ui/Modal'
+import Cargando from './components/Cargando'
 import BannerCookies from './components/legal/BannerCookies'
-import PaginaLegal from './pages/legal/PaginaLegal'
+const PaginaLegal = lazy(() => import('./pages/legal/PaginaLegal'))
 
+// PC-08: cada pantalla y cada portal (layout) se descarga SOLO cuando se entra a ella (React.lazy). El paquete principal lleva el login, la sesión y lo que se ve en todas
+// partes; quien abre el login no descarga los módulos de admin, gestor, analista, visitador, poligrafista, programador ni cliente.
 // Layouts
-import ClientLayout      from './components/layout/ClientLayout'
-import AdminLayout       from './components/layout/AdminLayout'
-import GestorLayout      from './components/layout/GestorLayout'
-import AnalistaLayout    from './components/layout/AnalistaLayout'
-import ProgramadorLayout from './components/layout/ProgramadorLayout'
-import PoligrafistLayout from './components/layout/PoligrafistLayout'
-import VisitadorLayout   from './components/layout/VisitadorLayout'
+const ClientLayout = lazy(() => import('./components/layout/ClientLayout'))
+const AdminLayout = lazy(() => import('./components/layout/AdminLayout'))
+const GestorLayout = lazy(() => import('./components/layout/GestorLayout'))
+const AnalistaLayout = lazy(() => import('./components/layout/AnalistaLayout'))
+const ProgramadorLayout = lazy(() => import('./components/layout/ProgramadorLayout'))
+const PoligrafistLayout = lazy(() => import('./components/layout/PoligrafistLayout'))
+const VisitadorLayout = lazy(() => import('./components/layout/VisitadorLayout'))
 
 // Páginas públicas
 import Login             from './pages/Login'
-import Register          from './pages/Register'
-import EvalueeForm       from './pages/evaluee/EvalueeForm'
-import CambiarPassword   from './pages/CambiarPassword'
-import RecuperarPassword from './pages/RecuperarPassword'
-import ResetPassword     from './pages/ResetPassword'
+const Register = lazy(() => import('./pages/Register'))
+const EvalueeForm = lazy(() => import('./pages/evaluee/EvalueeForm'))
+const CambiarPassword = lazy(() => import('./pages/CambiarPassword'))
+const RecuperarPassword = lazy(() => import('./pages/RecuperarPassword'))
+const ResetPassword = lazy(() => import('./pages/ResetPassword'))
 
 // Portal cliente
-import Dashboard        from './pages/client/Dashboard'
-import ServiceCatalog   from './pages/client/ServiceCatalog'
-import NewRequest       from './pages/client/NewRequest'
-import BulkUpload       from './pages/client/BulkUpload'
-import Solicitudes      from './pages/client/Solicitudes'
-import SolicitudDetalle from './pages/client/SolicitudDetalle'
-import Documentos       from './pages/client/Documentos'
-import MiEquipo         from './pages/client/MiEquipo'
-import ComprarServicios from './pages/client/ComprarServicios'
-import SimuladorPago    from './pages/client/SimuladorPago'
-import ResultadoPago    from './pages/client/ResultadoPago'
-import ComprobantePago  from './pages/client/ComprobantePago'
-import MiCredito             from './pages/client/MiCredito'
-import FacturaPospagoDetalle from './pages/client/FacturaPospagoDetalle'
-import ResultadoPagoFactura  from './pages/client/ResultadoPagoFactura'
+const Dashboard = lazy(() => import('./pages/client/Dashboard'))
+const ServiceCatalog = lazy(() => import('./pages/client/ServiceCatalog'))
+const NewRequest = lazy(() => import('./pages/client/NewRequest'))
+const BulkUpload = lazy(() => import('./pages/client/BulkUpload'))
+const Solicitudes = lazy(() => import('./pages/client/Solicitudes'))
+const SolicitudDetalle = lazy(() => import('./pages/client/SolicitudDetalle'))
+const Documentos = lazy(() => import('./pages/client/Documentos'))
+const MiEquipo = lazy(() => import('./pages/client/MiEquipo'))
+const ComprarServicios = lazy(() => import('./pages/client/ComprarServicios'))
+const SimuladorPago = lazy(() => import('./pages/client/SimuladorPago'))
+const ResultadoPago = lazy(() => import('./pages/client/ResultadoPago'))
+const ComprobantePago = lazy(() => import('./pages/client/ComprobantePago'))
+const MiCredito = lazy(() => import('./pages/client/MiCredito'))
+const FacturaPospagoDetalle = lazy(() => import('./pages/client/FacturaPospagoDetalle'))
+const ResultadoPagoFactura = lazy(() => import('./pages/client/ResultadoPagoFactura'))
 
 // Portal admin
-import AdminDashboard    from './pages/admin/AdminDashboard'
-import UsuariosInternos  from './pages/admin/UsuariosInternos'
-import Clientes          from './pages/admin/Clientes'
-import Productividad from './pages/shared/Productividad'
-import SemaforoServicios from './pages/admin/SemaforoServicios'
-import Catalogo          from './pages/admin/catalogo/Catalogo'
-import PlantillaFormulario from './pages/admin/catalogo/PlantillaFormulario'
-import TiposNovedad from './pages/admin/catalogo/TiposNovedad'
-import HojaVidaCandidato from './pages/admin/catalogo/HojaVidaCandidato'
-import TemasPoligrafia from './pages/admin/catalogo/TemasPoligrafia'
-import MotivosSubproceso from './pages/admin/catalogo/MotivosSubproceso'
-import ParametrosRiesgo from './pages/admin/riesgo/ParametrosRiesgo'
-import CentralesRiesgo from './pages/admin/riesgo/CentralesRiesgo'
-import CatalogoHallazgos from './pages/admin/riesgo/CatalogoHallazgos'
-import TrabajosSegundoPlano from './pages/admin/TrabajosSegundoPlano'
-import AdminReversiones  from './pages/admin/AdminReversiones'
-import Descuentos        from './pages/admin/Descuentos'
-import Ciudades          from './pages/admin/Ciudades'
-import Festivos          from './pages/admin/Festivos'
-import ParametrosTiempo  from './pages/admin/ParametrosTiempo'
-import Departamentos     from './pages/admin/Departamentos'
-import Facturacion         from './pages/admin/Facturacion'
-import GestionCuentas      from './pages/admin/GestionCuentas'
+const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'))
+const UsuariosInternos = lazy(() => import('./pages/admin/UsuariosInternos'))
+const Clientes = lazy(() => import('./pages/admin/Clientes'))
+const Productividad = lazy(() => import('./pages/shared/Productividad'))
+const SemaforoServicios = lazy(() => import('./pages/admin/SemaforoServicios'))
+const Catalogo = lazy(() => import('./pages/admin/catalogo/Catalogo'))
+const PlantillaFormulario = lazy(() => import('./pages/admin/catalogo/PlantillaFormulario'))
+const TiposNovedad = lazy(() => import('./pages/admin/catalogo/TiposNovedad'))
+const HojaVidaCandidato = lazy(() => import('./pages/admin/catalogo/HojaVidaCandidato'))
+const TemasPoligrafia = lazy(() => import('./pages/admin/catalogo/TemasPoligrafia'))
+const MotivosSubproceso = lazy(() => import('./pages/admin/catalogo/MotivosSubproceso'))
+const ParametrosRiesgo = lazy(() => import('./pages/admin/riesgo/ParametrosRiesgo'))
+const CentralesRiesgo = lazy(() => import('./pages/admin/riesgo/CentralesRiesgo'))
+const CatalogoHallazgos = lazy(() => import('./pages/admin/riesgo/CatalogoHallazgos'))
+const TrabajosSegundoPlano = lazy(() => import('./pages/admin/TrabajosSegundoPlano'))
+const AdminReversiones = lazy(() => import('./pages/admin/AdminReversiones'))
+const Descuentos = lazy(() => import('./pages/admin/Descuentos'))
+const Ciudades = lazy(() => import('./pages/admin/Ciudades'))
+const Festivos = lazy(() => import('./pages/admin/Festivos'))
+const ParametrosTiempo = lazy(() => import('./pages/admin/ParametrosTiempo'))
+const Departamentos = lazy(() => import('./pages/admin/Departamentos'))
+const Facturacion = lazy(() => import('./pages/admin/Facturacion'))
+const GestionCuentas = lazy(() => import('./pages/admin/GestionCuentas'))
 
 // Portales de rol
-import GestorDashboard       from './pages/gestor/GestorDashboard'
-import GestorSolicitudes     from './pages/gestor/Solicitudes'
-import GestorReversiones     from './pages/gestor/GestorReversiones'
-import GestorAgenda          from './pages/gestor/Agenda'
-import GestorClienteDetalle  from './pages/gestor/ClienteDetalle'
-import ProgramadorDashboard  from './pages/programador/ProgramadorDashboard'
-import ProgramadorAgenda     from './pages/programador/Agenda'
+const GestorDashboard = lazy(() => import('./pages/gestor/GestorDashboard'))
+const GestorSolicitudes = lazy(() => import('./pages/gestor/Solicitudes'))
+const GestorReversiones = lazy(() => import('./pages/gestor/GestorReversiones'))
+const GestorAgenda = lazy(() => import('./pages/gestor/Agenda'))
+const GestorClienteDetalle = lazy(() => import('./pages/gestor/ClienteDetalle'))
+const ProgramadorDashboard = lazy(() => import('./pages/programador/ProgramadorDashboard'))
+const ProgramadorAgenda = lazy(() => import('./pages/programador/Agenda'))
 // Compartidas entre analista/poligrafista/visitador — mismo backend filtra por rol autenticado
-import AsignacionDashboard from './pages/shared/AsignacionDashboard'
-import MisAsignaciones from './pages/shared/MisAsignaciones'
-import MiPerfil from './pages/shared/MiPerfil'
-import MiPerfilAnalista from './pages/client/MiPerfilAnalista'
-import Formulario       from './pages/shared/Formulario'
-import FormularioPoligrafista from './pages/poligrafista/FormatoPoligrafia'
-import FormularioVisitador from './pages/visitador/FormatoVisita'
-import FormularioAnalista from './pages/analista/FormatoAntecedentes'
-import ProveedorExterno from './pages/proveedor/ProveedorExterno'
-import CandidatoPerfil  from './pages/shared/CandidatoPerfil'
+const AsignacionDashboard = lazy(() => import('./pages/shared/AsignacionDashboard'))
+const MisAsignaciones = lazy(() => import('./pages/shared/MisAsignaciones'))
+const MiPerfil = lazy(() => import('./pages/shared/MiPerfil'))
+const MiPerfilAnalista = lazy(() => import('./pages/client/MiPerfilAnalista'))
+const Formulario = lazy(() => import('./pages/shared/Formulario'))
+const FormularioPoligrafista = lazy(() => import('./pages/poligrafista/FormatoPoligrafia'))
+const FormularioVisitador = lazy(() => import('./pages/visitador/FormatoVisita'))
+const FormularioAnalista = lazy(() => import('./pages/analista/FormatoAntecedentes'))
+const ProveedorExterno = lazy(() => import('./pages/proveedor/ProveedorExterno'))
+const CandidatoPerfil = lazy(() => import('./pages/shared/CandidatoPerfil'))
 
 const ROLES_CLIENTE = ['ADMIN_CLIENTE', 'ANALISTA_CLIENTE']
 
@@ -118,28 +123,34 @@ function Proximamente({ titulo }) {
   )
 }
 
+// PC-06 (PB-H-41): 2 minutos antes de cerrar la sesión por inactividad sale este aviso, con «Seguir conectado» (un botón de verdad, que además es donde cae el foco) y el
+// tiempo que queda. Las cifras del reloj se esconden del lector de pantalla (cambian cada segundo); él oye una sola vez «en 2 minutos».
 function InactivityWatcher() {
-  const { mostrarAlerta, seguirConectado } = useInactivityLogout()
+  const { mostrarAlerta, segundosRestantes, seguirConectado, cerrarSesion } = useInactivityLogout()
   if (!mostrarAlerta) return null
-
-  // Sin botones ni contador en vivo a propósito — cerrar con la X ya significa "sigo aquí"
-  // (equivale a lo que antes hacía "Seguir conectado"); si de verdad no hay nadie, el cierre de
-  // sesión automático de todos modos sigue corriendo en segundo plano.
+  const mm = Math.floor(segundosRestantes / 60)
+  const ss = String(segundosRestantes % 60).padStart(2, '0')
   return (
     <ConfirmModal
       titulo="¿Sigues ahí?"
-      onClose={seguirConectado}
-      sinBotones
+      rol="alertdialog"
+      enfocarConfirmar
+      confirmLabel="Seguir conectado"
+      cancelLabel="Cerrar sesión ahora"
+      onConfirmar={seguirConectado}
+      onCancelar={cerrarSesion}
       bloquearFondo
     >
-      <p className="text-sm text-gray-500">
-        Por seguridad, vamos a cerrar tu sesión pronto por inactividad — cierra este aviso si sigues aquí.
+      <p className="text-sm text-gray-700">
+        Tu sesión se cerrará en <strong aria-hidden="true" className="tabular-nums">{mm}:{ss}</strong><span className="sr-only">2 minutos</span> por inactividad.
+        Lo que escribiste en los formatos y en las ventanas Publicar, Emitir y Devolver se conserva, y al volver a entrar regresas a esta misma pantalla.
       </p>
     </ConfirmModal>
   )
 }
 
 function App() {
+  useEffect(() => { prepararAvisos() }, [])   // las regiones vivas de los avisos existen (vacías) antes del primer aviso
   return (
     <AuthProvider>
       <a href="#contenido" className="saltar-contenido">Saltar al contenido</a>
@@ -147,6 +158,7 @@ function App() {
       <OfflineIndicator />
       <PWAInstallBanner />
       <BannerCookies />
+      <Suspense fallback={<Cargando pantallaCompleta />}>
       <Routes>
         {/* ── Públicas ── */}
         <Route path="/login"              element={<Login />} />
@@ -287,6 +299,7 @@ function App() {
         <Route path="/" element={<ProtectedRoute><RootRedirect /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </Suspense>
     </AuthProvider>
   )
 }

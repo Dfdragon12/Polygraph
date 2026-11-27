@@ -29,7 +29,10 @@ public record ColumnaResponse(Integer idColumna, String nombre, String tipoDato,
                                // Máximo de caracteres (solo texto): el que se aplica y el que puso el admin
                                // (null = el de por defecto).
                                Integer longitudMaxima,
-                               Integer longitudMaximaConfigurada) {
+                               Integer longitudMaximaConfigurada,
+                               // PC-02: este campo es la conclusión del formato (ver ConclusionFormato). Las pantallas le ponen la ayuda
+                               // «No escribas Favorable o Desfavorable…» y no piden la conclusión una segunda vez.
+                               boolean esConclusion) {
 
     public record PuntajeOpcion(String opcion, java.math.BigDecimal puntos, boolean esCritico) {}
 
@@ -47,6 +50,7 @@ public record ColumnaResponse(Integer idColumna, String nombre, String tipoDato,
                 c.getCampoCandidato(), c.getCampoCliente(), c.getClave(), opciones, califica, puntajes, criticas,
                 c.getCampoServicio(), Boolean.TRUE.equals(c.getCalculado()), c.getValorDefecto(),
                 Boolean.TRUE.equals(c.getObligatorio()), c.esAutomatica(), CalificacionColumnaDto.de(c),
-                c.longitudMaximaEfectiva(), c.getLongitudMaxima());
+                c.longitudMaximaEfectiva(), c.getLongitudMaxima(),
+                com.polygraph.erp.modules.formularios.service.ConclusionFormato.esCampo(c.getSeccion() == null ? null : c.getSeccion().getClave(), c.getClave()));
     }
 }

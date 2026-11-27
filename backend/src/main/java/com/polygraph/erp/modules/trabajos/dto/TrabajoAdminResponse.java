@@ -19,5 +19,8 @@ public record TrabajoAdminResponse(
         LocalDateTime fechaFin,
         LocalDateTime disponibleDesde,
         Long duracionMs,
-        boolean reintentable
+        boolean reintentable,
+        /** PC-01: servicio al que pertenece el trabajo y, si es el PDF del estudio, su versión (null si no aplica). */
+        Integer idServicio,
+        Integer version
 ) {}

@@ -7,6 +7,7 @@ import { useAuth } from '../hooks/useAuth'
 import BrandShowcase from '../components/BrandShowcase'
 import HeartbeatMonitor from '../components/HeartbeatMonitor'
 import PieLegal from '../components/legal/PieLegal'
+import { rutaParaVolver, hayCierreAutomatico, olvidarCierreAutomatico } from '../utils/rutaDeRetorno'
 
 const esquema = z.object({
   email: z.string().min(1, 'El email es requerido').email('Email inválido'),
@@ -29,7 +30,7 @@ export default function Login() {
   const { login } = useAuth()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const cerradaPorInactividad = searchParams.get('motivo') === 'inactividad'
+  const [cerradaPorInactividad] = useState(() => searchParams.get('motivo') === 'inactividad' || hayCierreAutomatico())
   const [error, setError] = useState(null)
   const [cargando, setCargando] = useState(false)
   const [mostrarPassword, setMostrarPassword] = useState(false)
@@ -45,10 +46,12 @@ export default function Login() {
     setCargando(true)
     try {
       const resp = await login(datos.email, datos.password)
+      olvidarCierreAutomatico()
       if (resp?.usuario?.requiereCambioPassword) {
         navigate('/cambiar-password', { replace: true })
       } else {
-        const ruta = RUTA_POR_ROL[resp?.usuario?.rol] ?? '/'
+        // PC-06: si la sesión se cerró sola, vuelve a la pantalla donde estaba (solo si entra la misma persona); si no, a su inicio.
+        const ruta = rutaParaVolver(resp?.usuario?.id) ?? RUTA_POR_ROL[resp?.usuario?.rol] ?? '/'
         navigate(ruta, { replace: true })
       }
     } catch (err) {

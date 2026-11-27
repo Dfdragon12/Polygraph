@@ -8,6 +8,7 @@ import com.polygraph.erp.modules.trabajos.service.AlmacenTrabajos;
 import com.polygraph.erp.modules.trabajos.service.ProcesadorTrabajo;
 import com.polygraph.erp.modules.trabajos.service.ResultadoTrabajo;
 import com.polygraph.erp.shared.enums.TipoTrabajo;
+import com.polygraph.erp.shared.exceptions.ApiException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.Loader;
@@ -18,6 +19,8 @@ import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
+import org.apache.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState;
+import org.apache.pdfbox.util.Matrix;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
@@ -53,20 +56,14 @@ public class EstudioPdfProcesador implements ProcesadorTrabajo {
 
     @Override
     public ResultadoTrabajo procesar(TrabajoAsincrono trabajo, Map<String, Object> parametros, ContextoTrabajo contexto) throws Exception {
+        Usuario usuario = trabajo.getUsuario();
+        if (Boolean.TRUE.equals(parametros.get("vistaPrevia"))) return vistaPrevia(trabajo, parametros, usuario, contexto);
+
         Long idDocumento = ((Number) parametros.get("idDocumento")).longValue();
+        emision.marcarGenerando(idDocumento);
         try {
             EmisionEstudioService.Portada portada = emision.portada(idDocumento);
-            Usuario usuario = trabajo.getUsuario();
-            List<byte[]> partes = new ArrayList<>();
-            partes.add(portadaPdf(portada));
-            contexto.progreso(10);
-            int hechos = 0;
-            for (var informe : portada.informes()) {
-                if (informe.conDocumento()) partes.add(informePdf(informe, usuario));
-                hechos++;
-                contexto.progreso(10 + 80 * hechos / Math.max(1, portada.informes().size()));
-            }
-            byte[] unido = unir(partes);
+            byte[] unido = armar(portada, usuario, contexto);
             int paginas;
             try (PDDocument d = Loader.loadPDF(unido)) { paginas = d.getNumberOfPages(); }
             String ruta = "estudios/" + portada.idServicio() + "-v" + portada.version() + ".pdf";
@@ -75,8 +72,61 @@ public class EstudioPdfProcesador implements ProcesadorTrabajo {
             log.info("PDF del estudio listo: servicio={}, v{}, {} páginas", portada.idServicio(), portada.version(), paginas);
             return ResultadoTrabajo.archivo(ruta, "Estudio_" + portada.idServicio() + "_v" + portada.version() + ".pdf", TIPO_PDF);
         } catch (Exception e) {
-            emision.marcarError(idDocumento, "No se pudo armar el PDF: " + e.getMessage());
+            // Solo es un error del PDF cuando YA no habrá otro intento: mientras queden, la cola reintenta y el PDF sigue «generándose».
+            boolean sinMasIntentos = (e instanceof ApiException api && api.getStatus().is4xxClientError()) || trabajo.getIntentos() >= trabajo.getMaxIntentos();
+            if (sinMasIntentos) emision.marcarError(idDocumento, "No se pudo armar el PDF: " + e.getMessage());
             throw e;
+        }
+    }
+
+    /** Portada del sistema + los informes publicados, unidos en un solo PDF. */
+    private byte[] armar(EmisionEstudioService.Portada portada, Usuario usuario, ContextoTrabajo contexto) throws Exception {
+        List<byte[]> partes = new ArrayList<>();
+        partes.add(portadaPdf(portada));
+        contexto.progreso(10);
+        int hechos = 0;
+        for (var informe : portada.informes()) {
+            if (informe.conDocumento()) partes.add(informePdf(informe, usuario));
+            hechos++;
+            contexto.progreso(10 + 80 * hechos / Math.max(1, portada.informes().size()));
+        }
+        return unir(partes);
+    }
+
+    /** «Vista previa del PDF completo»: el mismo armado, con la marca «VISTA PREVIA», en un archivo temporal del trabajo (no es una versión ni se entrega al cliente). */
+    @SuppressWarnings("unchecked")
+    private ResultadoTrabajo vistaPrevia(TrabajoAsincrono trabajo, Map<String, Object> parametros, Usuario usuario, ContextoTrabajo contexto) throws Exception {
+        Integer idServicio = ((Number) parametros.get("idServicio")).intValue();
+        String concepto = parametros.get("concepto") instanceof String c ? c : "";
+        List<String> alertas = parametros.get("alertas") instanceof List<?> l ? (List<String>) l : List.of();
+        EmisionEstudioService.Portada portada = emision.portadaVistaPrevia(idServicio, concepto, alertas, usuario);
+        byte[] pdf = marcaDeAgua(armar(portada, usuario, contexto), "VISTA PREVIA");
+        String ruta = AlmacenTrabajos.rutaResultado(trabajo.getUuid(), ".pdf");
+        almacen.escribirAtomico(ruta, pdf);
+        return ResultadoTrabajo.archivo(ruta, "Vista_previa_estudio_" + idServicio + ".pdf", TIPO_PDF);
+    }
+
+    /** Texto grande, gris y semitransparente en diagonal en cada página. */
+    static byte[] marcaDeAgua(byte[] pdf, String texto) throws Exception {
+        PDType1Font fuente = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
+        try (PDDocument doc = Loader.loadPDF(pdf)) {
+            for (PDPage pagina : doc.getPages()) {
+                PDRectangle caja = pagina.getMediaBox();
+                try (PDPageContentStream cs = new PDPageContentStream(doc, pagina, PDPageContentStream.AppendMode.APPEND, true, true)) {
+                    PDExtendedGraphicsState transparencia = new PDExtendedGraphicsState();
+                    transparencia.setNonStrokingAlphaConstant(0.18f);
+                    cs.setGraphicsStateParameters(transparencia);
+                    cs.setNonStrokingColor(0.35f, 0.35f, 0.35f);
+                    cs.beginText();
+                    cs.setFont(fuente, 64);
+                    cs.setTextMatrix(Matrix.getRotateInstance(Math.toRadians(45), caja.getWidth() * 0.14f, caja.getHeight() * 0.28f));
+                    cs.showText(texto);
+                    cs.endText();
+                }
+            }
+            ByteArrayOutputStream salida = new ByteArrayOutputStream();
+            doc.save(salida);
+            return salida.toByteArray();
         }
     }
 

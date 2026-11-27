@@ -69,11 +69,12 @@ public record HojaVidaRequest(
         @Valid
         List<EducacionRequest> educacion,
 
-        @Valid @NotEmpty(message = "Debe registrar al menos una experiencia laboral")
+        // PC-09: la experiencia (mínimo una) y las 4 referencias se exigen al enviar un enlace COMPLETO (EvaluadoService.exigirExperienciaYReferencias). Aquí NO llevan
+        // @NotEmpty/@Size: el enlace corto de Antecedentes no las pide y el portal las manda vacías, así que esa validación del DTO rechazaba SIEMPRE su envío.
+        @Valid
         List<ExperienciaLaboralRequest> experienciaLaboral,
 
-        @Valid @NotNull(message = "Se requieren 4 referencias personales")
-        @Size(min = 4, message = "Se requieren 4 referencias personales")
+        @Valid
         List<ReferenciaPersonalRequest> referencias,
 
         // Clave "fechaInicio_fechaFin" (yyyy-MM-dd) -> texto de justificación del tiempo muerto laboral

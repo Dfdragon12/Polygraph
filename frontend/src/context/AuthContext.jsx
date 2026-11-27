@@ -1,5 +1,7 @@
 import { createContext, useState, useEffect, useCallback } from 'react'
 import authService from '../services/authService'
+import { olvidarRuta, olvidarCierreAutomatico } from '../utils/rutaDeRetorno'
+import { borrarBorradores } from '../utils/borradores'
 
 const AuthContext = createContext(null)
 
@@ -61,11 +63,14 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
-  const logout = () => {
+  // `automatico`: la sesión se cerró SOLA (inactividad). Entonces se conservan los borradores y la ruta para volver (PC-06); si la persona cierra sesión
+  // a mano —o el botón llama a logout como manejador de clic— se borran, para que no queden en un computador compartido.
+  const logout = (opciones) => {
     localStorage.removeItem('token')
     localStorage.removeItem('refreshToken')
     localStorage.removeItem('usuario')
     setUsuario(null)
+    if (!opciones?.automatico) { olvidarRuta(); olvidarCierreAutomatico(); borrarBorradores() }
   }
 
   const isAuthenticated = () => !!localStorage.getItem('token') && !!usuario

@@ -54,6 +54,11 @@ public class DocumentoPdfConverter {
     @Value("${app.libreoffice.espera-maxima-segundos:60}")
     private long esperaMaximaSegundos = 60;
 
+    // PC-08: dónde se arman los archivos de trabajo de cada conversión (el .docx, el perfil de LibreOffice y el PDF). Vacío = la carpeta temporal del sistema (/tmp). En un
+    // servidor con poco espacio en /tmp se apunta a un disco con espacio: LIBREOFFICE_TEMP_DIR. La carpeta de cada conversión se borra al terminar.
+    @Value("${app.libreoffice.carpeta-temporal:}")
+    private String carpetaTemporalConfigurada = "";
+
     @Autowired
     public DocumentoPdfConverter(@Value("${app.libreoffice.max-concurrentes:2}") int maxConcurrentes) {
         this.maxConcurrentes = Math.max(1, maxConcurrentes);
@@ -63,6 +68,17 @@ public class DocumentoPdfConverter {
     /** Para pruebas que instancian con "new" sin Spring. */
     public DocumentoPdfConverter() {
         this(2);
+    }
+
+    public String binario() { return binarioLibreOffice; }
+    public String carpetaTemporalConfigurada() { return carpetaTemporalConfigurada == null ? "" : carpetaTemporalConfigurada.trim(); }
+
+    private Path crearCarpetaTemporal() throws IOException {
+        String base = carpetaTemporalConfigurada();
+        if (base.isEmpty()) return Files.createTempDirectory("polygraph-pdf-");
+        Path raiz = Path.of(base);
+        Files.createDirectories(raiz);
+        return Files.createTempDirectory(raiz, "polygraph-pdf-");
     }
 
     public int maxConcurrentes() { return maxConcurrentes; }
@@ -92,7 +108,7 @@ public class DocumentoPdfConverter {
     private byte[] convertirConPermiso(byte[] docx) {
         Path carpetaTemporal = null;
         try {
-            carpetaTemporal = Files.createTempDirectory("polygraph-pdf-");
+            carpetaTemporal = crearCarpetaTemporal();
             Path entrada = carpetaTemporal.resolve("documento.docx");
             Files.write(entrada, docx);
 

@@ -45,6 +45,8 @@ const RUTA_POR_TIPO = {
   SUBPROCESO_REPROGRAMADO: rutaFormulario(),
   // Novedades — directo al paso "Novedades" del formulario (ver Formulario.jsx, ?paso=novedades).
   NOVEDAD_REGISTRADA:     rutaFormulario('?paso=novedades'),
+  // PC-04: un ejecutor pide corregir un informe ya publicado — el gestor aterriza en ese informe, en sus novedades (ahí está la solicitud).
+  CORRECCION_SOLICITADA:  rutaFormulario('?paso=novedades'),
   NOVEDAD_RESUELTA:       rutaFormulario('?paso=novedades'),
   // El candidato propuso horario desde su portal — el programador a su agenda (donde agenda y ve
   // la sugerencia); el gestor al formulario del subproceso.

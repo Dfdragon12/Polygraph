@@ -144,6 +144,24 @@ public class SolicitudController {
         return ResponseEntity.ok(emisionEstudioService.emitir(id, request, userDetails));
     }
 
+    /** PC-01: el gestor vuelve a armar el PDF de la versión vigente cuando falló o se quedó atascado. */
+    @PostMapping("/{id}/estudio-pdf/reintentar")
+    @PreAuthorize("hasAnyRole('GESTOR', 'ADMIN_POLYGRAPH')")
+    public ResponseEntity<com.polygraph.erp.modules.solicitudes.dto.EmisionEstudioResponse> reintentarEstudioPdf(
+            @PathVariable Integer id, @AuthenticationPrincipal UserDetails userDetails) {
+        return ResponseEntity.ok(emisionEstudioService.reintentarPdf(id, userDetails));
+    }
+
+    /** PC-01: «Vista previa del PDF completo» (marca de agua, sin emitir). 202: el archivo llega por la cola. */
+    @PostMapping("/{id}/estudio-vista-previa")
+    @PreAuthorize("hasAnyRole('GESTOR', 'ADMIN_POLYGRAPH')")
+    public ResponseEntity<TrabajoResponse> vistaPreviaEstudio(
+            @PathVariable Integer id,
+            @RequestBody com.polygraph.erp.modules.solicitudes.dto.EmitirEstudioRequest request,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        return ResponseEntity.accepted().body(emisionEstudioService.vistaPrevia(id, request, userDetails));
+    }
+
     /** PB-03: el PDF único del estudio completo, tal como se guardó (v1, v2...). */
     @GetMapping("/{id}/estudio-completo/pdf")
     @PreAuthorize("hasAnyRole('ADMIN_CLIENTE', 'GESTOR', 'ADMIN_POLYGRAPH')")

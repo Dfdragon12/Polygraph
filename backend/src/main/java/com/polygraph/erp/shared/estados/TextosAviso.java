@@ -12,11 +12,15 @@ public final class TextosAviso {
 
     private TextosAviso() {}
 
-    /** Al cliente cuando se publica un subproceso: puede descargar ese informe sin esperar al resto; si era el último, el estudio está completo. */
+    /**
+     * Al cliente cuando se publica un subproceso: puede descargar ese informe sin esperar al resto. Si era el último, todavía NO está el estudio
+     * completo: falta el cierre del gestor y el PDF único (PC-01/PC-02). «Tu informe está listo» solo llega cuando ese PDF existe.
+     */
     public static String[] publicado(String subproceso, String evaluado, boolean estudioCompleto, LocalDate fecha) {
         if (estudioCompleto) {
-            return new String[] {"Tu estudio está completo",
-                    "El estudio de " + evaluado + " quedó completo y publicado el " + FechasLegibles.larga(fecha) + ". Ya puedes descargar todos los informes."};
+            return new String[] {subproceso + " publicado",
+                    "El informe de " + subproceso + " de " + evaluado + " ya está publicado (" + FechasLegibles.larga(fecha)
+                            + "). Puedes descargarlo ahora. Con este queda publicado todo el estudio: tu gestor está preparando el cierre y te avisaremos cuando el PDF completo esté listo."};
         }
         return new String[] {subproceso + " publicado",
                 "El informe de " + subproceso + " de " + evaluado + " ya está publicado (" + FechasLegibles.larga(fecha)

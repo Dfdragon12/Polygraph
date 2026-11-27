@@ -68,8 +68,18 @@ public record FormularioResponse(
         String conclusion,
         String conclusionPublicada,
         String nivelPublicado,
-        java.time.LocalDateTime fechaPublicado
+        java.time.LocalDateTime fechaPublicado,
+        // PC-04: qué pasó con lo que el ejecutor envió. publicacion: solo si está PUBLICADO; devolucion: solo si tiene la marca «devuelto».
+        Publicacion publicacion,
+        Devolucion devolucion
 ) {
+    /** El informe ya se publicó: quién y cuándo, y —solo si cambiaron— la conclusión y el nivel que el gestor ajustó (lo anterior, lo nuevo y el motivo del nivel). */
+    public record Publicacion(java.time.LocalDateTime fecha, String publicadoPor, String conclusionOriginal, String conclusionPublicada, boolean conclusionAjustada,
+                              String nivelSugerido, String nivelPublicado, boolean nivelAjustado, String motivoNivel) {}
+
+    /** La devolución vigente: quién la hizo, cuándo, el motivo de la lista y lo que explicó. */
+    public record Devolucion(String por, java.time.LocalDateTime fecha, String motivo, String detalle) {}
+
     /** valores solo aplica a secciones CAMPOS (idColumna -> valor); filas solo a secciones
      *  TABLA. El campo que no aplica llega vacío/null. orden: para intercalar en el mismo orden
      *  del constructor junto con tablasFijas (que vienen en una lista aparte). */

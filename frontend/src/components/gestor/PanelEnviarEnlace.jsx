@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { useVentana } from '../../hooks/useVentana'
 import tokenService from '../../services/tokenService'
 
 // PB-04 · «Enviar enlace al candidato»: contacto, qué va a diligenciar (el sistema decide corto o completo), por dónde se envía, el mensaje y el seguimiento.
@@ -7,10 +9,13 @@ const campoCls = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-
 const botonBase = 'min-h-[44px] px-4 rounded-lg text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#A8323F]'
 const COLOR_PASO = { HECHO: 'bg-[#1f6b44]', ACTUAL: 'bg-[#D9952B]', PENDIENTE: 'bg-gray-300' }
 const fechaHora = (iso) => iso ? new Date(iso).toLocaleString('es-CO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''
+const fechaDia = (d) => d ? new Date(`${d}T12:00:00`).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
+const NOMBRE_CANAL = { CORREO: 'Correo', WHATSAPP: 'WhatsApp', COPIA: 'Enlace copiado', ANTERIOR: 'Sistema anterior' }
 
 export default function PanelEnviarEnlace({ solicitud, onClose, onHecho, onToast }) {
   const idTitulo = useId()
   const cierre = useRef(null)
+  const capa = useRef(null)
   const celularRef = useRef(null)
   const [link, setLink] = useState(null)
   const [ctx, setCtx] = useState(null)
@@ -23,12 +28,8 @@ export default function PanelEnviarEnlace({ solicitud, onClose, onHecho, onToast
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState(null)
 
-  useEffect(() => {
-    cierre.current?.focus()
-    const salir = (e) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', salir)
-    return () => window.removeEventListener('keydown', salir)
-  }, [onClose])
+  // PC-06: foco adentro al abrir, Esc cierra, el foco vuelve a quien la abrió y el fondo queda inerte (hooks/useVentana); la ventana va en un portal.
+  useVentana({ capa, alEscape: onClose })
 
   const cargar = useCallback(async () => {
     setCargando(true); setError(null)
@@ -84,8 +85,8 @@ export default function PanelEnviarEnlace({ solicitud, onClose, onHecho, onToast
   const yaEnviado = pasos.some(p => p.clave === 'ENVIADO' && p.estado === 'HECHO')
   const vence = ctx?.venceReferencia ? new Date(`${ctx.venceReferencia}T12:00:00`).toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'numeric', year: 'numeric' }) : ''
 
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/30" onClick={onClose}>
+  return createPortal(
+    <div ref={capa} className="fixed inset-0 z-50 flex justify-end bg-black/30 overscroll-contain" onClick={onClose}>
       <aside role="dialog" aria-modal="true" aria-labelledby={idTitulo} onClick={e => e.stopPropagation()}
         className="w-full max-w-[560px] h-full bg-white shadow-2xl flex flex-col rounded-l-2xl">
         <header className="px-6 pt-5 pb-4 border-b border-gray-200 flex items-start justify-between gap-3">
@@ -97,7 +98,7 @@ export default function PanelEnviarEnlace({ solicitud, onClose, onHecho, onToast
           <button ref={cierre} type="button" onClick={onClose} aria-label="Cerrar" className="min-h-[44px] min-w-[44px] rounded-lg text-gray-600 hover:bg-gray-100">✕</button>
         </header>
 
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+        <div className="flex-1 overflow-y-auto overscroll-contain px-6 py-5 space-y-5">
           {cargando && <p className="text-sm text-gray-700">Preparando el enlace…</p>}
           {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
 
@@ -123,6 +124,37 @@ export default function PanelEnviarEnlace({ solicitud, onClose, onHecho, onToast
                     <button type="button" onClick={() => celularRef.current?.focus()} className={`${botonBase} border border-gray-300 text-gray-900 hover:bg-gray-50`}>Cambiar contacto</button>
                     <button type="button" onClick={ampliar} className={`${botonBase} border border-gray-300 text-gray-900 hover:bg-gray-50`}>Ampliar vigencia</button>
                   </div>
+                </section>
+              )}
+
+              {/* PC-03: UN renglón por envío o reenvío; un reenvío nunca pisa el primero. */}
+              {ctx.envios?.length > 0 && (
+                <section aria-labelledby={`${idTitulo}-historial`} className="rounded-xl border border-gray-200 p-4">
+                  <h3 id={`${idTitulo}-historial`} className="text-sm font-bold text-gray-900">Historial de envíos</h3>
+                  <div className="mt-2 overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <caption className="sr-only">Envíos y reenvíos del enlace, del más reciente al más antiguo</caption>
+                      <thead>
+                        <tr className="text-gray-700">
+                          <th scope="col" className="py-1 pr-3 font-semibold">Fecha</th>
+                          <th scope="col" className="py-1 pr-3 font-semibold">Canales</th>
+                          <th scope="col" className="py-1 pr-3 font-semibold">Quién</th>
+                          <th scope="col" className="py-1 font-semibold">Vigencia hasta</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ctx.envios.map((e, i) => (
+                          <tr key={`${e.fecha}-${i}`} className="border-t border-gray-100 text-gray-900">
+                            <td className="py-1.5 pr-3 whitespace-nowrap tabular-nums">{fechaHora(e.fecha)}</td>
+                            <td className="py-1.5 pr-3">{e.canales.map(c => NOMBRE_CANAL[c] ?? c).join(' y ')}</td>
+                            <td className="py-1.5 pr-3">{e.usuario || '—'}</td>
+                            <td className="py-1.5 whitespace-nowrap">{fechaDia(e.vigenciaHasta)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {ctx.envios.some(e => e.sistemaAnterior) && <p className="mt-2 text-xs text-gray-700">«Sistema anterior»: el primer envío de antes de este historial; se anotó con la fecha de creación del enlace.</p>}
                 </section>
               )}
 
@@ -165,7 +197,7 @@ export default function PanelEnviarEnlace({ solicitud, onClose, onHecho, onToast
               <section>
                 <label htmlFor={`${idTitulo}-mensaje`} className="block text-sm font-bold text-gray-900">4. Mensaje <span className="font-normal text-gray-700">· plantilla de Polygraph, puedes editarla (va por WhatsApp)</span></label>
                 <textarea id={`${idTitulo}-mensaje`} rows={7} value={mensaje} onChange={e => setMensaje(e.target.value)} className={`${campoCls} mt-2`} />
-                <p className="text-xs text-gray-700 mt-1">Fecha de referencia: <strong>{vence}</strong> (2 días hábiles) · Recordatorio automático por correo: <strong>a las 24 h si no lo abre o no lo termina</strong></p>
+                <p className="text-xs text-gray-700 mt-1">Vigencia de este envío: hasta el <strong>{vence}</strong> (2 días hábiles desde hoy) · Recordatorio automático por correo: <strong>a las 24 h si no lo abre o no lo termina</strong></p>
               </section>
 
               <section className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-xs text-gray-900 space-y-1">
@@ -187,6 +219,7 @@ export default function PanelEnviarEnlace({ solicitud, onClose, onHecho, onToast
           {faltaContacto && <p className="basis-full text-xs text-gray-600 text-right">{faltaContacto}</p>}
         </footer>
       </aside>
-    </div>
+    </div>,
+    document.body
   )
 }

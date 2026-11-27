@@ -188,8 +188,12 @@ public class Servicio {
         if (diasPausaHabiles == null) diasPausaHabiles = 0;
     }
 
-    /** La fecha de entrega que se le muestra a todos: la de compromiso ajustada (con pausas) o, si aún no se calculó, la estimada. */
+    /**
+     * La fecha de entrega que se le muestra a todos: la de compromiso ajustada (con pausas) o, si aún no se calculó, la estimada. PC-03 F: una solicitud
+     * CANCELADA no tiene compromiso (null: las pantallas dicen «—»); antes seguía mostrando la fecha que se había prometido.
+     */
     public LocalDate fechaParaMostrar() {
+        if (estado == com.polygraph.erp.shared.enums.EstadoServicio.CANCELADO) return null;
         return fechaCompromisoAjustada != null ? fechaCompromisoAjustada : fechaEntregaEstimada;
     }
 }

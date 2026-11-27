@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.DisabledException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.LockedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -81,6 +82,13 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> manejarArchivoDemasiadoGrande(MaxUploadSizeExceededException ex) {
         return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
                 .body(construirRespuesta("El archivo supera el tamaño máximo permitido (10MB)", HttpStatus.PAYLOAD_TOO_LARGE));
+    }
+
+    /** PC-01 (PB-H-39): sin permiso es 403, no «Error interno» (el manejador general se tragaba el AccessDeniedException de @PreAuthorize). */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<Map<String, Object>> manejarSinPermiso(AccessDeniedException ex) {
+        log.warn("Acceso denegado: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(construirRespuesta("No tienes permiso para esta acción.", HttpStatus.FORBIDDEN));
     }
 
     @ExceptionHandler(Exception.class)

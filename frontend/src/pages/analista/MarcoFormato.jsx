@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import formulariosService from '../../services/formulariosService'
 import asignacionService from '../../services/asignacionService'
 import Toast from '../../components/Toast'
+import AvisosInforme from '../../components/informe/AvisosInforme'
 import FichaCandidato from '../../components/FichaCandidato'
 import NovedadesSubproceso from '../../components/NovedadesSubproceso'
 import SoportesInforme from '../../components/SoportesInforme'
@@ -257,7 +258,7 @@ export default function MarcoFormato({ inicial, idServicioSubproceso, configurac
           {!criticidad && <p role="alert" className="text-xs text-amber-800">La solicitud no trae la criticidad del cargo. Avisa al gestor desde «Novedades».</p>}
         </div>
         <div className="flex flex-col items-end gap-2">
-          <p className={`text-xs ${fallido ? 'text-red-600' : 'text-gray-700'}`} aria-live="polite">{textoGuardado}</p>
+          <p className={`text-xs ${fallido ? 'text-red-600' : 'text-gray-700'}`} aria-live="polite">{soloLectura ? 'Solo lectura' : textoGuardado}</p>
           <div className="flex flex-wrap justify-end gap-2">
             <button type="button" onClick={() => setPanel(p => (p === 'novedades' ? null : 'novedades'))} aria-expanded={panel === 'novedades'}
               className="min-h-11 px-4 text-sm font-medium rounded-lg border border-gray-300 text-gray-800 hover:bg-gray-50">Novedades</button>
@@ -273,6 +274,9 @@ export default function MarcoFormato({ inicial, idServicioSubproceso, configurac
         </div>
       </div>
 
+      {/* PC-04: enviado, devuelto o publicado (con «Solicitar corrección»): el mismo aviso en todos los formatos, arriba. */}
+      <AvisosInforme meta={inicial} esEjecutor idServicioSubproceso={idServicioSubproceso} onToast={m => setToast({ mensaje: m, tipo: 'exito' })} />
+
       {panel === 'novedades' && (
         <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4">
           <NovedadesSubproceso idServicioSubproceso={idServicioSubproceso} onConteo={NOOP} onReprogramado={NOOP} onError={error} onExito={exito} />
@@ -284,13 +288,15 @@ export default function MarcoFormato({ inicial, idServicioSubproceso, configurac
         </div>
       )}
 
-      <div className="mb-3" role="group" aria-label="Avance del formato">
-        <p className="text-xs text-gray-800 mb-1">Avance: {avanceLlenos} de {avanceTotal} campos diligenciados</p>
-        <div className="h-2 bg-gray-200 rounded" role="progressbar" aria-valuemin={0} aria-valuemax={100}
-          aria-valuenow={avanceTotal ? Math.round(avanceLlenos / avanceTotal * 100) : 0} aria-label="Avance del formato">
-          <div className="h-2 bg-primary-600 rounded" style={{ width: `${avanceTotal ? Math.round(avanceLlenos / avanceTotal * 100) : 0}%` }} />
+      {!soloLectura && (
+        <div className="mb-3" role="group" aria-label="Avance del formato">
+          <p className="text-xs text-gray-800 mb-1">Avance: {avanceLlenos} de {avanceTotal} campos diligenciados</p>
+          <div className="h-2 bg-gray-200 rounded" role="progressbar" aria-valuemin={0} aria-valuemax={100}
+            aria-valuenow={avanceTotal ? Math.round(avanceLlenos / avanceTotal * 100) : 0} aria-label="Avance del formato">
+            <div className="h-2 bg-primary-600 rounded" style={{ width: `${avanceTotal ? Math.round(avanceLlenos / avanceTotal * 100) : 0}%` }} />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Las fases */}
       <nav aria-label="Fases del formato" className="grid grid-cols-3 gap-2 mb-5">

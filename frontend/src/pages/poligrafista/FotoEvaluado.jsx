@@ -183,6 +183,7 @@ export function FotoEvaluado({ idServicioSubproceso, estado, onEstado, onError }
             <p><b>Tomada por:</b> {vigente.tomadaPor}</p>
             <p className="text-xs text-gray-700">{origenTexto(vigente.origen)} · {fechaCorta(vigente.fecha)}</p>
             {guardada && <p role="status" className="text-green-700 font-semibold">✓ Foto guardada</p>}
+            {estado.avisoFecha && <p role="status" className="rounded border border-amber-300 bg-amber-50 text-amber-900 px-3 py-2">{estado.avisoFecha}</p>}
             <p className="text-green-700">✓ Cédula original verificada</p>
             {estado.bloqueada && <p className="text-gray-700">La foto quedó fija. Si hay que cambiarla, lo hace el gestor.</p>}
             {estado.puedeTomar && (
@@ -266,6 +267,7 @@ export function FotoEvaluadoGestor({ idServicioSubproceso }) {
             <p><b>Tomada por:</b> {vigente.tomadaPor} · {fechaHora(vigente.fecha)}</p>
             <p><b>Origen:</b> {origenTexto(vigente.origen)}</p>
             <p>{vigente.cedulaVerificada ? '✓ Cédula original verificada' : 'Cédula sin verificar'}</p>
+            {estado.avisoFecha && <p role="status" className="rounded border border-amber-300 bg-amber-50 text-amber-900 px-3 py-2">{estado.avisoFecha}</p>}
             {vigente.motivoReemplazo && <p className="text-gray-700"><b>Reemplazo:</b> {vigente.motivoReemplazo}</p>}
             {estado.historial.length > 0 && (
               <details className="mt-1">

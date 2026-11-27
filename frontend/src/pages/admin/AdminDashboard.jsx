@@ -235,8 +235,8 @@ function GraficaDias({ porDia }) {
 
 const ETAPAS_TRABAJO = [
   { clave: 'PENDIENTE', label: 'Sin asignar', caja: 'bg-amber-50 border-amber-200', num: 'text-amber-600' },
-  { clave: 'EN_EJECUCION', label: 'En curso', caja: 'bg-blue-50 border-blue-200', num: 'text-blue-600' },
-  { clave: 'FINALIZADO', label: 'Por aprobar', caja: 'bg-violet-50 border-violet-200', num: 'text-violet-600' },
+  { clave: 'EN_EJECUCION', label: 'En ejecución', caja: 'bg-blue-50 border-blue-200', num: 'text-blue-600' },
+  { clave: 'FINALIZADO', label: 'Por publicar', caja: 'bg-violet-50 border-violet-200', num: 'text-violet-600' },
   { clave: 'PUBLICADO', label: 'Publicados', caja: 'bg-green-50 border-green-200', num: 'text-green-600' },
 ]
 
@@ -264,8 +264,8 @@ function TrabajoEquipo({ t }) {
                 <tr className="text-left text-[11px] text-gray-400 uppercase">
                   <th className="py-1 font-semibold">Rol</th>
                   <th className="py-1 font-semibold text-right">Sin asignar</th>
-                  <th className="py-1 font-semibold text-right">En curso</th>
-                  <th className="py-1 font-semibold text-right">Por aprobar</th>
+                  <th className="py-1 font-semibold text-right">En ejecución</th>
+                  <th className="py-1 font-semibold text-right">Por publicar</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -639,7 +639,7 @@ export default function AdminDashboard() {
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
             <Kpi titulo="Solicitudes en curso" valor={s.enCurso} sub={`${entero(s.total)} en total`} tono="primary" icono="📋" to="/admin/semaforo" />
             <Kpi titulo="Nuevas hoy" valor={s.nuevasHoy} sub={`${entero(s.nuevasSemana)} en 7 días · ${entero(s.nuevasMes)} este mes`} tono="sky" icono="🆕" to="/admin/semaforo" />
-            <Kpi titulo="Por aprobar" valor={t.porEstado.FINALIZADO ?? 0} sub="Subprocesos terminados, esperando al gestor" tono="violet" icono="✍️" to="/admin/semaforo" />
+            <Kpi titulo="Por publicar" valor={t.porEstado.FINALIZADO ?? 0} sub="Subprocesos finalizados, esperando que el gestor los publique" tono="violet" icono="✍️" to="/admin/semaforo" />
             <Kpi titulo="Entregas en riesgo" valor={enRiesgo} sub={`${entero(vencidas)} vencidas · ${entero(porVencer)} por vencer`} tono={vencidas > 0 ? 'red' : enRiesgo > 0 ? 'amber' : 'emerald'} icono="⏰" to="/admin/semaforo?estadoTiempo=VENCIDA,POR_VENCER" />
             <Kpi titulo="Conectados ahora" valor={conectados} sub={`${e.conectadosInternos} equipo · ${e.conectadosClientes} clientes · ${e.conectadosCandidatos} candidatos`} tono="emerald" icono="🟢" />
             <Kpi titulo="Clientes activos" valor={datos.clientesActivos} sub={`${entero(datos.internosActivos)} personas en el equipo · ${entero(e.clientesNuevosMes)} clientes nuevos este mes`} tono="amber" icono="🏢" to="/admin/clientes" />

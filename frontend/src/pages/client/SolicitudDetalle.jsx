@@ -8,6 +8,7 @@ import EtiquetaEstado from '../../components/semaforo/EtiquetaEstado'
 import { useAuth } from '../../hooks/useAuth'
 import { useEstadosSubproceso } from '../../hooks/useEstadosSubproceso'
 import { colorNovedad } from '../../utils/paletaNovedades'
+import { fechaCorta, fechaHora, fechaLarga, fechaConDia, horaCorta } from '../../utils/fechas'
 import mensajeService from '../../services/mensajeService'
 import trabajoService, { esperarTrabajo, guardarBlob, mensajeDeError } from '../../services/trabajoService'
 
@@ -22,15 +23,6 @@ import { Modal } from '../../components/ui/Modal'
 // Mismo orden que PASOS en pages/evaluee/EvalueeForm.jsx (pasoActual es el índice).
 const PASOS_CANDIDATO = ['Autorización', 'Datos personales', 'Educación', 'Experiencia laboral', 'Referencias', 'Documentos', 'Revisión']
 
-const fechaLarga = (valor) => valor
-  ? new Date(`${String(valor).slice(0, 10)}T00:00:00`).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })
-  : '—'
-const fechaCorta = (valor) => valor
-  ? new Date(`${String(valor).slice(0, 10)}T12:00:00`).toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit' })
-  : '—'
-const fechaHora = (iso) => iso
-  ? new Date(iso).toLocaleString('es-CO', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-  : '—'
 
 // Etapas del estudio tal como las entiende el cliente (Semáforo del servicio). CANCELADO no es
 // una etapa: se muestra como aviso aparte; REPROGRAMADO se ubica en "Programando".
@@ -163,6 +155,7 @@ function InformesPorSubproceso({ subprocesos, publicada, puedeDescargar, descarg
   const publicados = activos.filter(sp => sp.estado === 'PUBLICADO')
   const faltan = activos.filter(sp => sp.estado !== 'PUBLICADO').map(sp => sp.nombre)
   const pct = activos.length > 0 ? Math.round((publicados.length / activos.length) * 100) : 0
+  const todosPublicados = activos.length > 0 && publicados.length === activos.length   // faltan solo el cierre del gestor y la pasta: no es «parcial»
   return (
     <div className="space-y-4">
       {!publicada && activos.length > 0 && (
@@ -172,7 +165,8 @@ function InformesPorSubproceso({ subprocesos, publicada, puedeDescargar, descarg
               <p className="text-xs text-gray-700">Informes publicados por tu gestor</p>
               <span className="inline-flex items-center gap-2 rounded-full bg-[#E3F3F1] px-3 py-1 text-xs font-semibold text-[#0b5f58]">
                 <span aria-hidden="true" className="h-[9px] w-[9px] rounded-full bg-[#0D9488]" />
-                {publicados.length > 0 ? `Publicado parcial · ${publicados.length} de ${activos.length} informes` : `Sin informes publicados · 0 de ${activos.length}`}
+                {todosPublicados ? `${publicados.length} de ${activos.length} informes · Tu gestor está preparando el cierre`
+                  : publicados.length > 0 ? `Publicado parcial · ${publicados.length} de ${activos.length} informes` : `Sin informes publicados · 0 de ${activos.length}`}
               </span>
             </div>
             <div className="mt-2 h-2 rounded-full bg-gray-200 overflow-hidden" role="progressbar" aria-valuemin={0} aria-valuemax={activos.length} aria-valuenow={publicados.length}
@@ -183,7 +177,7 @@ function InformesPorSubproceso({ subprocesos, publicada, puedeDescargar, descarg
           <section className="rounded-2xl border border-dashed border-gray-300 bg-white p-5 flex flex-wrap items-center justify-between gap-4">
             <div className="min-w-[240px] flex-1">
               <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-700">Resultado del estudio</p>
-              <h2 className="text-lg font-bold text-gray-900">Se entrega cuando los {activos.length} informes estén publicados</h2>
+              <h2 className="text-lg font-bold text-gray-900">{todosPublicados ? 'Tu gestor está preparando el cierre del estudio' : `Se entrega cuando los ${activos.length} informes estén publicados`}</h2>
               <p className="text-sm text-gray-700 mt-1">Mientras tanto puedes descargar cada informe publicado.{faltan.length > 0 && ` Faltan: ${faltan.join(', ')}.`}</p>
             </div>
             <button type="button" disabled className="min-h-[44px] px-5 rounded-lg bg-gray-200 text-gray-600 text-sm font-semibold cursor-not-allowed">
@@ -229,8 +223,7 @@ function InformesPorSubproceso({ subprocesos, publicada, puedeDescargar, descarg
                     </td>
                     <td className="px-3 py-4 text-gray-800 max-w-[420px]">
                       {listo && sp.conclusion ? sp.conclusion : (
-                        <span className="text-gray-600">La conclusión aparece cuando tu gestor publique el informe.
-                          {sp.fechaProgramada && sp.estado !== 'CANCELADO' && ` Programado para el ${new Date(sp.fechaProgramada).toLocaleDateString('es-CO')}.`}</span>
+                        <span className="text-gray-600">La conclusión aparece cuando tu gestor publique el informe.</span>
                       )}
                     </td>
                     <td className="px-5 py-4">
@@ -267,12 +260,17 @@ function InformesPorSubproceso({ subprocesos, publicada, puedeDescargar, descarg
 /* ─── PB-03: estudio completo listo (pasta emitida): nivel, nota del gestor y el PDF único ─── */
 function EstudioListo({ riesgo, nota, estudioPdf, activos, onDescargar, descargando, errorPdf }) {
   const cfg = NIVEL_RIESGO[riesgo?.nivel]
-  const listoPdf = estudioPdf?.estado === 'LISTO'
+  // PC-01: «listo» es una sola cosa y la decide el servidor (publicado + pasta emitida + PDF armado). Antes de eso el cliente lee «Preparando…».
+  const listoPdf = !!estudioPdf?.disponible
+  const razon = listoPdf ? `Informe de análisis final + los ${activos} informes, en un solo archivo${estudioPdf.paginas ? ` · ${estudioPdf.paginas} páginas` : ''}`
+    : estudioPdf?.estado === 'ERROR' ? 'Estamos resolviendo un problema con el PDF de tu estudio; tu gestor ya lo está revisando.'
+    : estudioPdf?.estado === 'GENERANDO' ? 'Preparando el PDF de tu estudio… puede tardar unos minutos. Te avisaremos cuando esté listo.'
+    : 'Tu gestor está preparando el cierre del estudio. Te avisaremos cuando el PDF esté listo.'
   return (
     <section className="rounded-2xl bg-[#141B2B] text-white p-5 sm:p-6 flex flex-wrap items-center justify-between gap-6">
       <div className="min-w-[260px] flex-1">
         <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-300">Resultado del estudio</p>
-        <h2 className="text-2xl font-bold mt-1">Tu informe está listo</h2>
+        <h2 className="text-2xl font-bold mt-1">{listoPdf ? 'Tu informe está listo' : 'Estamos preparando tu estudio completo'}</h2>
         {nota && <p className="mt-3 text-sm leading-relaxed text-gray-100"><strong>Nota de tu gestor:</strong> {nota}</p>}
       </div>
       <div className="flex flex-col items-start gap-3 sm:items-end">
@@ -281,15 +279,11 @@ function EstudioListo({ riesgo, nota, estudioPdf, activos, onDescargar, descarga
             <span className="rounded-full bg-[#E6F3EC] px-4 py-1 text-base font-bold text-[#1f6b44]" style={riesgo.nivel === 'MEDIO' ? { background: '#FBF1DE', color: '#8a5a0c' } : riesgo.nivel === 'ALTO' ? { background: '#F9E8EA', color: '#8c2733' } : undefined}>{riesgo.nivel}</span>
           </p>
         )}
-        <button type="button" onClick={onDescargar} disabled={!listoPdf || descargando}
+        <button type="button" onClick={onDescargar} disabled={!listoPdf || descargando} aria-describedby="razon-estudio-pdf"
           className="min-h-[44px] rounded-lg bg-[#B23A48] px-5 text-sm font-bold text-white hover:bg-[#9c3140] disabled:bg-gray-500 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
           {descargando ? 'Descargando…' : 'Descargar estudio completo · PDF'}
         </button>
-        <p className="text-xs text-gray-300">
-          {listoPdf ? `Informe de análisis final + los ${activos} informes, en un solo archivo${estudioPdf.paginas ? ` · ${estudioPdf.paginas} páginas` : ''}`
-            : estudioPdf?.estado === 'ERROR' ? 'No se pudo armar el PDF. Tu gestor lo está revisando.'
-            : estudioPdf ? 'Estamos armando el PDF del estudio; estará listo en un momento.' : 'El PDF del estudio todavía no está disponible.'}
-        </p>
+        <p id="razon-estudio-pdf" className="text-xs text-gray-300">{razon}</p>
         {errorPdf && <p role="alert" className="text-xs text-red-200">{errorPdf}</p>}
       </div>
     </section>
@@ -363,7 +357,10 @@ function queSigue(detalle, novedadesAbiertas, proximaCita) {
   const cand = detalle.estadoCandidato
   if (detalle.estado === 'CANCELADO') return null
   if (detalle.estado === 'PUBLICADO') {
-    return { tono: 'exito', titulo: 'Tu informe está listo', texto: 'El estudio terminó. Descarga los informes aquí abajo.' }
+    // PC-01: «listo» solo cuando el PDF del estudio existe; antes, el cliente lee que se está preparando.
+    return detalle.estudioPdf?.disponible
+      ? { tono: 'exito', titulo: 'Tu informe está listo', texto: 'El estudio terminó. Descarga los informes aquí abajo.' }
+      : { tono: 'info', titulo: 'Estamos preparando tu estudio completo', texto: 'Ya puedes descargar los informes publicados. El PDF del estudio completo puede tardar unos minutos; te avisaremos cuando esté listo.' }
   }
   if (cand?.estado === 'VENCIDO') {
     return { tono: 'alerta', titulo: 'El candidato no terminó de diligenciar su información',
@@ -439,7 +436,7 @@ function AvisoQueSigue({ aviso, onPedirEnlace, enlacePedido, pidiendoEnlace, onI
             <span className="font-semibold text-gray-800 tabular-nums">{pct}%</span>
           </div>
           <div className="h-1.5 rounded-full bg-white/80 overflow-hidden ring-1 ring-black/5">
-            <div className="h-full rounded-full bg-sky-500 transition-all" style={{ width: `${pct}%` }} />
+            <div className="h-full rounded-full bg-sky-500 transition-[width]" style={{ width: `${pct}%` }} />
           </div>
           {pct === 0 && <p className="text-[11px] text-gray-500 mt-1">Todavía no ha empezado a diligenciarla.</p>}
         </div>
@@ -682,7 +679,7 @@ function Indicador({ visual, valor, sufijo, etiqueta, detalle, tono = 'gris', on
   return (
     <Contenedor type={onClick ? 'button' : undefined} onClick={onClick}
       className={`text-left bg-white rounded-2xl ring-1 ring-gray-900/5 shadow-sm p-4 flex items-center gap-3 min-w-0 ${
-        onClick ? 'hover:shadow-md hover:-translate-y-0.5 transition-all' : ''}`}>
+        onClick ? 'hover:shadow-md hover:-translate-y-0.5 transition-[box-shadow,transform]' : ''}`}>
       {visual}
       <div className="min-w-0">
         <p className={`text-2xl font-bold leading-none tabular-nums ${TONOS[tono]}`}>
@@ -793,9 +790,13 @@ const TEXTO_COMPONENTE = {
   REPROGRAMADO: 'La cita no se pudo realizar y la estamos reagendando; te avisaremos la nueva fecha.',
   EN_EJECUCION: 'Nuestro equipo ya lo está realizando.',
   FINALIZADO: 'Ya se realizó; está en control de calidad y auditoría antes de entregarlo.',
-  PUBLICADO: 'Terminado y aprobado.',
   CANCELADO: 'Este componente no se realizó.',
 }
+
+// Lo que el cliente lee bajo las etapas de un componente. Publicado dice cuándo lo publicó su gestor (sin fecha, no inventa una).
+const textoDeComponente = (sp) => sp.estado === 'PUBLICADO'
+  ? `Publicado por tu gestor${sp.fechaPublicado ? ` el ${fechaCorta(sp.fechaPublicado)}` : ''}.`
+  : TEXTO_COMPONENTE[sp.estado] ?? ''
 
 function EtapasComponente({ estado }) {
   if (estado === 'CANCELADO') {
@@ -1043,7 +1044,7 @@ export default function SolicitudDetalle() {
         <span className="text-gray-300">/</span>
         <span className="text-gray-800 font-medium">Solicitud #{detalle.idServicio}</span>
         <span className="ml-auto flex items-center gap-2 text-xs text-gray-400">
-          {actualizado && <span className="hidden sm:inline">Actualizado {actualizado.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}</span>}
+          {actualizado && <span className="hidden sm:inline">Actualizado {horaCorta(actualizado)}</span>}
           <button type="button" onClick={() => cargar(true)} disabled={recargando}
             className="font-medium text-primary-600 hover:text-primary-700 disabled:opacity-50">
             {recargando ? 'Actualizando…' : 'Actualizar'}
@@ -1189,7 +1190,7 @@ export default function SolicitudDetalle() {
                       <p className={`text-sm font-semibold truncate ${estaAbierto ? 'text-primary-800' : 'text-gray-900'}`}>{sp.nombre}</p>
                       <p className="text-xs text-gray-500 truncate mt-0.5">
                         {cita
-                          ? <span className="font-medium text-primary-700">Cita {cita.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' })} · {cita.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}</span>
+                          ? <span className="font-medium text-primary-700">Cita {fechaConDia(cita)} · {horaCorta(cita)}</span>
                           : sp.informeDisponible ? 'Informe disponible' : cfg.texto}
                         {enGestion > 0 && <span className="ml-2 font-semibold text-amber-700">· {enGestion} novedad{enGestion === 1 ? '' : 'es'} en gestión</span>}
                       </p>
@@ -1201,7 +1202,7 @@ export default function SolicitudDetalle() {
                     <div className="pl-6 sm:pl-[4.25rem] pr-5 pb-5">
                       <div className="rounded-xl bg-white ring-1 ring-gray-100 p-4 space-y-4">
                         <EtapasComponente estado={sp.estado} />
-                        <p className="text-xs text-gray-500">{TEXTO_COMPONENTE[sp.estado] ?? ''}</p>
+                        <p className="text-xs text-gray-500">{textoDeComponente(sp)}</p>
                         {(sp.fechaProgramada || suyas.length > 0 || sp.informeDisponible) && (
                           <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-gray-100">
                             {sp.fechaProgramada && (

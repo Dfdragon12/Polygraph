@@ -1,5 +1,5 @@
-import { parseFecha } from '../../utils/fechas'
-import { useId, useState, useEffect, useCallback, Fragment } from 'react'
+import { fechaCorta, fechaHora } from '../../utils/fechas'
+import { useId, useState, useEffect, useCallback, useMemo, Fragment } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import api from '../../services/api'
 import tokenService from '../../services/tokenService'
@@ -9,6 +9,7 @@ import formulariosService from '../../services/formulariosService'
 import trabajoService, { esperarTrabajo, guardarBlob, mensajeDeError } from '../../services/trabajoService'
 import PanelPublicarSubproceso from '../../components/gestor/PanelPublicarSubproceso'
 import PanelEmitirEstudio from '../../components/gestor/PanelEmitirEstudio'
+import MarcaDevuelto from '../../components/informe/MarcaDevuelto'
 import PanelEnviarEnlace from '../../components/gestor/PanelEnviarEnlace'
 import Toast from '../../components/Toast'
 import { Modal, ConfirmModal } from '../../components/ui/Modal'
@@ -22,6 +23,7 @@ import ModalAsignarProgramador from '../../components/ModalAsignarProgramador'
 import CiudadSelect from '../../components/CiudadSelect'
 import RiesgoServicio from '../../components/RiesgoServicio'
 import { useCambios } from '../../hooks/useCambios'
+import { iniciarIntervaloVisible } from '../../hooks/useIntervaloVisible'
 import SemaforoEstados from '../../components/semaforo/SemaforoEstados'
 import EtiquetaEstado from '../../components/semaforo/EtiquetaEstado'
 
@@ -85,19 +87,6 @@ const TRANSICIONES_GESTOR = {
   PUBLICADO:    [],
   CANCELADO:    ['PROGRAMANDO', 'REPROGRAMADO'],
   REPROGRAMADO: ['CANCELADO'],
-}
-
-function formatFecha(iso) {
-  if (!iso) return '—'
-  return parseFecha(iso).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ de /g, ' ')
-}
-
-function formatFechaHora(iso) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString('es-CO', {
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  })
 }
 
 function tiempoRestante(iso) {
@@ -218,6 +207,8 @@ function FilaSubprocesos({ idServicio, colSpan, onToast, candidatoCompletado, es
                   </div>
                   <div className="min-w-[150px]">
                     <EtiquetaEstado estado={sp.estado} pequena />
+                    {/* PC-04: «Devuelto» es una marca gris con el motivo, no un estado: el subproceso sigue en Ejecución. */}
+                    {sp.devuelto && sp.estado === 'EN_EJECUCION' && <MarcaDevuelto motivo={sp.motivoDevolucion} detalle={sp.detalleDevolucion} className="mt-1" />}
                     {porPublicar && <span className="block text-[11px] text-gray-700 mt-0.5">control de calidad</span>}
                   </div>
                   <div className="min-w-[110px]"><ChipCalificacion sp={sp} /></div>
@@ -279,7 +270,8 @@ function FilaSubprocesos({ idServicio, colSpan, onToast, candidatoCompletado, es
       <PanelPublicarSubproceso
         asignacion={publicando} publicados={publicados} total={vigentes.length}
         onClose={() => setPublicando(null)}
-        onHecho={() => { setPublicando(null); cargar() }}
+        // PC-02: si este era el último informe (1 de 1, 3 de 3…), a continuación se abre «Emitir estudio completo».
+        onHecho={(r) => { setPublicando(null); cargar(); if (r?.cierraEstudio) onEmitir?.() }}
         onToast={onToast}
       />
     )}
@@ -398,7 +390,7 @@ function ModalResumenEvaluado({ idServicio, nombreEvaluado, onClose }) {
                 </p>
                 <p className={`text-xs ${resumen.autorizacionDatos ? 'text-emerald-800/80' : 'text-amber-800/80'}`}>
                   {resumen.autorizacionDatos
-                    ? `El candidato la aceptó el ${formatFechaHora(resumen.fechaAutorizacion)} desde su link (Ley 1581 de 2012).`
+                    ? `El candidato la aceptó el ${fechaHora(resumen.fechaAutorizacion)} desde su link (Ley 1581 de 2012).`
                     : 'El candidato todavía no la acepta. Hasta que lo haga no puede diligenciar su hoja de vida ni cargar documentos.'}
                 </p>
               </div>
@@ -408,8 +400,8 @@ function ModalResumenEvaluado({ idServicio, nombreEvaluado, onClose }) {
             <section>
               <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Datos personales</h3>
               <div className="bg-gray-50 rounded-lg p-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-                {resumen.fechaNacimiento && <div><span className="text-gray-400">F. nacimiento: </span><span className="text-gray-800">{formatFecha(resumen.fechaNacimiento)}</span></div>}
-                {(resumen.fechaExpedicion || resumen.ciudadExpedicion) && <div><span className="text-gray-400">Expedición del documento: </span><span className="text-gray-800">{[resumen.fechaExpedicion && formatFecha(resumen.fechaExpedicion), resumen.ciudadExpedicion].filter(Boolean).join(' · ')}</span></div>}
+                {resumen.fechaNacimiento && <div><span className="text-gray-400">F. nacimiento: </span><span className="text-gray-800">{fechaCorta(resumen.fechaNacimiento)}</span></div>}
+                {(resumen.fechaExpedicion || resumen.ciudadExpedicion) && <div><span className="text-gray-400">Expedición del documento: </span><span className="text-gray-800">{[resumen.fechaExpedicion && fechaCorta(resumen.fechaExpedicion), resumen.ciudadExpedicion].filter(Boolean).join(' · ')}</span></div>}
                 {resumen.ciudadNacimiento && <div><span className="text-gray-400">Ciudad nacimiento: </span><span className="text-gray-800">{resumen.ciudadNacimiento}</span></div>}
                 {resumen.ciudadResidencia && <div><span className="text-gray-400">Ciudad residencia: </span><span className="text-gray-800">{resumen.ciudadResidencia}</span></div>}
                 {resumen.estadoCivil && <div><span className="text-gray-400">Estado civil: </span><span className="text-gray-800">{resumen.estadoCivil}</span></div>}
@@ -453,7 +445,7 @@ function ModalResumenEvaluado({ idServicio, nombreEvaluado, onClose }) {
                           <td data-label="Nivel" className="px-3 py-2 text-gray-800">{e.nivel ?? '—'}</td>
                           <td data-label="Institución" className="px-3 py-2 text-gray-800">{e.institucion ?? '—'}</td>
                           <td data-label="Ciudad" className="px-3 py-2 text-gray-600">{e.ciudad ?? '—'}</td>
-                          <td data-label="Estado" className="px-3 py-2 text-gray-600">{e.enCurso ? 'En curso' : (e.fechaFin ? formatFecha(e.fechaFin) : '—')}</td>
+                          <td data-label="Estado" className="px-3 py-2 text-gray-600">{e.enCurso ? 'En curso' : (e.fechaFin ? fechaCorta(e.fechaFin) : '—')}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -485,8 +477,8 @@ function ModalResumenEvaluado({ idServicio, nombreEvaluado, onClose }) {
                         <tr key={i}>
                           <td data-label="Empresa" className="px-3 py-2 text-gray-800">{ex.empresa ?? '—'}</td>
                           <td data-label="Cargo" className="px-3 py-2 text-gray-800">{ex.cargo ?? '—'}</td>
-                          <td data-label="Inicio" className="px-3 py-2 text-gray-600 whitespace-nowrap">{formatFecha(ex.fechaInicio)}</td>
-                          <td data-label="Fin" className="px-3 py-2 text-gray-600 whitespace-nowrap">{ex.laboraActualmente ? 'Actual' : formatFecha(ex.fechaFin)}</td>
+                          <td data-label="Inicio" className="px-3 py-2 text-gray-600 whitespace-nowrap">{fechaCorta(ex.fechaInicio)}</td>
+                          <td data-label="Fin" className="px-3 py-2 text-gray-600 whitespace-nowrap">{ex.laboraActualmente ? 'Actual' : fechaCorta(ex.fechaFin)}</td>
                           <td data-label="Contrato" className="px-3 py-2 text-gray-600">{ex.tipoContrato ?? '—'}</td>
                           <td data-label="Salario" className="px-3 py-2 text-gray-600 whitespace-nowrap">{ex.salario != null ? `$ ${Number(ex.salario).toLocaleString('es-CO')}` : '—'}</td>
                           <td data-label="Llamados de atención" className="px-3 py-2 text-gray-600 max-w-[140px]"><span className="truncate block" title={ex.llamadosAtencion ?? ''}>{ex.llamadosAtencion ?? '—'}</span></td>
@@ -501,7 +493,7 @@ function ModalResumenEvaluado({ idServicio, nombreEvaluado, onClose }) {
                     {resumen.inactividades.map((g, i) => (
                       <div key={i} className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm">
                         <p className="text-red-700 font-medium">
-                          Tiempo muerto de {g.diasInactivo} días ({formatFecha(g.fechaInicio)} → {formatFecha(g.fechaFin)})
+                          Tiempo muerto de {g.diasInactivo} días ({fechaCorta(g.fechaInicio)} → {fechaCorta(g.fechaFin)})
                         </p>
                         {g.justificacion
                           ? <p className="text-red-600 text-xs mt-1">Justificación: {g.justificacion}</p>
@@ -556,7 +548,7 @@ function ModalResumenEvaluado({ idServicio, nombreEvaluado, onClose }) {
                       <div className="min-w-0">
                         <p className="text-gray-800 truncate">{doc.nombreArchivo}</p>
                         <p className="text-xs text-gray-400 mt-0.5">
-                          {doc.tipoDocumento}{doc.fechaCarga ? ` · ${formatFechaHora(doc.fechaCarga)}` : ''}
+                          {doc.tipoDocumento}{doc.fechaCarga ? ` · ${fechaHora(doc.fechaCarga)}` : ''}
                         </p>
                       </div>
                       <button onClick={() => descargar(doc)} disabled={descargandoId === doc.id}
@@ -826,18 +818,18 @@ function SeccionLink({ idServicio, onToast }) {
 
           <p className="text-xs text-gray-500">
             {esPendiente && <>Activo mientras el servicio esté abierto — el candidato aún no ha enviado su hoja de vida.</>}
-            {esUsado && <>Enviado el {formatFechaHora(link.fechaUso)} — el candidato sigue pudiendo editar, ver sus citas y documentos.</>}
+            {esUsado && <>Enviado el {fechaHora(link.fechaUso)} — el candidato sigue pudiendo editar, ver sus citas y documentos.</>}
             {link.estado === 'REVOCADO' && <>Revocado — el candidato ya no puede entrar. Genera uno nuevo si lo necesita.</>}
             {link.estado === 'CERRADO' && <>El servicio ya se cerró; el link dejó de funcionar.</>}
             {link.estado === 'BLOQUEADO' && <>Bloqueado por intentos fallidos.</>}
-            {link.estado === 'EXPIRADO' && <>Expiró el {formatFechaHora(link.fechaExpiracion)}</>}
+            {link.estado === 'EXPIRADO' && <>Expiró el {fechaHora(link.fechaExpiracion)}</>}
           </p>
 
           <div className="bg-white border border-gray-100 rounded-lg px-3 py-2.5 space-y-2">
             <p className="text-xs">
               {link.fechaPrimerIngreso ? (
                 <span className="text-gray-600">
-                  El candidato ingresó al link el <span className="font-medium text-gray-800">{formatFechaHora(link.fechaPrimerIngreso)}</span>
+                  El candidato ingresó al link el <span className="font-medium text-gray-800">{fechaHora(link.fechaPrimerIngreso)}</span>
                 </span>
               ) : (
                 <span className="text-amber-600 font-medium">El candidato aún no ha ingresado al link.</span>
@@ -864,7 +856,7 @@ function SeccionLink({ idServicio, onToast }) {
             )}
 
             <p className="text-xs text-gray-400">
-              Generado el {formatFechaHora(link.fechaCreacion)}{link.generadoPorNombre ? ` por ${link.generadoPorNombre}` : ''}
+              Generado el {fechaHora(link.fechaCreacion)}{link.generadoPorNombre ? ` por ${link.generadoPorNombre}` : ''}
             </p>
 
             {link.intentosFallidos > 0 && (
@@ -969,7 +961,7 @@ function SeccionLink({ idServicio, onToast }) {
           onConfirmar={enviarCorreo}
           onCancelar={() => setConfirmarReenvio(false)}>
           <p className="text-sm text-gray-600">
-            Ingresó el <strong>{formatFechaHora(link.fechaPrimerIngreso)}</strong>
+            Ingresó el <strong>{fechaHora(link.fechaPrimerIngreso)}</strong>
             {typeof link.progresoFormulario === 'number' && (
               <> y lleva un <strong>{link.progresoFormulario}%</strong> del formulario completado</>
             )}.
@@ -1004,7 +996,7 @@ function TarjetaContacto({ icono, label, valor, href, copiado, onCopiar }) {
       </div>
       {valor && (
         <button onClick={onCopiar} title="Copiar" type="button"
-          className={`flex-shrink-0 p-1.5 rounded-md transition-all ${
+          className={`flex-shrink-0 p-1.5 rounded-md transition-[color,background-color,opacity] ${
             copiado ? 'opacity-100 bg-emerald-100 text-emerald-600' : 'opacity-0 group-hover:opacity-100 text-gray-400 hover:text-primary-600 hover:bg-primary-100'
           }`}>
           {copiado ? (
@@ -1131,7 +1123,7 @@ function SeccionCandidato({ detalle, onCiudadCorregida }) {
             <p className="text-sm font-medium text-gray-800">{detalle?.nombreCiudad ?? '—'}</p>
           </div>
           <button onClick={abrirEdicionCiudad} title="Corregir ciudad" type="button"
-            className="flex-shrink-0 p-1.5 rounded-md opacity-0 group-hover:opacity-100 text-gray-400 hover:text-primary-600 hover:bg-primary-100 transition-all">
+            className="flex-shrink-0 p-1.5 rounded-md opacity-0 group-hover:opacity-100 text-gray-400 hover:text-primary-600 hover:bg-primary-100 transition-[color,background-color,opacity]">
             <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
             </svg>
@@ -1156,7 +1148,7 @@ function SeccionCandidato({ detalle, onCiudadCorregida }) {
             {detalle.historialRecargoCiudad.map((m, i) => (
               <li key={i} className="flex items-center justify-between gap-2">
                 <span>
-                  {m.ciudad}{m.motivo ? ` — ${m.motivo}` : ''} · {new Date(m.fechaGenerado).toLocaleDateString('es-CO')}
+                  {m.ciudad}{m.motivo ? ` — ${m.motivo}` : ''} · {fechaCorta(m.fechaGenerado)}
                 </span>
                 <span className={`flex-shrink-0 font-medium ${m.monto < 0 ? 'text-green-600' : 'text-gray-700'}`}>
                   {formatearPrecioCOP(m.monto)}
@@ -1412,7 +1404,7 @@ function ModalDetalle({ solicitud, onClose, onToast }) {
                           <span>
                             <EtiquetaEstado estado={h.estadoNuevo} />
                           </span>
-                          <span className="text-xs text-gray-400 whitespace-nowrap">{formatFechaHora(h.fechaCambio)}</span>
+                          <span className="text-xs text-gray-400 whitespace-nowrap">{fechaHora(h.fechaCambio)}</span>
                         </div>
                         <p className="text-xs text-gray-400 mt-1">{h.usuario}</p>
                         {h.observacion && <p className="text-sm text-gray-700 mt-1">{h.observacion}</p>}
@@ -1474,10 +1466,20 @@ export default function Solicitudes() {
   const [emitiendo, setEmitiendo] = useState(null)   // PB-03: ventana «Emitir estudio completo»
   const [enviandoEnlace, setEnviandoEnlace] = useState(null)   // PB-04: ventana «Enviar enlace al candidato»
   const [detalle, setDetalle]             = useState(null)
-  const [expandidos, setExpandidos]       = useState(() => new Set())
+  // PC-06 (PB-H-45): los servicios con sus subprocesos abiertos viven en la URL (?abierto=52 o ?abierto=52,53): al cerrar una ventana, recargar o volver a
+  // entrar después de que se cerró la sesión, la pantalla queda como estaba. Se escribe con replace para no llenar el historial.
+  const abiertoParam = searchParams.get('abierto') ?? ''
+  const abiertos = useMemo(() => new Set(abiertoParam.split(',').map(Number).filter(Number.isFinite).filter(n => n > 0)), [abiertoParam])
+  const cambiarAbiertos = useCallback((cambio) => setSearchParams(prev => {
+    const n = new URLSearchParams(prev)
+    const nuevo = cambio(new Set((n.get('abierto') ?? '').split(',').map(Number).filter(Number.isFinite).filter(x => x > 0)))
+    if (nuevo.size > 0) n.set('abierto', [...nuevo].join(',')); else n.delete('abierto')
+    return n
+  }, { replace: true }), [setSearchParams])
   const [cargandoPendientesId, setCargandoPendientesId] = useState(null)
   const [asignandoProgramadorPara, setAsignandoProgramadorPara] = useState(null)
   const [avisandoId, setAvisandoId]       = useState(null)
+  const [reintentandoPdf, setReintentandoPdf] = useState(null)
 
   /** Cambia filtros en la URL (y vuelve a la primera página). Un valor vacío quita el filtro. */
   const actualizar = useCallback((cambios) => {
@@ -1490,14 +1492,12 @@ export default function Solicitudes() {
     })
   }, [setSearchParams])
 
-  const toggleExpandir = (idServicio) => {
-    setExpandidos(prev => {
-      const next = new Set(prev)
-      if (next.has(idServicio)) next.delete(idServicio)
-      else next.add(idServicio)
-      return next
-    })
-  }
+  const toggleExpandir = (idServicio) => cambiarAbiertos(prev => {
+    const next = new Set(prev)
+    if (next.has(idServicio)) next.delete(idServicio)
+    else next.add(idServicio)
+    return next
+  })
 
   const filtrosAlcance = { idCliente: clienteParam || undefined, idProceso: estudioParam || undefined, idResponsable: responsableParam || undefined }
 
@@ -1539,6 +1539,24 @@ export default function Solicitudes() {
   // Tiempo real: la lista y los conteos se actualizan solos (nuevas solicitudes, cambios de estado).
   useCambios(() => { cargar(pagina, true); cargarTiempos() })
 
+  // PC-01: mientras algún PDF del estudio se está armando, la lista se refresca sola (no hay aviso en tiempo real de ese archivo).
+  const hayPdfGenerando = solicitudes.some(s => s.estudioPdfEstado === 'GENERANDO')
+  useEffect(() => {
+    if (!hayPdfGenerando) return undefined
+    return iniciarIntervaloVisible(() => cargar(pagina, true), 8000)
+  }, [hayPdfGenerando, cargar, pagina])
+
+  const reintentarPdf = async (s) => {
+    setReintentandoPdf(s.idServicio)
+    try {
+      const r = await api.post(`/requests/${s.idServicio}/estudio-pdf/reintentar`)
+      setToast({ mensaje: `Generando de nuevo el PDF del estudio #${s.idServicio} · v${r.data.version}…`, tipo: 'exito' })
+      cargar(pagina, true)
+    } catch (err) {
+      setToast({ mensaje: `${err.response?.data?.mensaje ?? 'No se pudo reintentar el PDF.'} Intenta de nuevo en un momento.`, tipo: 'error' })
+    } finally { setReintentandoPdf(null) }
+  }
+
   // Entradas desde el tablero: ?id= abre «Ver»; ?expandir= abre los subprocesos; ?emitir= y ?enlace= abren sus ventanas (una sola vez).
   useEffect(() => {
     const idParam = searchParams.get('id')
@@ -1547,7 +1565,6 @@ export default function Solicitudes() {
     const enlace = searchParams.get('enlace')
     if (!idParam && !expandir && !emitir && !enlace) return
     if (idParam) setDetalle({ idServicio: Number(idParam) })
-    if (expandir) setExpandidos(prev => new Set(prev).add(Number(expandir)))
     const abrir = async (id, fn) => {
       try {
         const r = await api.get('/gestor/solicitudes', { params: { q: `#${id}`, size: 5 } })
@@ -1558,7 +1575,17 @@ export default function Solicitudes() {
     }
     if (emitir) abrir(emitir, setEmitiendo)
     if (enlace) abrir(enlace, setEnviandoEnlace)
-    setSearchParams(prev => { const n = new URLSearchParams(prev); ['id', 'expandir', 'emitir', 'enlace'].forEach(k => n.delete(k)); return n }, { replace: true })
+    // Una sola escritura a la URL: ?expandir= (entrada desde el tablero) pasa a ?abierto= y los demás avisos de entrada se borran.
+    setSearchParams(prev => {
+      const n = new URLSearchParams(prev)
+      if (expandir) {
+        const ya = (n.get('abierto') ?? '').split(',').filter(Boolean)
+        if (!ya.includes(String(Number(expandir)))) ya.push(String(Number(expandir)))
+        n.set('abierto', ya.join(','))
+      }
+      ;['id', 'expandir', 'emitir', 'enlace'].forEach(k => n.delete(k))
+      return n
+    }, { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -1600,7 +1627,7 @@ export default function Solicitudes() {
       case 'ENVIAR_ENLACE': case 'REENVIAR_ENLACE': setEnviandoEnlace(s); break
       case 'AVISAR_PROGRAMADOR': avisarProgramador(s.idServicio); break
       case 'VER_EXPEDIENTE': setDetalle(s); break
-      default: setExpandidos(prev => new Set(prev).add(s.idServicio))   // revisar, asignar, ver avance: se abren sus subprocesos
+      default: cambiarAbiertos(prev => new Set(prev).add(s.idServicio))   // revisar, asignar, ver avance: se abren sus subprocesos
     }
   }
 
@@ -1612,7 +1639,7 @@ export default function Solicitudes() {
     <div>
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Solicitudes</h2>
+          <h1 className="text-2xl font-bold text-gray-900">Solicitudes</h1>
           <p className="mt-0.5 text-sm text-gray-700">
             {nfN.format(totalElementos)} solicitud{totalElementos !== 1 ? 'es' : ''} {hayFiltros ? 'con estos filtros' : 'en total'} · un servicio cuenta en cada estado donde tenga un subproceso
           </p>
@@ -1675,7 +1702,9 @@ export default function Solicitudes() {
             {hayFiltros && <> <button type="button" onClick={limpiar} className={`font-semibold text-primary-700 underline ${FOCO}`}>Quitar filtros</button></>}
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          /* PB-H-14: la tabla se desplaza DENTRO de su caja. `relative` importa: los textos `sr-only` de las filas son absolutos y, sin un ancestro
+              posicionado, se quedan en su lugar dentro de la tabla (más allá del borde derecho) y ensanchan la PÁGINA entera (1.106 px en una ventana de 804). */
+          <div className="relative overflow-x-auto">
             <table className="table-stack min-w-full divide-y divide-gray-100">
               <thead className="bg-gray-50/80">
                 <tr>
@@ -1689,9 +1718,9 @@ export default function Solicitudes() {
                   <Fragment key={s.idServicio}>
                   <tr className="align-top transition-colors hover:bg-gray-50/70">
                     <td className="whitespace-nowrap py-3 pl-3 pr-1 text-sm font-semibold text-gray-700">
-                      <button type="button" onClick={() => toggleExpandir(s.idServicio)} aria-expanded={expandidos.has(s.idServicio)} aria-label={`Subprocesos del estudio ${s.idServicio}`}
+                      <button type="button" onClick={() => toggleExpandir(s.idServicio)} aria-expanded={abiertos.has(s.idServicio)} aria-label={`Subprocesos del estudio ${s.idServicio}`}
                         className={`flex min-h-[44px] items-center gap-1.5 rounded hover:text-primary-700 ${FOCO}`}>
-                        <svg aria-hidden="true" className={`h-3.5 w-3.5 flex-shrink-0 transition-transform ${expandidos.has(s.idServicio) ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <svg aria-hidden="true" className={`h-3.5 w-3.5 flex-shrink-0 transition-transform ${abiertos.has(s.idServicio) ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                         </svg>
                         #{s.idServicio}
@@ -1713,13 +1742,21 @@ export default function Solicitudes() {
                         ))}
                       </ul>
                       {s.vigentes > 0 && (
-                        <p className="mt-1 text-xs text-gray-700">{s.publicados} de {s.vigentes} publicados · pasta: {PASTA_TEXTO[s.pastaEstado] ?? 'pendiente'}</p>
+                        <p className="mt-1 text-xs text-gray-700">{s.publicados} de {s.vigentes} publicados · pasta: {PASTA_TEXTO[s.pastaEstado] ?? 'pendiente'}
+                          {s.pastaEstado !== 'PENDIENTE' && s.estudioPdfEstado === 'LISTO' && ` · PDF v${s.estudioPdfVersion} listo`}
+                          {s.pastaEstado !== 'PENDIENTE' && s.estudioPdfEstado === 'GENERANDO' && ` · generando el PDF v${s.estudioPdfVersion}…`}</p>
+                      )}
+                      {s.pastaEstado !== 'PENDIENTE' && s.estudioPdfEstado === 'ERROR' && (
+                        <p role="alert" className="mt-1 text-xs font-semibold text-red-800">No se pudo generar el PDF del estudio ·{' '}
+                          <button type="button" onClick={() => reintentarPdf(s)} disabled={reintentandoPdf === s.idServicio}
+                            className={`min-h-[44px] rounded px-1 font-semibold underline disabled:opacity-60 ${FOCO}`}>
+                            {reintentandoPdf === s.idServicio ? 'Reintentando…' : 'Reintentar'}<span className="sr-only"> el PDF del estudio {s.idServicio}</span></button></p>
                       )}
                       {s.candidatoCompletado === false && s.estado !== 'CANCELADO' && (
                         <p className="text-xs text-gray-700">{s.enlaceEnviado ? 'Enlace enviado, sin terminar' : 'Enlace sin enviar'}</p>
                       )}
                     </td>
-                    <td className="px-3 py-3"><ChipRiesgo nivel={s.riesgoNivel} puntaje={s.riesgoPuntaje} critico={s.riesgoCritico} preliminar={!s.riesgoNivel && s.pastaEstado === 'PRELIMINAR'} /></td>
+                    <td className="px-3 py-3"><ChipRiesgo nivel={s.riesgoNivel} puntaje={s.riesgoPuntaje} critico={s.riesgoCritico} /></td>
                     <td className="px-3 py-3 text-sm"><EtiquetaEntrega tiempo={s.tiempo} /></td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-1.5">
@@ -1728,7 +1765,7 @@ export default function Solicitudes() {
                             ? 'bg-primary-600 text-white hover:bg-primary-700' : 'border border-primary-600 bg-white text-primary-700 hover:bg-primary-50'}`}>
                           {avisandoId === s.idServicio ? 'Avisando…' : s.proximaAccionEtiqueta}<span className="sr-only"> del estudio {s.idServicio}</span>
                         </button>
-                        <MenuAcciones opciones={[
+                        <MenuAcciones etiqueta={`Más acciones del estudio ${s.idServicio}`} opciones={[
                         { label: 'Ver', icono: <IconoOjo />, onClick: () => setDetalle(s) },
                         (() => {
                           const { hayAlgunos, todosAsignados } = subprocesosProgramadorDe(s.subprocesos)
@@ -1755,7 +1792,7 @@ export default function Solicitudes() {
                         },
                         // PB-04: mientras el candidato no haya enviado su información, el gestor puede enviar o reenviar el enlace
                         (s.candidatoCompletado === false || s.candidatoCompletado == null) && !['CANCELADO', 'FINALIZADO', 'PUBLICADO'].includes(s.estado) && {
-                          label: 'Enviar / reenviar enlace',
+                          label: s.enlaceEnviado ? 'Reenviar enlace' : 'Enviar enlace',
                           icono: <IconoEnviar />,
                           destacado: 'text-primary-600',
                           onClick: () => setEnviandoEnlace(s),
@@ -1776,7 +1813,7 @@ export default function Solicitudes() {
                       </div>
                     </td>
                   </tr>
-                  {expandidos.has(s.idServicio) && (
+                  {abiertos.has(s.idServicio) && (
                     <FilaSubprocesos idServicio={s.idServicio} colSpan={8} candidatoCompletado={s.candidatoCompletado}
                       estadoServicio={s.estado} onEmitir={() => setEmitiendo(s)}
                       onToast={(mensaje, tipo = 'exito') => setToast({ mensaje, tipo: tipo === 'error' ? 'error' : 'exito' })} />
@@ -1796,24 +1833,6 @@ export default function Solicitudes() {
           />
         )}
       </div>
-
-      {/* ── Qué es estado y qué no (SE-01) ── */}
-      <section aria-labelledby="leyenda-estados" className="mt-6">
-        <h3 id="leyenda-estados" className="mb-2 text-sm font-bold text-gray-900">Se conservan los 7 estados unificados (SE-01). Lo nuevo de publicación no es un estado</h3>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {[
-            ['Finalizado', '#22C55E', 'Realizado, en control de calidad: para el gestor es lo que debe revisar.'],
-            ['Publicado', '#0D9488', 'El gestor lo aprobó y el cliente descarga el informe de ese subproceso.'],
-            ['Publicado parcial', '#0D9488', 'El que ya existe: algunos subprocesos publicados y otros no.'],
-            ['Pasta final: pendiente · preliminar · emitida', null, 'Indicador del estudio, no estado. «Emitida» es cuando el cliente ve el resultado del estudio.'],
-          ].map(([titulo, color, texto]) => (
-            <div key={titulo} className="rounded-xl border border-gray-200 bg-white p-3 text-xs text-gray-800">
-              <p className="mb-1 flex items-center gap-1.5 font-bold text-gray-900">{color && <span aria-hidden="true" className="h-[9px] w-[9px] rounded-full" style={{ backgroundColor: color }} />}{titulo}</p>
-              {texto}
-            </div>
-          ))}
-        </div>
-      </section>
 
       {enviandoEnlace && (
         <PanelEnviarEnlace solicitud={enviandoEnlace} onClose={() => setEnviandoEnlace(null)}

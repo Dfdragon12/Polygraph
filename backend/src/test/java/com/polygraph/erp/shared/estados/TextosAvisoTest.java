@@ -16,10 +16,11 @@ class TextosAvisoTest {
     }
 
     @Test
-    void ultimoPublicadoAvisaQueElEstudioEstaCompleto() {
+    void ultimoPublicadoNoDiceQueElEstudioEstaCompletoHastaQueHayaPdf() {
+        // PC-02: con el último informe falta el cierre del gestor y el PDF único; «completo» y «listo» llegan después, con el PDF.
         String[] t = TextosAviso.publicado("Visita", "Ana Pérez", true, LocalDate.of(2026, 10, 27));
-        assertThat(t[0]).isEqualTo("Tu estudio está completo");
-        assertThat(t[1]).contains("Ana Pérez").contains("27 de octubre de 2026");
+        assertThat(t[0]).isEqualTo("Visita publicado").doesNotContain("completo");
+        assertThat(t[1]).contains("Ana Pérez").contains("27 de octubre de 2026").contains("preparando el cierre").contains("PDF completo");
     }
 
     @Test

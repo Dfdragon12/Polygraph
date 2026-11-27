@@ -8,9 +8,12 @@ import Toast from '../../components/Toast'
 import Paginacion from '../../components/ui/Paginacion'
 import MenuAcciones from '../../components/ui/MenuAcciones'
 import { ChipNivel } from '../../components/RiesgoServicio'
+import EtiquetaEstado from '../../components/semaforo/EtiquetaEstado'
+import MarcaDevuelto from '../../components/informe/MarcaDevuelto'
 import EstadoTiempo from '../../components/EstadoTiempo'
 import BandejaCitas from '../../components/citas/BandejaCitas'
 import ModalCitaAccion from '../../components/citas/ModalCitaAccion'
+import { fechaCorta } from '../../utils/fechas'
 
 const POR_PAGINA = 10
 
@@ -31,16 +34,6 @@ const SECCION_BREADCRUMB = {
   analista: 'Mis Asignaciones',
   poligrafista: 'Servicios',
   visitador: 'Mis Visitas',
-}
-
-// Mismo criterio de "semáforo" en las 3 pantallas de este módulo (Mis Asignaciones/Agenda de
-// gestor/programador): azul = en progreso, violeta = terminado pero pendiente de que gestor lo
-// revise, verde = ya aprobado y cerrado de verdad, rojo = cancelado.
-const BADGE = {
-  EN_EJECUCION:   'bg-blue-100 text-blue-700',
-  FINALIZADO: 'bg-violet-100 text-violet-700',
-  PUBLICADO:  'bg-emerald-100 text-emerald-700',
-  CANCELADO:  'bg-red-100 text-red-600',
 }
 
 // Filtros de «En ejecución»: lo que frena un subproceso. El valor es el que entiende el servidor
@@ -126,7 +119,7 @@ function CeldaRiesgo({ a }) {
   return (
     <div className="space-y-1">
       <div className="flex items-center gap-2">
-        <ChipNivel nivel={a.riesgoNivel} />
+        <ChipNivel nivel={a.riesgoNivel} sinPunto />
         {a.riesgoPuntaje != null && (
           <span className="text-xs text-gray-500 whitespace-nowrap">
             {Number(a.riesgoPuntaje).toLocaleString('es-CO', { maximumFractionDigits: 1 })} pts
@@ -147,13 +140,12 @@ function formatFecha(iso) {
   return new Date(iso).toLocaleString('es-CO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
-function EstadoBadge({ estado }) {
-  return (
-    <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap ${BADGE[estado] ?? 'bg-gray-100 text-gray-600'}`}>
-      <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
-      {estado}
-    </span>
-  )
+// PC-04 (PB-H-29): qué pasó con lo que el ejecutor envió, en cada fila: en revisión, devuelto (con su motivo) o publicado.
+function LineaEnvio({ a }) {
+  if (a.estado === 'EN_EJECUCION' && a.devuelto) return <MarcaDevuelto motivo={a.motivoDevolucion} detalle={a.detalleDevolucion} className="mt-1" />
+  if (a.estado === 'FINALIZADO') return <p className="mt-1 text-[11px] font-medium text-gray-800">Enviado · en revisión del gestor</p>
+  if (a.estado === 'PUBLICADO') return <p className="mt-1 text-[11px] font-medium text-gray-800">Publicado al cliente{a.fechaPublicado ? ` el ${fechaCorta(a.fechaPublicado)}` : ''}</p>
+  return null
 }
 
 /* ─── Iconos de acciones de tabla ─── */
@@ -373,6 +365,7 @@ export default function MisAsignaciones() {
                       {a.subproceso}
                       <span className="ml-1.5 inline-block text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-md whitespace-nowrap">{a.proceso ?? '—'}</span>
                       {a.idServicio && <p className="text-[11px] text-gray-400 mt-0.5">Servicio #{a.idServicio}</p>}
+                      <LineaEnvio a={a} />
                     </td>
                     {estado === 'EN_EJECUCION' ? (
                       <>
@@ -382,7 +375,7 @@ export default function MisAsignaciones() {
                     ) : (
                       <>
                         <td className="px-3 py-3">
-                          {conRiesgo ? <CeldaRiesgo a={a} /> : <EstadoBadge estado={a.estado} />}
+                          {conRiesgo ? <CeldaRiesgo a={a} /> : <EtiquetaEstado estado={a.estado} />}
                         </td>
                         <td className="px-3 py-3 text-xs whitespace-nowrap">
                           <CeldaFechas asignacion={a} abierta={fechasAbiertas.has(a.id)} onToggle={() => toggleFechas(a.id)} />

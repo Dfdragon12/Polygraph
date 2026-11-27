@@ -97,7 +97,8 @@ public class BandejaGestorService {
     public record FilaCalidad(String tipo, Integer idServicio, Long idSubproceso, String evaluado, String cliente, String queLlego, String detalle,
                               String responsable, TiempoServicio tiempo, String riesgoNivel, java.math.BigDecimal riesgoPuntaje, String accion, String accionEtiqueta) {}
 
-    public record Atencion(Bloque novedades, Bloque sinAsignar, Bloque candidatosSinHojaDeVida, Bloque citasSinAgendar) {}
+    /** devueltos (PC-04): lo que el gestor devolvió y espera la corrección del ejecutor; «Devuelto» es una marca, no un estado. */
+    public record Atencion(Bloque novedades, Bloque sinAsignar, Bloque candidatosSinHojaDeVida, Bloque citasSinAgendar, Bloque devueltos) {}
 
     public record Bloque(long cantidad, String detalle, List<Muestra> muestras) {}
 
@@ -192,7 +193,8 @@ public class BandejaGestorService {
                 finalizados++;
                 var res = calificacionService.resumenSubproceso(sp.getId(), gestor);
                 filas.add(new FilaCalidad("SUBPROCESO", s.getIdServicio(), sp.getId(), evaluado(s), nombreCliente(s.getCliente()),
-                        sp.getTipoProgreso().getNombreProgreso() + " · Finalizado", s.getProceso() != null ? s.getProceso().getNombreProceso() + " · " + resumenTexto(sps) : resumenTexto(sps),
+                        sp.getTipoProgreso().getNombreProgreso() + " · Finalizado",
+                        detalleQueLlego(s.getProceso() != null ? s.getProceso().getNombreProceso() : null, sp.getTipoProgreso().getNombreProgreso(), sps),
                         sp.getUsuarioAsignado() != null ? nombreUsuario(sp.getUsuarioAsignado()) : "Sin asignar", tiempoServicioService.de(s),
                         res.calculado() ? res.nivel() : null, res.calculado() ? res.puntaje() : null, Accion.REVISAR.name(), Accion.REVISAR.etiqueta()));
             }
@@ -235,7 +237,8 @@ public class BandejaGestorService {
         List<Muestra> sinAsignar = new ArrayList<>();
         List<Muestra> sinHoja = new ArrayList<>();
         List<Muestra> citas = new ArrayList<>();
-        long candidatosSinHoja = 0, citasSinAgendar = 0;
+        List<Muestra> devueltos = new ArrayList<>();
+        long candidatosSinHoja = 0, citasSinAgendar = 0, cantidadDevueltos = 0;
         for (List<ServicioSubproceso> sps : porServicio.values()) {
             Servicio s = sps.get(0).getServicio();
             List<String> nombresSinAsignar = sps.stream().filter(sp -> sp.getEstado() == EstadoSubproceso.PENDIENTE && !conResponsable(sp))
@@ -249,6 +252,11 @@ public class BandejaGestorService {
                 if (sinHoja.size() < MUESTRAS) sinHoja.add(new Muestra(s.getIdServicio(), null, "#" + s.getIdServicio() + " " + evaluado(s) + " · " + (s.getProceso() != null ? s.getProceso().getNombreProceso() : "")));
             }
             for (ServicioSubproceso sp : sps) {
+                if (Boolean.TRUE.equals(sp.getDevuelto()) && sp.getEstado() == EstadoSubproceso.EN_EJECUCION) {
+                    cantidadDevueltos++;
+                    if (devueltos.size() < MUESTRAS) devueltos.add(new Muestra(s.getIdServicio(), sp.getId(), "#" + s.getIdServicio() + " " + evaluado(s) + " · "
+                            + sp.getTipoProgreso().getNombreProgreso() + " · Devuelto" + (sp.getMotivoDevolucion() == null ? "" : " · " + sp.getMotivoDevolucion())));
+                }
                 if (esCita(sp) && sp.getEstado() == EstadoSubproceso.PROGRAMANDO) {
                     citasSinAgendar++;
                     if (citas.size() < MUESTRAS) citas.add(new Muestra(s.getIdServicio(), sp.getId(), "#" + s.getIdServicio() + " " + evaluado(s) + " · " + sp.getTipoProgreso().getNombreProgreso()));
@@ -258,7 +266,8 @@ public class BandejaGestorService {
         return new Atencion(novedades,
                 new Bloque(sinAsignarTotal, "Sin analista, visitador o poligrafista", sinAsignar),
                 new Bloque(candidatosSinHoja, "El estudio está en pausa por el candidato", sinHoja),
-                new Bloque(citasSinAgendar, "Visitas y poligrafías que el programador aún no agenda", citas));
+                new Bloque(citasSinAgendar, "Visitas y poligrafías que el programador aún no agenda", citas),
+                new Bloque(cantidadDevueltos, "Esperan que el ejecutor los corrija y los vuelva a enviar", devueltos));
     }
 
     // ───────────────────────── 3. tiempos ─────────────────────────
@@ -394,11 +403,22 @@ public class BandejaGestorService {
         return lista.stream().collect(Collectors.groupingBy(sp -> sp.getServicio().getIdServicio(), LinkedHashMap::new, Collectors.toList()));
     }
 
+    /**
+     * Por candidato: true = ya envió su hoja de vida, false = se le espera. PC-03: un candidato que nunca abrió el enlace no tiene hoja de vida, pero si el reloj
+     * de su servicio está en pausa por él, también se le espera (misma regla que la «próxima acción» de Solicitudes).
+     */
     private Map<Long, Boolean> hojaVidaCompletada(List<Servicio> servicios) {
         List<Long> ids = servicios.stream().map(Servicio::getCandidato).filter(java.util.Objects::nonNull).map(c -> c.getIdCandidato()).distinct().toList();
         if (ids.isEmpty()) return Map.of();
-        return hojaVidaRepository.findByCandidato_IdCandidatoIn(ids).stream()
-                .collect(Collectors.toMap(hv -> hv.getCandidato().getIdCandidato(), HojaVidaEvaluado::getCompletado, (a, b) -> a));
+        Map<Long, Boolean> r = new java.util.HashMap<>(hojaVidaRepository.findByCandidato_IdCandidatoIn(ids).stream()
+                .collect(Collectors.toMap(hv -> hv.getCandidato().getIdCandidato(), HojaVidaEvaluado::getCompletado, (a, b) -> a)));
+        for (Servicio s : servicios) {
+            if (s.getCandidato() == null) continue;
+            boolean pausaPorCandidato = s.getEstadoTiempo() == com.polygraph.erp.shared.enums.EstadoTiempo.EN_PAUSA && s.getPausaOrigen() == com.polygraph.erp.shared.enums.OrigenPausa.CANDIDATO;
+            Boolean efectivo = ProximaAccion.esperandoAlCandidato(r.get(s.getCandidato().getIdCandidato()), pausaPorCandidato);
+            if (efectivo != null) r.put(s.getCandidato().getIdCandidato(), efectivo);
+        }
+        return r;
     }
 
     private static List<EstadoSubproceso> estados(List<ServicioSubproceso> sps) {
@@ -422,6 +442,18 @@ public class BandejaGestorService {
     /** Lo que ProximaAccion necesita saber de un subproceso. */
     static Sub sub(ServicioSubproceso sp) {
         return new Sub(sp.getEstado(), esCita(sp), conResponsable(sp));
+    }
+
+    /**
+     * Segunda línea de «Qué llegó» (PB-H-15): solo lo que la primera («Antecedentes · Finalizado») no dice. El estudio al que pertenece, si se llama
+     * distinto del subproceso, y cómo van los demás subprocesos cuando el estudio tiene más de uno. Si no queda nada, null y la pantalla no pinta
+     * la línea — antes salía «Antecedentes · Finalizado 1» debajo de «Antecedentes · Finalizado».
+     */
+    static String detalleQueLlego(String proceso, String subproceso, List<ServicioSubproceso> sps) {
+        List<String> partes = new ArrayList<>();
+        if (proceso != null && !proceso.isBlank() && !proceso.trim().equalsIgnoreCase(subproceso == null ? "" : subproceso.trim())) partes.add(proceso.trim());
+        if (sps.stream().filter(x -> x.getEstado() != EstadoSubproceso.CANCELADO).count() > 1) partes.add(resumenTexto(sps));
+        return partes.isEmpty() ? null : String.join(" · ", partes);
     }
 
     private static String resumenTexto(List<ServicioSubproceso> sps) {

@@ -43,12 +43,13 @@ export function SinCalificar({ grande, motivo }) {
   )
 }
 
-export function ChipNivel({ nivel, grande }) {
+// sinPunto (PC-04): el riesgo va como etiqueta con su nombre, sin punto de color (regla de las pantallas de trabajo).
+export function ChipNivel({ nivel, grande, sinPunto = false }) {
   if (!nivel) return <SinCalificar grande={grande} />
   const c = NIVEL[nivel] ?? NIVEL.MEDIO
   return (
     <span className={`inline-flex items-center gap-1.5 font-bold rounded-full ring-1 ${c.clase} ${grande ? 'text-sm px-3 py-1' : 'text-[11px] px-2 py-0.5'}`}>
-      <span className={`rounded-full ${c.punto} ${grande ? 'w-2 h-2' : 'w-1.5 h-1.5'}`} />{nivel}
+      {!sinPunto && <span aria-hidden="true" className={`rounded-full ${c.punto} ${grande ? 'w-2 h-2' : 'w-1.5 h-1.5'}`} />}{nivel}
     </span>
   )
 }

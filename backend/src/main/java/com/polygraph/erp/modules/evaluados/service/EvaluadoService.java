@@ -308,6 +308,25 @@ public class EvaluadoService {
 
     /** Al enviar: estado y lugar de cada estudio, temporal de cada empleo y las referencias
      *  (revisión del módulo del candidato). Guardar el avance NO exige nada de esto. */
+    /**
+     * Lo que antes exigía el DTO al recibir el envío (sin esto el enlace corto no podía enviarse nunca): solo en un enlace COMPLETO hacen falta al menos una experiencia y 4 referencias.
+     * Lo llama el controlador antes de enviarFormulario, que es donde estaba la validación del DTO.
+     */
+    @Transactional(readOnly = true)
+    public void exigirMinimosDelEnlace(String token, HojaVidaRequest request) {
+        LinkCandidato link = obtenerLinkValido(token);
+        if (tipoDeEnlace(obtenerServicio(link)) != TipoEnlace.CORTO) exigirExperienciaYReferencias(request);
+    }
+
+    static void exigirExperienciaYReferencias(HojaVidaRequest request) {
+        if (request.experienciaLaboral() == null || request.experienciaLaboral().isEmpty()) {
+            throw new ApiException("Debe registrar al menos una experiencia laboral", HttpStatus.BAD_REQUEST);
+        }
+        if (request.referencias() == null || request.referencias().size() < 4) {
+            throw new ApiException("Se requieren 4 referencias personales", HttpStatus.BAD_REQUEST);
+        }
+    }
+
     private void validarRevisionCandidato(HojaVidaRequest request) {
         if (request.educacion() != null && !Boolean.TRUE.equals(request.sinEstudios())) {
             int n = 0;
@@ -706,8 +725,10 @@ public class EvaluadoService {
     }
 
     /** Servicio del link, si el candidato todavía tiene acceso — lo usa también
-     *  PortalCandidatoService (citas y sugerencias). */
-    @Transactional(readOnly = true)
+     *  PortalCandidatoService (citas y sugerencias).
+     *  PC-09: noRollbackFor = ApiException. Quien lo llama dentro de AccesoCandidatoService.verificar (noRollbackFor) dejaba la transacción marcada «solo rollback» al lanzar el 404/410
+     *  de un enlace inválido y el commit fallaba: el candidato veía un 500 «Error interno» en vez de «Link no encontrado». */
+    @Transactional(readOnly = true, noRollbackFor = ApiException.class)
     public Servicio servicioConAcceso(String token) {
         return obtenerServicio(obtenerLinkValido(token));
     }

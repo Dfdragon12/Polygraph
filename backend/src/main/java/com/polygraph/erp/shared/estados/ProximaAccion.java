@@ -40,6 +40,16 @@ public final class ProximaAccion {
         return Accion.VER_AVANCE;
     }
 
+    /**
+     * PC-03 D · ¿Se está esperando al candidato? Sí si su hoja de vida está sin completar, y también si el reloj del servicio está en pausa por el candidato
+     * aunque todavía no exista su hoja de vida (nunca abrió el enlace): antes ese caso daba «Asignar», que no se puede hacer hasta que el candidato envíe su
+     * información. Devuelve FALSE (espera) o lo que ya había (TRUE completo, null desconocido). Una sola regla para la próxima acción, el bloqueo de la
+     * asignación y de quién es el retraso.
+     */
+    public static Boolean esperandoAlCandidato(Boolean hojaDeVidaCompletada, boolean relojEnPausaPorCandidato) {
+        return hojaDeVidaCompletada == null && relojEnPausaPorCandidato ? Boolean.FALSE : hojaDeVidaCompletada;
+    }
+
     /** ¿Hay algo que el gestor debe revisar o cerrar? Un subproceso FINALIZADO, o todo publicado con la pasta sin emitir. */
     public static boolean pendienteDelGestor(List<EstadoSubproceso> estados, boolean pastaEmitida) {
         List<EstadoSubproceso> vigentes = estados.stream().filter(e -> e != EstadoSubproceso.CANCELADO).toList();

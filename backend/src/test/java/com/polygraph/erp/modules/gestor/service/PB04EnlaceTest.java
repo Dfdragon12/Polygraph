@@ -113,8 +113,8 @@ class PB04EnlaceTest {
         assertThat(link.getFechaExpiracion().toLocalDate()).isEqualTo(LocalDate.of(2026, 11, 12));
         assertThat(link.getEnviadoEn()).isNotNull();
         verify(email).enviarLinkEvaluado(eq("diana@x.co"), eq("Diana Marcela Rueda"), eq("TOKEN123"), any());
-        verify(jdbc).update(contains("INSERT INTO envios_enlace"), eq(9L), eq("CORREO"), any(), any(), eq(5L), eq(false), any());
-        verify(jdbc).update(contains("INSERT INTO envios_enlace"), eq(9L), eq("WHATSAPP"), any(), any(), eq(5L), eq(false), any());
+        verify(jdbc).update(contains("INSERT INTO envios_enlace"), eq(9L), eq("CORREO"), any(), any(), eq(5L), eq(false), any(), any(), any());
+        verify(jdbc).update(contains("INSERT INTO envios_enlace"), eq(9L), eq("WHATSAPP"), any(), any(), eq(5L), eq(false), any(), any(), any());
     }
 
     @Test
@@ -123,7 +123,7 @@ class PB04EnlaceTest {
         servicio.enviar(9L, new EnvioEnlaceService.EnviarRequest("+57 311 111 2222", "nuevo@x.co", null, Set.of("CORREO")), "g@x.co");
         assertThat(candidato.getCelular()).isEqualTo("+57 311 111 2222");
         assertThat(candidato.getEmailPrincipal()).isEqualTo("nuevo@x.co");
-        verify(jdbc, times(2)).update(contains("INSERT INTO envios_enlace"), eq(9L), eq("CAMBIO_CONTACTO"), anyString(), anyString(), eq(5L), eq(false), any());
+        verify(jdbc, times(2)).update(contains("INSERT INTO envios_enlace"), eq(9L), eq("CAMBIO_CONTACTO"), anyString(), anyString(), eq(5L), eq(false), any(), any(), any());
         verify(candidatos).save(candidato);
         verify(email).enviarLinkEvaluado(eq("nuevo@x.co"), any(), any(), any());
     }
@@ -143,7 +143,7 @@ class PB04EnlaceTest {
     @DisplayName("Copiar el enlace deja registro de quién lo copió")
     void copiar() {
         servicio.copiado(9L, "g@x.co");
-        verify(jdbc).update(contains("INSERT INTO envios_enlace"), eq(9L), eq("COPIA"), any(), any(), eq(5L), eq(false), any());
+        verify(jdbc).update(contains("INSERT INTO envios_enlace"), eq(9L), eq("COPIA"), any(), any(), eq(5L), eq(false), any(), any(), any());
     }
 
     // ───────────── recordatorio ─────────────

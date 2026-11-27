@@ -133,6 +133,37 @@ class AntecedentesPuntaAPuntaTest {
     }
 
     @Test
+    @DisplayName("PC-09: la criticidad fijada en la solicitud tampoco cuenta como «campo obligatorio vacío» al enviar a revisión (aunque la plantilla la marque obligatoria)")
+    void laCriticidadDeLaSolicitudNoBloqueaElEnvio() {
+        jdbc.update("UPDATE formulario_columnas SET obligatorio = TRUE WHERE clave = 'ev_criticidad'");
+        em.clear();
+        // Solicitud antigua, sin criticidad: sigue siendo un campo que el gestor debe llenar.
+        assertThat(formularioService.camposObligatoriosVacios(antecedentes.getId())).anyMatch(f -> f.contains("Criticidad"));
+
+        Servicio s = em.find(Servicio.class, servicio.getIdServicio());
+        s.setCriticidadCargo(CriticidadCargo.SENSIBLE);
+        em.flush();
+        em.clear();
+        // Solicitud nueva: la criticidad ya la dio el cliente.
+        assertThat(formularioService.camposObligatoriosVacios(antecedentes.getId())).noneMatch(f -> f.contains("Criticidad"));
+    }
+
+    @Test
+    @DisplayName("PC-09: la criticidad fijada en la solicitud no cuenta como campo por llenar en el avance (el analista no la guarda y no podía enviar a revisión)")
+    void laCriticidadDeLaSolicitudNoCuentaEnElAvance() {
+        var antes = formularioService.progreso(antecedentes.getId(), analista);
+
+        Servicio s = em.find(Servicio.class, servicio.getIdServicio());
+        s.setCriticidadCargo(CriticidadCargo.ESTANDAR);
+        em.flush();
+        em.clear();
+        var despues = formularioService.progreso(antecedentes.getId(), analista);
+
+        assertThat(despues.camposTotal()).isEqualTo(antes.camposTotal() - 1);
+        assertThat(despues.seccionesTotal()).isLessThanOrEqualTo(antes.seccionesTotal());
+    }
+
+    @Test
     @DisplayName("Guardar → Word (sección 3, fórmula, semáforo, tránsito, procesos) → motor del estudio")
     void puntaAPunta() throws Exception {
         // 1-2. El analista guarda el formulario con los datos del caso C2.

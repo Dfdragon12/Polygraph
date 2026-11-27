@@ -116,9 +116,10 @@ public class LinkCandidatoController {
                 .body(tokenService.generar(request, auth.getName(), ip));
     }
 
+    /** PC-03: el «Enviar por correo» de siempre pasa por el MISMO envío del enlace (queda en el historial y recalcula la vigencia): antes salía el correo y no quedaba nada. */
     @PostMapping("/{id}/enviar-correo")
     public ResponseEntity<Void> enviarCorreo(@PathVariable Long id, Authentication auth) {
-        tokenService.enviarCorreo(id, auth.getName());
+        envioService.enviar(id, new com.polygraph.erp.modules.gestor.service.EnvioEnlaceService.EnviarRequest(null, null, null, java.util.Set.of("CORREO")), auth.getName());
         return ResponseEntity.ok().build();
     }
 

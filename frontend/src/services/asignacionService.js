@@ -33,11 +33,16 @@ const asignacionService = {
   publicar: (id, payload) =>
     api.post(`/gestor/asignaciones/${id}/publicar`, payload).then(r => r.data),
 
+  // PC-02: lo que la ventana Publicar muestra al abrirse (conclusión del ejecutor desde su formato, calificación sugerida y si el subproceso la necesita)
+  datosPublicacion: (id) =>
+    api.get(`/gestor/asignaciones/${id}/publicacion`).then(r => r.data),
+
   // PB-02: quien ejecuta escribe su conclusión; y pide corregir un informe ya publicado
   guardarConclusion: (id, conclusion) =>
     api.put(`/gestor/asignaciones/${id}/conclusion`, { conclusion }).then(r => r.data),
-  solicitarCorreccion: (id, motivo) =>
-    api.post(`/gestor/asignaciones/${id}/solicitar-correccion`, { motivo }).then(r => r.data),
+  // PC-04: { tipo: DATO_ERRADO | SOPORTE_EQUIVOCADO | HALLAZGO_MAL_CALIFICADO | OTRO, motivo } → { gestor } (a quién le llegó)
+  solicitarCorreccion: (id, payload) =>
+    api.post(`/gestor/asignaciones/${id}/solicitar-correccion`, payload).then(r => r.data),
   historialPublicacion: (id) =>
     api.get(`/gestor/asignaciones/${id}/historial-publicacion`).then(r => r.data),
 

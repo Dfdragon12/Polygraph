@@ -13,12 +13,19 @@ import AnillosRiesgo from '../../components/graficos/AnillosRiesgo'
 import SemaforoEstados from '../../components/semaforo/SemaforoEstados'
 import { useConfigTienda } from '../../hooks/useConfigTienda'
 import { Grafica, Enlace, Icono, Dona, C, saludo, fechaLarga } from '../../components/tablero/Tablero'
+import { fechaCorta, fechaDiaMes, fechaConDia, horaCorta, mesAnio, fechaLarga as fechaConAnio } from '../../utils/fechas'
 
 // Tablero del cliente (ADMIN_CLIENTE y ANALISTA_CLIENTE): cómo van sus solicitudes (indicadores y
 // barra por estado), lo último que pidió con su fecha de entrega, su bolsa prepago o cupo de
 // crédito (solo lo que su rol puede ver) y el contacto de su gestor. Se actualiza solo (tiempo real).
 
 const nf = new Intl.NumberFormat('es-CO')
+// « · resultado emitido el 24 nov · a tiempo»: sin PDF o sin fecha de emisión no se escribe nada.
+const fraseEmision = (i) => {
+  const fecha = fechaDiaMes(i.emitidoEn, '')
+  if (!i.pdfDisponible || !fecha) return ''
+  return ` · resultado emitido el ${fecha}${i.cumplimiento === 'A_TIEMPO' ? ' · a tiempo' : i.cumplimiento === 'TARDE' ? ' · con retraso' : ''}`
+}
 const PERIODOS = [['HOY', 'Hoy'], ['SEMANA', 'Última semana'], ['MES', 'Este mes'], ['ANIO', 'Último año'], ['TOTAL', 'Total']]
 const foco = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600'
 const NIVEL_CHIP = { BAJO: 'bg-green-50 text-green-800 ring-green-700/30', MEDIO: 'bg-amber-50 text-amber-900 ring-amber-700/30', ALTO: 'bg-red-50 text-red-800 ring-red-700/30' }
@@ -26,15 +33,11 @@ const CLAVE_VISITA = 'polygraph.inicio.ultimaVisita'
 
 // Fecha/hora local sin zona (así la entiende el servidor, que guarda las fechas en hora de Colombia)
 const isoLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
-const diaMes = (f) => f ? new Date(f).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' }).replace('.', '') : ''
 const mismoDia = (f) => f && new Date(f).toDateString() === new Date().toDateString()
-const diaHora = (f) => f ? new Date(f).toLocaleString('es-CO', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).replace('.', '') : ''
-const mesAnio = (f) => new Date(`${f}T12:00:00`).toLocaleDateString('es-CO', { month: 'short', year: 'numeric' }).replace('.', '').replace(' de ', ' ')
+const diaHora = (f) => f ? `${fechaConDia(f)}, ${horaCorta(f)}` : ''
 
 const formatearCOP = (valor) =>
   new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(valor ?? 0)
-
-const fechaCorta = (f) => f ? new Date(`${String(f).slice(0, 10)}T12:00:00`).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' }).replace('.', '') : '—'
 
 const svg = (d, c = 'h-5 w-5') => (
   <svg className={c} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -54,6 +57,13 @@ const I = {
   telefono: (c) => svg('M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z', c),
   vacio: (c) => svg('M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z', c),
 }
+
+/** PC-01: lo que el cliente lee mientras el PDF del estudio no está listo (el mismo texto en el Dashboard y en el detalle). */
+const textoPreparandoPdf = (pdfEstado) => pdfEstado === 'ERROR'
+  ? 'Estamos resolviendo un problema con el PDF de tu estudio; tu gestor ya lo está revisando.'
+  : pdfEstado === 'GENERANDO'
+    ? 'Preparando el PDF de tu estudio… puede tardar unos minutos. Te avisaremos cuando esté listo.'
+    : 'Tu gestor está preparando el cierre del estudio. Te avisaremos cuando el PDF esté listo.'
 
 /** «Informes listos»: lo publicado, parcial o completo. Con la pasta emitida: nivel del estudio y descarga del PDF único; si no, sin nivel. */
 function InformesListos({ inicio, puedeDescargar, onIr }) {
@@ -82,19 +92,29 @@ function InformesListos({ inicio, puedeDescargar, onIr }) {
                 <p className="font-bold text-gray-900">{i.evaluado}</p>
                 <p className="text-sm text-gray-700">
                   {i.proceso} · #{i.idServicio}{i.cargo ? ` · ${i.cargo}` : ''}
-                  {i.completo ? ` · resultado emitido el ${diaMes(i.emitidoEn)}${i.cumplimiento === 'A_TIEMPO' ? ' · a tiempo' : i.cumplimiento === 'TARDE' ? ' · con retraso' : ''}`
-                    : i.ultimoNombre ? ` · ${mismoDia(i.ultimoFecha) ? 'hoy' : diaMes(i.ultimoFecha)} se publicó ${i.ultimoNombre}` : ''}
+                  {i.completo ? fraseEmision(i)
+                    : i.ultimoNombre ? ` · ${mismoDia(i.ultimoFecha) ? 'hoy' : fechaDiaMes(i.ultimoFecha)} se publicó ${i.ultimoNombre}` : ''}
                 </p>
                 <p className="mt-0.5 flex items-center gap-1.5 text-sm font-semibold text-gray-900"><span aria-hidden="true" className="h-[9px] w-[9px] rounded-full bg-[#0D9488]" />
-                  {i.completo ? 'Publicado · estudio completo' : `Publicado parcial · ${i.publicados} de ${i.vigentes} informes`}</p>
+                  {i.completo ? 'Publicado · estudio completo'
+                    : i.vigentes > 0 && i.publicados >= i.vigentes ? `${i.publicados} de ${i.vigentes} informes · Tu gestor está preparando el cierre`
+                    : `Publicado parcial · ${i.publicados} de ${i.vigentes} informes`}</p>
+                {i.completo && !i.pdfDisponible && <p id={`pdf-${i.idServicio}`} className="mt-1 text-sm text-gray-700">{textoPreparandoPdf(i.pdfEstado)}</p>}
                 {fallo === i.idServicio && <p role="alert" className="mt-1 text-xs text-red-700">No se pudo descargar el estudio. <button type="button" onClick={() => descargar(i)} className={`font-semibold underline ${foco}`}>Reintentar</button> o contacta a tu gestor.</p>}
               </div>
               <div className="flex shrink-0 flex-wrap items-center gap-2">
                 {i.completo && i.nivel && <span className={`rounded-full px-2.5 py-1 text-xs font-bold ring-1 ring-inset ${NIVEL_CHIP[i.nivel]}`}>{i.nivel}</span>}
-                {i.completo && puedeDescargar ? (
+                {i.completo && puedeDescargar && i.pdfDisponible ? (
                   <button type="button" disabled={descargando === i.idServicio} onClick={() => descargar(i)}
                     className={`min-h-[44px] rounded-lg bg-primary-600 px-4 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-60 ${foco}`}>
                     {descargando === i.idServicio ? 'Descargando…' : 'Descargar estudio completo'}</button>
+                ) : i.completo && puedeDescargar ? (
+                  <>
+                    <button type="button" disabled aria-describedby={`pdf-${i.idServicio}`}
+                      className="min-h-[44px] cursor-not-allowed rounded-lg bg-gray-200 px-4 text-sm font-semibold text-gray-700">Descargar estudio completo</button>
+                    <button type="button" onClick={() => onIr(`/cliente/solicitudes/${i.idServicio}`)}
+                      className={`min-h-[44px] rounded-lg border border-primary-600 bg-white px-4 text-sm font-semibold text-primary-700 hover:bg-primary-50 ${foco}`}>Ver estudio</button>
+                  </>
                 ) : (
                   <button type="button" onClick={() => onIr(`/cliente/solicitudes/${i.idServicio}`)}
                     className={`min-h-[44px] rounded-lg border border-primary-600 bg-white px-4 text-sm font-semibold text-primary-700 hover:bg-primary-50 ${foco}`}>
@@ -108,16 +128,6 @@ function InformesListos({ inicio, puedeDescargar, onIr }) {
       <button type="button" onClick={() => onIr('/cliente/solicitudes?estado=PUBLICADO')} className={`mt-2 inline-flex min-h-[44px] items-center rounded text-sm font-semibold text-primary-700 hover:underline ${foco}`}>Ver todos los informes publicados →</button>
     </section>
   )
-}
-
-/** Seguimiento del enlace del candidato en palabras: lo que el cliente necesita saber, sin poder enviarlo ni reenviarlo (eso lo hace Polygraph). */
-function textoSeguimiento(sg) {
-  const partes = []
-  partes.push(sg.enviadoEn ? `Polygraph le envió el enlace el ${diaMes(sg.enviadoEn)}.` : 'Polygraph aún no ha enviado el enlace al candidato.')
-  partes.push(sg.abiertoEn ? `Lo abrió con su cédula y lleva ${sg.seccionesHechas} de ${sg.seccionesTotal} secciones.` : 'Todavía no lo ha abierto.')
-  if (sg.recordatorioEn) partes.push(`${mismoDia(sg.recordatorioEn) ? 'Hoy' : `El ${diaMes(sg.recordatorioEn)}`} le enviamos un recordatorio automático.`)
-  if (sg.vence) partes.push(`El enlace vence el ${diaMes(`${sg.vence}T12:00:00`)}.`)
-  return partes.join(' ')
 }
 
 function RequiereAtencion({ inicio }) {
@@ -135,8 +145,9 @@ function RequiereAtencion({ inicio }) {
               <p className="font-bold text-gray-900">{c.evaluado}</p>
               <p className="flex flex-wrap items-center gap-1.5 text-sm text-gray-700">{c.proceso} · #{c.idServicio} ·
                 {c.resumen[0] && <EtiquetaEstado estado={c.resumen[0].codigo} pequena />}
-                · compromiso: {textoCompromiso(c.tiempo, diaMes(c.fechaEntrega))}</p>
-              <p className="mt-2 text-sm text-gray-900">{textoSeguimiento(c.seguimiento)}</p>
+                · compromiso: {textoCompromiso(c.tiempo, fechaCorta(c.fechaEntrega))}</p>
+              {/* PC-03: un solo texto por estado del enlace, armado por el servidor; aquí no se juntan frases sueltas. */}
+              <p className="mt-2 text-sm text-gray-900">{c.seguimiento.texto}</p>
               <p className="mt-1 text-xs text-gray-700">Si hablas con él, recuérdale revisar su WhatsApp o correo.</p>
             </article>
           ))}
@@ -186,8 +197,8 @@ function TiemposEntrega({ inicio, onIr }) {
 function rangoTexto(e) {
   if (!e) return ''
   if (e.periodo === 'TOTAL') return 'Desde el inicio'
-  if (e.periodo === 'HOY') return new Date(`${e.hasta}T12:00:00`).toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })
-  if (e.periodo === 'SEMANA') return `${diaMes(`${e.desde}T12:00:00`)} a ${diaMes(`${e.hasta}T12:00:00`)}`
+  if (e.periodo === 'HOY') return fechaConAnio(e.hasta)
+  if (e.periodo === 'SEMANA') return `${fechaDiaMes(e.desde)} a ${fechaDiaMes(e.hasta)}`
   return `${mesAnio(e.desde)} a ${mesAnio(e.hasta)}`
 }
 
@@ -377,7 +388,7 @@ export default function Dashboard() {
                   {limite > 0 && (
                     <div className="mt-4">
                       <div className="h-2.5 w-full overflow-hidden rounded-full bg-gray-100">
-                        <div className={`h-full rounded-full transition-all duration-700 ${pctUsado >= 90 ? 'bg-red-500' : pctUsado >= 70 ? 'bg-amber-400' : 'bg-primary-500'}`} style={{ width: `${pctUsado}%` }} />
+                        <div className={`h-full rounded-full transition-[width] duration-700 ${pctUsado >= 90 ? 'bg-red-500' : pctUsado >= 70 ? 'bg-amber-400' : 'bg-primary-500'}`} style={{ width: `${pctUsado}%` }} />
                       </div>
                       <p className="mt-1.5 flex justify-between text-[11px] text-gray-400"><span>{pctUsado}% en uso</span><span>{100 - pctUsado}% libre</span></p>
                     </div>

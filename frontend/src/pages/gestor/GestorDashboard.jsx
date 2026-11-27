@@ -47,8 +47,8 @@ function Pasos({ datos, onIr }) {
   return (
     <section aria-labelledby="pasos-titulo" className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 id="pasos-titulo" className="text-sm font-bold text-gray-900">Tu trabajo en 5 pasos · cada paso filtra por los estados unificados (SE-01)</h2>
-        <p className="text-xs text-gray-700">{nf.format(datos.estudios)} servicios · un servicio cuenta en cada estado donde tenga un subproceso · sin %</p>
+        <h2 id="pasos-titulo" className="text-sm font-bold text-gray-900">Tu trabajo en 5 pasos · cada paso filtra Solicitudes por estado</h2>
+        <p className="text-xs text-gray-700">{nf.format(datos.estudios)} servicios · un servicio cuenta en cada estado donde tenga un subproceso</p>
       </div>
       <ol className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {datos.pasos.map(p => (
@@ -74,7 +74,7 @@ function Pasos({ datos, onIr }) {
         <button type="button" onClick={() => onIr('/gestor/solicitudes?estado=CANCELADO')} className={`inline-flex items-center gap-1.5 rounded font-semibold text-gray-900 underline-offset-2 hover:underline ${foco}`}>
           <Punto color={cancelado?.color ?? '#9CA3AF'} /> Cancelado {nf.format(datos.cancelado.servicios)}
         </button>
-        ({nf.format(datos.cancelado.subprocesos)} subprocesos). Los pasos son acciones del gestor; los estados siguen siendo los 7 de SE-01.
+        ({nf.format(datos.cancelado.subprocesos)} subprocesos).
       </p>
     </section>
   )
@@ -104,7 +104,7 @@ function ControlCalidad({ cc, onIr }) {
                 <tr key={`${f.tipo}-${f.idServicio}-${f.idSubproceso ?? 'p'}`} className="align-top">
                   <td className="px-2 py-3 font-semibold tabular-nums text-gray-700">#{f.idServicio}</td>
                   <td className="px-2 py-3"><p className="font-semibold text-gray-900">{f.evaluado}</p><p className="text-xs text-gray-700">{f.cliente}</p></td>
-                  <td className="px-2 py-3"><p className="text-gray-900">{f.queLlego}</p><p className="text-xs text-gray-700">{f.detalle}</p></td>
+                  <td className="px-2 py-3"><p className="text-gray-900">{f.queLlego}</p>{f.detalle && <p className="text-xs text-gray-700">{f.detalle}</p>}</td>
                   <td className="px-2 py-3">
                     <p className="text-gray-900">{f.responsable}</p>
                     {f.tipo === 'PASTA' ? <p className="text-xs font-semibold text-amber-900">El cliente no ve el resultado</p> : <EstadoTiempo tiempo={f.tiempo} />}
@@ -147,6 +147,9 @@ function Atencion({ a, onIr, onAvisar, aviso }) {
       accion: { texto: 'Reenviar enlace', onClick: () => onIr(`/gestor/solicitudes?enlace=${a.candidatosSinHojaDeVida.muestras[0]?.idServicio ?? ''}`) } },
     a.citasSinAgendar.cantidad > 0 && { clave: 'cit', cantidad: a.citasSinAgendar.cantidad, titulo: 'Citas sin agendar', b: a.citasSinAgendar,
       accion: { texto: 'Avisar al programador', onClick: onAvisar } },
+    // PC-04: lo que devolviste y espera la corrección del ejecutor («Devuelto» es una marca, no un estado).
+    a.devueltos?.cantidad > 0 && { clave: 'dev', cantidad: a.devueltos.cantidad, titulo: 'Devueltos al ejecutor', b: a.devueltos,
+      accion: { texto: 'Ver el avance', onClick: () => { const m = a.devueltos.muestras[0]; onIr(m?.idSubproceso ? `/gestor/formulario/${m.idSubproceso}` : '/gestor/solicitudes?estado=EN_EJECUCION') } } },
   ].filter(Boolean)
   return (
     <Seccion numero={2} titulo="Requiere tu atención" descripcion="Lo que está detenido y depende de una acción tuya." tono="ambar">

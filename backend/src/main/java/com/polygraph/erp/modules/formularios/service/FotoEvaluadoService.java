@@ -49,7 +49,16 @@ public class FotoEvaluadoService {
     public record Foto(Long id, String tomadaPor, LocalDateTime fecha, boolean cedulaVerificada, boolean vigente, String motivoReemplazo, LocalDateTime bloqueadaEn, String origen) {}
 
     /** existe: hay foto vigente. bloqueada: ya se pasó a la fase 2. puedeTomar / puedeReemplazar: lo que puede hacer quien pregunta. */
-    public record Estado(boolean existe, boolean bloqueada, boolean puedeTomar, boolean puedeReemplazar, Foto vigente, List<Foto> historial) {}
+    public record Estado(boolean existe, boolean bloqueada, boolean puedeTomar, boolean puedeReemplazar, Foto vigente, List<Foto> historial,
+                         /** PC-09 (PB-02 A.1): aviso, no bloqueo, cuando la foto es de un día distinto al de la cita; null si coincide o aún no hay foto o cita. */
+                         String avisoFecha) {}
+
+    /** El día de la foto (hora de Colombia) frente al día de la cita. Solo avisa: el poligrafista puede enviar igual. */
+    public static String avisoFecha(LocalDateTime fechaFoto, LocalDateTime fechaCita) {
+        if (fechaFoto == null || fechaCita == null || fechaFoto.toLocalDate().equals(fechaCita.toLocalDate())) return null;
+        return "La foto es del " + com.polygraph.erp.shared.utils.FechasLegibles.larga(fechaFoto.toLocalDate()) + " y la cita es del "
+                + com.polygraph.erp.shared.utils.FechasLegibles.larga(fechaCita.toLocalDate()) + ". Revisa que sea la persona de esta cita; puedes enviar el informe igual.";
+    }
 
     private final JdbcTemplate jdbc;
     private final AlmacenamientoDocumentosService almacenamiento;
@@ -67,7 +76,7 @@ public class FotoEvaluadoService {
         boolean bloqueada = vigente != null && vigente.bloqueadaEn() != null;
         boolean cerrado = cerrado(sp);
         return new Estado(vigente != null, bloqueada, esElPoligrafista(sp, actor) && !bloqueada && !cerrado, esCoordinador(actor) && !cerrado, vigente,   // PB-02: en solo lectura (enviado o publicado) el gestor no reemplaza la foto; si hace falta, devuelve el subproceso
-                todas.stream().filter(f -> !f.vigente()).toList());
+                todas.stream().filter(f -> !f.vigente()).toList(), avisoFecha(vigente == null ? null : vigente.fecha(), sp.getFechaProgramada()));
     }
 
     /** Guarda la foto que el poligrafista acaba de tomar (reemplaza la vigente mientras no se haya pasado a la fase 2). */

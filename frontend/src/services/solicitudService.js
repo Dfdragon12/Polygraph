@@ -35,6 +35,10 @@ const solicitudService = {
   emitirEstudio: (id, payload) =>
     api.post(`/requests/${id}/emitir-estudio`, payload).then(r => r.data),
 
+  // PC-01: «Vista previa del PDF completo»: 202 + trabajo; el archivo (con marca de agua) llega por la cola
+  vistaPreviaEstudio: (id, payload) =>
+    api.post(`/requests/${id}/estudio-vista-previa`, payload).then(r => r.data),
+
   // PB-03: el PDF único del estudio completo, tal como se guardó (blob)
   descargarEstudioCompleto: (id) =>
     api.get(`/requests/${id}/estudio-completo/pdf`, { responseType: 'blob' }),

@@ -44,6 +44,12 @@ public class CancelacionSolicitudService {
     private final ServicioSubprocesoRepository subprocesoRepository;
     private final UsuarioRepository usuarioRepository;
 
+    /** PC-01: publica el estudio al emitirlo SIN avisar al cliente todavía; el aviso sale cuando el PDF queda listo. */
+    @Transactional
+    public void publicarEstudioSinAviso(Integer idServicio, CambioEstadoRequest request, UserDetails userDetails) {
+        solicitudService.cambiarEstado(idServicio, request, userDetails, false);
+    }
+
     /** Punto único de cambio de estado del servicio: si es CANCELADO arrastra a los subprocesos, lo demás lo valida SolicitudService. */
     @Transactional
     public void cambiarEstado(Integer idServicio, CambioEstadoRequest request, UserDetails userDetails) {

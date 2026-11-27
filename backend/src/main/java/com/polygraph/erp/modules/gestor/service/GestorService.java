@@ -44,6 +44,7 @@ public class GestorService {
     private final com.polygraph.erp.shared.service.TiempoServicioService tiempoServicioService;
     private final com.polygraph.erp.modules.riesgo.repository.CalificacionRiesgoRepository calificacionRiesgoRepository;
     private final com.polygraph.erp.modules.servicios.repository.LinkCandidatoRepository linkCandidatoRepository;
+    private final com.polygraph.erp.modules.solicitudes.repository.DocumentoEstudioRepository documentoEstudioRepository;
 
     public GestorDashboardResponse obtenerDashboard(Long idGestor) {
         long pendientes  = contar(idGestor, EstadoServicio.PENDIENTE);
@@ -220,6 +221,10 @@ public class GestorService {
                 : linkCandidatoRepository.findByServicio_IdServicioIn(idsServicio).stream()
                         .collect(Collectors.toMap(l -> l.getServicio().getIdServicio(), l -> l.getEnviadoEn() != null, (a, b) -> a || b));
 
+        Map<Integer, com.polygraph.erp.modules.solicitudes.entity.DocumentoEstudio> pdfPorServicio = idsServicio.isEmpty() ? Map.of()
+                : documentoEstudioRepository.findByIdServicioInAndVigenteTrue(idsServicio).stream()
+                        .collect(Collectors.toMap(d -> d.getIdServicio(), d -> d, (a, b) -> a.getVersion() >= b.getVersion() ? a : b));
+
         return pagina.map(s -> {
             List<SolicitudGestorResponse.SubprocesoResumen> subprocesos = subprocesosPorServicio
                     .getOrDefault(s.getIdServicio(), List.of()).stream()
@@ -229,7 +234,8 @@ public class GestorService {
                     .toList();
 
             Boolean candidatoCompletado = s.getCandidato() != null
-                    ? completadoPorCandidato.get(s.getCandidato().getIdCandidato())
+                    ? com.polygraph.erp.shared.estados.ProximaAccion.esperandoAlCandidato(completadoPorCandidato.get(s.getCandidato().getIdCandidato()),
+                            s.getEstadoTiempo() == com.polygraph.erp.shared.enums.EstadoTiempo.EN_PAUSA && s.getPausaOrigen() == com.polygraph.erp.shared.enums.OrigenPausa.CANDIDATO)
                     : null;
             var proxima = com.polygraph.erp.shared.estados.ProximaAccion.de(s.getEstado() == EstadoServicio.CANCELADO,
                     subprocesosPorServicio.getOrDefault(s.getIdServicio(), List.of()).stream().map(BandejaGestorService::sub).toList(),
@@ -261,7 +267,9 @@ public class GestorService {
                             && riesgoPorServicio.get(s.getIdServicio()).getTipoAjuste() == com.polygraph.erp.modules.riesgo.motor.ModeloRiesgo.TipoAjuste.CRITICO,
                     s.getPastaEstado() != null ? s.getPastaEstado().name() : null,
                     proxima.name(), proxima.etiqueta(),
-                    enlaceEnviado.getOrDefault(s.getIdServicio(), false));
+                    enlaceEnviado.getOrDefault(s.getIdServicio(), false),
+                    pdfPorServicio.get(s.getIdServicio()) == null ? null : pdfPorServicio.get(s.getIdServicio()).getEstado(),
+                    pdfPorServicio.get(s.getIdServicio()) == null ? null : pdfPorServicio.get(s.getIdServicio()).getVersion());
         });
     }
 

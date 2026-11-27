@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import hallazgosService from '../../services/hallazgosService'
 import { borradorConcepto } from './conceptoBorrador'
 import { aTexto } from '../../components/CampoFecha'
+import AvisoConclusion from '../../components/AvisoConclusion'
 
 // AN-07 · Piezas de la Revisión del analista: las alertas marcadas en las consultas llegan como filas SUGERIDAS de «hallazgos sin impacto» (el analista escribe el
 // tratamiento) y el concepto del analista parte de un borrador armado por el sistema. Todo se guarda en las mismas columnas de siempre.
@@ -109,6 +110,7 @@ export function ConceptoAnalista({ secciones, nombreProfesional, soloLectura, on
       )}
       <textarea aria-label="Concepto del analista" rows={6} maxLength={max} className={`${inputCls} py-2`} value={texto} disabled={soloLectura} onChange={e => poner('concepto', e.target.value)} />
       {texto.length >= max * 0.8 && <p className="text-xs text-amber-700" role="status">{texto.length} / {max}</p>}
+      {!soloLectura && <AvisoConclusion texto={texto} />}
       <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
         <div><dt className="text-xs text-gray-600">Profesional encargado</dt><dd className="bg-gray-100 rounded px-2 py-1">{val('analista_nombre') || nombreProfesional || '—'}</dd></div>
         <div><dt className="text-xs text-gray-600">Fecha</dt><dd className="bg-gray-100 rounded px-2 py-1">{aTexto(val('analista_fecha')) || val('analista_fecha') || 'Se pone sola al marcar como completado'}</dd></div>

@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
-import { useState, useEffect, useRef, Fragment } from 'react'
+import { useState, useEffect, useRef, Fragment, Suspense } from 'react'
 import { useAuth } from '../../hooks/useAuth'
 import Campana from '../Campana'
 import PanelEnlaces from '../PanelEnlaces'
@@ -10,6 +10,7 @@ import api from '../../services/api'
 import { iniciarIntervaloVisible } from '../../hooks/useIntervaloVisible'
 import reversionService from '../../services/reversionService'
 import ciudadService from '../../services/ciudadService'
+import Cargando from '../Cargando'
 
 const ETIQUETAS_ROL = {
   ADMIN_POLYGRAPH: 'Administrador',
@@ -392,7 +393,8 @@ export default function AdminLayout() {
         <Breadcrumb />
 
         <main id="contenido" tabIndex={-1} className="flex-1 overflow-y-auto focus:outline-none overflow-x-hidden p-4 md:p-6 pb-[calc(1rem+var(--sab))] md:pb-[calc(1.5rem+var(--sab))] scrollbar-thin">
-          <Outlet />
+          {/* PC-08: la pantalla se descarga al entrar; mientras llega, el menú y la barra siguen en su lugar */}
+          <Suspense fallback={<Cargando />}><Outlet /></Suspense>
         </main>
       </div>
 

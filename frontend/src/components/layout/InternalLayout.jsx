@@ -1,11 +1,12 @@
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
-import { useState, useEffect, useRef, Fragment } from 'react'
+import { useState, useEffect, useRef, Fragment, Suspense } from 'react'
 import { useAuth } from '../../hooks/useAuth'
 import Campana from '../Campana'
 import HeaderMensajesGestor from '../HeaderMensajesGestor'
 import PanelEnlaces from '../PanelEnlaces'
 import BuscadorGlobal from '../BuscadorGlobal'
 import SidebarSeccion from './SidebarSeccion'
+import Cargando from '../Cargando'
 
 const ETIQUETAS_ROL = {
   ADMIN_POLYGRAPH:  'Administrador',
@@ -287,7 +288,8 @@ export default function InternalLayout({ secciones, titulo = 'Panel Interno', bu
         <Breadcrumb titulo={titulo} />
 
         <main id="contenido" tabIndex={-1} className="flex-1 overflow-y-auto focus:outline-none overflow-x-hidden p-4 md:p-6 pb-[calc(1rem+var(--sab))] md:pb-[calc(1.5rem+var(--sab))] scrollbar-thin">
-          <Outlet />
+          {/* PC-08: la pantalla se descarga al entrar; mientras llega, el menú y la barra siguen en su lugar */}
+          <Suspense fallback={<Cargando />}><Outlet /></Suspense>
         </main>
       </div>
 

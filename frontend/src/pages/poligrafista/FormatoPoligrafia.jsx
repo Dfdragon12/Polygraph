@@ -12,6 +12,7 @@ import asignacionService from '../../services/asignacionService'
 import { PreguntasRelevantes, enLetras } from './PreguntasRelevantes'
 import { FotoEvaluado } from './FotoEvaluado'
 import Toast from '../../components/Toast'
+import AvisosInforme from '../../components/informe/AvisosInforme'
 import colaOffline from '../../services/colaOffline'
 import { FASES, TODOS_LOS_TEMAS, contenidoDelTema, esFormatoPoligrafia } from './fasesFormato'
 
@@ -415,11 +416,14 @@ export function FormatoPoligrafia({ inicial, idServicioSubproceso, proveedor = n
           </p>
         </div>
         <div className="flex flex-col items-end gap-2">
-          <p className={`text-xs ${fallido ? 'text-red-600' : 'text-gray-700'}`} aria-live="polite">{textoGuardado}</p>
+          <p className={`text-xs ${fallido ? 'text-red-600' : 'text-gray-700'}`} aria-live="polite">{soloLectura ? 'Solo lectura' : textoGuardado}</p>
           <button type="button" onClick={async () => { await irA('informe'); setPedidoVista(n => n + 1) }}
             className="min-h-11 px-4 text-sm font-medium rounded-lg border border-primary-300 text-primary-700 hover:bg-primary-50">Ver como lo verá el cliente</button>
         </div>
       </div>
+
+      {/* PC-04: enviado, devuelto o publicado (con «Solicitar corrección»): el mismo aviso en todos los formatos, arriba. */}
+      <AvisosInforme meta={inicial} esEjecutor idServicioSubproceso={idServicioSubproceso} onToast={m => setToast({ mensaje: m, tipo: 'exito' })} />
 
       {/* Las 4 fases */}
       <nav aria-label="Fases del formato" className="grid grid-cols-2 lg:grid-cols-4 gap-2 mb-5">
@@ -452,7 +456,7 @@ export function FormatoPoligrafia({ inicial, idServicioSubproceso, proveedor = n
               className="w-full min-h-11 px-4 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-800">
               {verCaso ? 'Ocultar la información del caso' : 'Información del caso'}
             </button>
-            {verCaso && <PanelContexto ficha={ficha} nota={inicial.observacionesAsignacion} abrirHojaDeVida={TEMAS_CON_COMPARACION.includes(temaId)} />}
+            {verCaso && <PanelContexto ficha={ficha} nota={inicial.devolucion ? null : inicial.observacionesAsignacion} abrirHojaDeVida={TEMAS_CON_COMPARACION.includes(temaId)} />}
           </div>
         )}
         {/* Temas de la fase actual y, debajo, el panel del caso: la columna acompaña el desplazamiento */}
@@ -473,7 +477,7 @@ export function FormatoPoligrafia({ inicial, idServicioSubproceso, proveedor = n
             })}
           </ul>
           <hr className="border-gray-200" />
-          <PanelContexto ficha={ficha} nota={inicial.observacionesAsignacion} abrirHojaDeVida={TEMAS_CON_COMPARACION.includes(temaId)} />
+          <PanelContexto ficha={ficha} nota={inicial.devolucion ? null : inicial.observacionesAsignacion} abrirHojaDeVida={TEMAS_CON_COMPARACION.includes(temaId)} />
         </aside>}
 
         {/* La hoja */}

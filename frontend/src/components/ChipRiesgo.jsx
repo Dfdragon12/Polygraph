@@ -1,4 +1,5 @@
-// El riesgo de un estudio en una etiqueta con TEXTO (nunca un punto de color solo): «BAJO 0,0», «ALTO · crítico», «Preliminar» o «—» sin calificar.
+// El riesgo de un estudio en una etiqueta con TEXTO (nunca un punto de color solo): «BAJO 0,0», «ALTO · crítico» o «Sin calificar». La pasta
+// (pendiente · preliminar · emitida) NO va aquí: es un indicador del estudio y ya está en la columna Avance.
 // El verde de BAJO (riesgo) no es el verde de Finalizado (estado): por eso el riesgo va siempre escrito. Usada por Solicitudes y la bandeja del gestor.
 
 const ESTILOS = {
@@ -9,16 +10,9 @@ const ESTILOS = {
 
 const un = new Intl.NumberFormat('es-CO', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
 
-export default function ChipRiesgo({ nivel, puntaje, critico = false, preliminar = false, className = '' }) {
+export default function ChipRiesgo({ nivel, puntaje, critico = false, className = '' }) {
   const base = `inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ring-inset tabular-nums ${className}`
-  if (preliminar) return <span className={`${base} bg-slate-100 text-slate-700 ring-slate-500/30`}>Preliminar</span>
-  if (!nivel) {
-    return (
-      <span className={`${base} bg-slate-100 text-slate-700 ring-slate-500/30`}>
-        <span aria-hidden="true">—</span><span className="sr-only">Sin calificar</span>
-      </span>
-    )
-  }
+  if (!nivel) return <span className={`${base} bg-slate-100 text-slate-700 ring-slate-500/30`}>Sin calificar</span>
   return (
     <span className={`${base} ${ESTILOS[nivel] ?? ESTILOS.MEDIO}`}>
       {nivel}{puntaje != null ? ` ${un.format(Number(puntaje))}` : ''}{critico ? ' · crítico' : ''}

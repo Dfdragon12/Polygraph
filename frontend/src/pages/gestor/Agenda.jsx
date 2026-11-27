@@ -9,6 +9,8 @@ import Toast from '../../components/Toast'
 import Paginacion from '../../components/ui/Paginacion'
 import MenuAcciones from '../../components/ui/MenuAcciones'
 import ModalAsignarSubproceso from '../../components/ModalAsignarSubproceso'
+import PanelPublicarSubproceso from '../../components/gestor/PanelPublicarSubproceso'
+import PanelEmitirEstudio from '../../components/gestor/PanelEmitirEstudio'
 import EstadoTiempo from '../../components/EstadoTiempo'
 import ModalCitaAccion from '../../components/citas/ModalCitaAccion'
 import { useDiasNoHabiles } from '../../hooks/useDiasNoHabiles'
@@ -215,6 +217,8 @@ export default function GestorAgenda() {
   const [seleccionado, setSeleccionado] = useState(null)
   const [toast, setToast]               = useState(null)
   const [accionCita, setAccionCita]       = useState(null)   // { cita, modo } — cita no realizada / reprogramar / reasignar (SE-07)
+  const [emitiendo, setEmitiendo]         = useState(null)   // la fila cuyo estudio se cierra al publicar el último informe (misma ventana que en Solicitudes)
+  const [publicando, setPublicando]       = useState(null)   // { asignacion, publicados, total } — «Revisar y publicar» desde la Agenda (PC-09, PB-02 B.2)
   const [fechasAbiertas, setFechasAbiertas] = useState(() => new Set())
   const toggleFechas = (id) => setFechasAbiertas(prev => {
     const next = new Set(prev)
@@ -386,6 +390,18 @@ export default function GestorAgenda() {
 
 
   // ══════════════════════ Compartido: modal ══════════════════════
+  // PB-02 B.2 (PC-09): la misma acción «Revisar y publicar» de Solicitudes, también para poligrafía y visita. La ventana necesita saber cuántos informes del servicio
+  // van publicados para decir «Publicado parcial (x de y)» y avisar cuando este es el último; se piden al abrir (una consulta pequeña, solo ese servicio).
+  const abrirPublicar = async (a) => {
+    try {
+      const r = await asignacionService.listar({ idServicio: a.idServicio, page: 0, size: 50 })
+      const hermanos = (r?.content ?? []).filter(x => x.estado !== 'CANCELADO')
+      setPublicando({ asignacion: a, publicados: hermanos.filter(x => x.estado === 'PUBLICADO').length, total: hermanos.length })
+    } catch {
+      setToast({ mensaje: 'No se pudo abrir la ventana de publicar. Revisa tu conexión e inténtalo de nuevo.', tipo: 'error' })
+    }
+  }
+
   const onGuardado = () => {
     setSeleccionado(null)
     cargarServicios(estadoServicios, filtroSubprocesoServicios, filtroEmpleadoServicios, paginaServicios)
@@ -585,6 +601,10 @@ export default function GestorAgenda() {
                               a.estado === 'REPROGRAMADO' && false && {
                                 label: 'Reasignar a otro profesional', icono: <IconoAsignar />, onClick: () => setAccionCita({ cita: a, modo: 'reasignar' }),
                               },
+                              a.estado === 'FINALIZADO' && {
+                                label: 'Revisar y publicar', icono: <IconoLapiz />, destacado: 'text-[#A8323F] font-semibold',
+                                onClick: () => abrirPublicar(a),
+                              },
                               a.requiereDocumento && {
                                 label: 'Formulario', icono: <IconoHoja />,
                                 onClick: () => navigate(`/gestor/formulario/${a.id}`, { state: { origenSeccion: 'Agenda' } }),
@@ -746,6 +766,25 @@ export default function GestorAgenda() {
       {accionCita && (
         <ModalCitaAccion cita={accionCita.cita} modo={accionCita.modo} onClose={() => setAccionCita(null)}
           onHecho={() => { setAccionCita(null); setToast({ mensaje: 'Listo: quedó registrado.', tipo: 'exito' }) }} />
+      )}
+      {publicando && (
+        <PanelPublicarSubproceso asignacion={publicando.asignacion} publicados={publicando.publicados} total={publicando.total}
+          onClose={() => setPublicando(null)}
+          onHecho={(r) => {
+            const fila = publicando.asignacion
+            setPublicando(null)
+            onGuardado()
+            // Como dice la ventana: si era el último informe, se abre a continuación el cierre del estudio (la misma ventana de Solicitudes).
+            if (r?.cierraEstudio) setEmitiendo(fila)
+            else setToast({ mensaje: 'Publicado: el cliente ya puede descargar este informe.', tipo: 'exito' })
+          }}
+          onToast={(mensaje, tipo = 'exito') => setToast({ mensaje, tipo })} />
+      )}
+      {emitiendo && (
+        <PanelEmitirEstudio solicitud={{ idServicio: emitiendo.idServicio, nombres: emitiendo.nombresEvaluado, apellidos: emitiendo.apellidosEvaluado, proceso: emitiendo.proceso }}
+          onClose={() => setEmitiendo(null)}
+          onHecho={() => { setEmitiendo(null); onGuardado() }}
+          onToast={(mensaje) => setToast({ mensaje, tipo: 'exito' })} />
       )}
       {toast && <Toast mensaje={toast.mensaje} tipo={toast.tipo} onClose={() => setToast(null)} />}
     </div>

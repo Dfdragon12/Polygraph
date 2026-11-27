@@ -93,11 +93,11 @@ export default function AsignacionDashboard() {
 
   const porTipo = useMemo(() => contarPor(porHacer, a => a.subproceso), [porHacer])
 
-  // Rendimiento: completadas y aprobadas por semana (8), tiempo promedio de respuesta, este mes
+  // Rendimiento: completadas y publicadas por semana (8), tiempo promedio de respuesta, este mes
   const rendimiento = useMemo(() => {
     const lunes = new Date(); lunes.setHours(0, 0, 0, 0); lunes.setDate(lunes.getDate() - ((lunes.getDay() + 6) % 7))
     const semanas = Array.from({ length: 8 }, (_, i) => { const d = new Date(lunes); d.setDate(d.getDate() - 7 * (7 - i)); return d })
-    const filas = semanas.map(d => ({ inicio: iso(d), semana: semanaCorta(iso(d)), Completadas: 0, Aprobadas: 0 }))
+    const filas = semanas.map(d => ({ inicio: iso(d), semana: semanaCorta(iso(d)), Completadas: 0, Publicadas: 0 }))
     const indice = (fecha) => {
       if (!fecha) return -1
       const t = new Date(fecha).getTime()
@@ -108,7 +108,7 @@ export default function AsignacionDashboard() {
     let esteMes = 0
     ;(historial ?? []).forEach(a => {
       const i = indice(a.fechaCompletado); if (i >= 0) filas[i].Completadas++
-      const j = indice(a.fechaPublicado); if (j >= 0) filas[j].Aprobadas++
+      const j = indice(a.fechaPublicado); if (j >= 0) filas[j].Publicadas++
       if (a.fechaAsignacion && a.fechaCompletado) {
         const h = (new Date(a.fechaCompletado) - new Date(a.fechaAsignacion)) / 3600000
         if (h >= 0) horas.push(h)
@@ -213,7 +213,7 @@ export default function AsignacionDashboard() {
 
           {pestana === 'rendimiento' && (
             <div className="grid grid-cols-1 gap-5 xl:grid-cols-5">
-              <Grafica className="xl:col-span-3" titulo="Completadas y aprobadas" descripcion="Por semana · últimas 8 semanas">
+              <Grafica className="xl:col-span-3" titulo="Completadas y publicadas" descripcion="Por semana · últimas 8 semanas">
                 {rendimiento.total === 0 ? <SinDatos texto={`Cuando completes tu primer ${config.unidad} verás aquí tu ritmo`} /> : (
                   <ResponsiveContainer width="100%" height={220}>
                     <BarChart data={rendimiento.filas} margin={{ left: -20, right: 8, top: 8, bottom: 0 }}>
@@ -223,7 +223,7 @@ export default function AsignacionDashboard() {
                       <Tooltip contentStyle={tooltipEstilo} cursor={{ fill: '#f9fafb' }} labelFormatter={(l) => `Semana del ${l}`} />
                       <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
                       <Bar dataKey="Completadas" fill={C.violeta} radius={[5, 5, 0, 0]} maxBarSize={18} />
-                      <Bar dataKey="Aprobadas" fill={C.verde} radius={[5, 5, 0, 0]} maxBarSize={18} />
+                      <Bar dataKey="Publicadas" fill={C.verde} radius={[5, 5, 0, 0]} maxBarSize={18} />
                     </BarChart>
                   </ResponsiveContainer>
                 )}

@@ -1,7 +1,12 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { useVentana } from '../../hooks/useVentana'
 import asignacionService from '../../services/asignacionService'
 import riesgoService from '../../services/riesgoService'
 import solicitudService from '../../services/solicitudService'
+import trabajoService, { esperarTrabajo, guardarBlob, mensajeDeError } from '../../services/trabajoService'
+import { useBorrador } from '../../hooks/useBorrador'
+import { fechaHora } from '../../utils/fechas'
 
 // PB-03 · «Emitir estudio completo»: nivel del estudio (calculado por el modelo), nota del gestor, alertas para el cliente, confirmación de revisión
 // manual si el motor la pide, orden del PDF y los dos botones de emisión. El registro interno (pesos, promedio, ajustes) es SOLO de esta pantalla.
@@ -17,27 +22,40 @@ const num = (v) => v == null ? '—' : Number(v).toLocaleString('es-CO', { maxim
 export default function PanelEmitirEstudio({ solicitud, onClose, onHecho, onToast }) {
   const idTitulo = useId()
   const cierre = useRef(null)
+  const capa = useRef(null)
   const [subprocesos, setSubprocesos] = useState(null)
   const [riesgo, setRiesgo] = useState(null)
   const [errorRiesgo, setErrorRiesgo] = useState(false)
-  const [nota, setNota] = useState(solicitud.conceptoGestor ?? '')
-  const [alertas, setAlertas] = useState([])
+  // PC-06: la nota y las alertas que se escriben aquí se guardan como borrador; si la sesión se cierra o se recarga la página, al volver a abrir la ventana siguen ahí.
+  // La casilla de revisión manual NO se recupera: se confirma cada vez.
+  const borrador = useBorrador('emitir', solicitud.idServicio)
+  const [recuperado] = useState(() => borrador.leer())
+  const [nota, setNota] = useState(recuperado?.valor?.nota ?? solicitud.conceptoGestor ?? '')
+  const [alertas, setAlertas] = useState(recuperado?.valor?.alertas ?? [])
+  const [verRecuperado, setVerRecuperado] = useState(!!recuperado)
   const [confirmaRevision, setConfirmaRevision] = useState(false)
   const [verRegistro, setVerRegistro] = useState(false)
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState(null)
+  const [generandoVista, setGenerandoVista] = useState(false)
+  const [errorVista, setErrorVista] = useState(null)
+  const abortoVista = useRef(null)
+  useEffect(() => () => abortoVista.current?.abort(), [])
 
-  useEffect(() => {
-    cierre.current?.focus()
-    const salir = (e) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', salir)
-    return () => window.removeEventListener('keydown', salir)
-  }, [onClose])
+  // PC-06: foco adentro al abrir, Esc cierra, el foco vuelve a quien la abrió y el fondo queda inerte (hooks/useVentana); la ventana va en un portal.
+  useVentana({ capa, alEscape: onClose })
 
   useEffect(() => {
     asignacionService.listar({ idServicio: solicitud.idServicio, size: 50 }).then(r => setSubprocesos(r.content ?? [])).catch(() => setSubprocesos([]))
     riesgoService.obtener(solicitud.idServicio).then(setRiesgo).catch(() => setErrorRiesgo(true))
   }, [solicitud.idServicio])
+
+  useEffect(() => {
+    const intacta = nota === (solicitud.conceptoGestor ?? '') && alertas.length === 0
+    if (intacta) borrador.borrar(); else borrador.guardar({ nota, alertas })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nota, alertas])
+  const descartarBorrador = () => { borrador.borrar(); setNota(solicitud.conceptoGestor ?? ''); setAlertas([]); setVerRecuperado(false) }
 
   const vigentes = (subprocesos ?? []).filter(sp => sp.estado !== 'CANCELADO')
   const publicados = vigentes.filter(sp => sp.estado === 'PUBLICADO').length
@@ -60,15 +78,36 @@ export default function PanelEmitirEstudio({ solicitud, onClose, onHecho, onToas
         tipo, concepto: nota.trim(), confirmaRevisionManual: confirmaRevision,
         alertas: alertas.map(a => ({ texto: a.texto.trim(), justificacion: a.justificacion.trim() })),
       })
-      onToast?.(tipo === 'FINAL' ? `Estudio emitido · v${r.version} · el cliente fue notificado` : `Preliminar emitido · v${r.version}`)
+      // El PDF se arma en segundo plano: el cliente recibe el aviso cuando esté listo, no ahora.
+      borrador.borrar()
+      onToast?.(tipo === 'FINAL' ? `Estudio emitido · v${r.version} · generando el PDF… el cliente recibirá el aviso cuando esté listo`
+        : `Preliminar emitido · v${r.version} · generando el PDF…`)
       onHecho()
     } catch (e) {
       setError(e.response?.data?.mensaje ?? 'No se pudo emitir el estudio. Reintentar')
     } finally { setEnviando(false) }
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/30" onClick={onClose}>
+  const verVistaPrevia = async () => {
+    setGenerandoVista(true); setErrorVista(null)
+    abortoVista.current?.abort()
+    const aborto = new AbortController()
+    abortoVista.current = aborto
+    try {
+      const inicial = await solicitudService.vistaPreviaEstudio(solicitud.idServicio, {
+        tipo: 'PRELIMINAR', concepto: nota.trim(), confirmaRevisionManual: false,
+        alertas: alertas.filter(a => a.texto.trim()).map(a => ({ texto: a.texto.trim(), justificacion: a.justificacion.trim() })),
+      })
+      const listo = await esperarTrabajo(inicial, { signal: aborto.signal })
+      guardarBlob(await trabajoService.descargarResultado(listo.id), listo.nombreArchivo ?? `Vista_previa_estudio_${solicitud.idServicio}.pdf`)
+      onToast?.('Vista previa descargada · lleva la marca «VISTA PREVIA»')
+    } catch (e) {
+      if (!e.cancelado) setErrorVista(mensajeDeError(e, 'No se pudo generar la vista previa. Reintentar'))
+    } finally { setGenerandoVista(false) }
+  }
+
+  return createPortal(
+    <div ref={capa} className="fixed inset-0 z-50 flex justify-end bg-black/30 overscroll-contain" onClick={onClose}>
       <aside role="dialog" aria-modal="true" aria-labelledby={idTitulo} onClick={e => e.stopPropagation()}
         className="w-full max-w-[460px] h-full bg-white shadow-2xl flex flex-col rounded-l-2xl">
         <header className="px-6 pt-5 pb-4 border-b border-gray-200 flex items-start justify-between gap-3">
@@ -80,7 +119,13 @@ export default function PanelEmitirEstudio({ solicitud, onClose, onHecho, onToas
           <button ref={cierre} type="button" onClick={onClose} aria-label="Cerrar" className="min-h-[44px] min-w-[44px] rounded-lg text-gray-600 hover:bg-gray-100">✕</button>
         </header>
 
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+        <div className="flex-1 overflow-y-auto overscroll-contain px-6 py-5 space-y-5">
+          {verRecuperado && (
+            <p role="status" className="flex flex-wrap items-center gap-x-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <span>Recuperamos lo que tenías escrito ({fechaHora(recuperado.guardadoEn)}).</span>
+              <button type="button" onClick={descartarBorrador} className="min-h-[44px] font-semibold underline focus-visible:outline focus-visible:outline-2">Descartar borrador</button>
+            </p>
+          )}
           <section>
             <h3 className="text-sm font-semibold text-gray-900 mb-2">Nivel de riesgo del estudio</h3>
             {errorRiesgo ? <p className="text-sm text-red-700">No se pudo calcular el nivel. Reintentar</p>
@@ -141,13 +186,18 @@ export default function PanelEmitirEstudio({ solicitud, onClose, onHecho, onToas
               <li><strong>Informe de análisis final</strong> (portada del sistema)</li>
               {vigentes.filter(sp => sp.estado === 'PUBLICADO').map(sp => <li key={sp.id}>{sp.subproceso}</li>)}
             </ol>
-            <button type="button" disabled className={`${botonBase} w-full mt-3 border border-gray-300 text-gray-600 cursor-not-allowed`}>Vista previa del PDF completo</button>
-            <p className="text-xs text-gray-600 mt-1">La vista previa todavía no está disponible: emite un preliminar para ver el PDF.</p>
+            <button type="button" onClick={verVistaPrevia} disabled={publicados === 0 || generandoVista} aria-describedby={`${idTitulo}-vista`}
+              className={`${botonBase} w-full mt-3 border border-gray-300 text-gray-900 hover:bg-gray-50 disabled:text-gray-600 disabled:cursor-not-allowed`}>
+              {generandoVista ? 'Generando la vista previa…' : 'Vista previa del PDF completo'}</button>
+            <p id={`${idTitulo}-vista`} className="text-xs text-gray-600 mt-1">
+              {publicados === 0 ? 'Publica al menos un informe para ver la vista previa.'
+                : 'Descarga el PDF con la nota y las alertas que llevas escritas, marcado «VISTA PREVIA». No emite nada ni avisa al cliente.'}</p>
+            {errorVista && <p role="alert" className="text-xs text-red-700 mt-1">{errorVista}</p>}
           </section>
 
           <div className="rounded-lg bg-gray-100 px-4 py-3 text-xs text-gray-700 leading-relaxed">
-            <strong>Al emitir:</strong> el estudio pasa a <strong>Publicado</strong>, la pasta queda <strong>emitida</strong> y el cliente ve &quot;Tu informe está listo&quot; con el botón
-            &quot;Descargar estudio completo&quot;. Si todavía hay pendientes, puedes emitir un preliminar: el PDF dice qué falta y el cliente no ve el nivel del estudio.
+            <strong>Al emitir:</strong> el estudio pasa a <strong>Publicado</strong> y la pasta queda <strong>emitida</strong>. El PDF se arma en segundo plano; cuando está listo, el cliente
+            ve &quot;Tu informe está listo&quot; con el botón &quot;Descargar estudio completo&quot; y recibe el aviso. Si todavía hay pendientes, puedes emitir un preliminar: el PDF dice qué falta y el cliente no ve el nivel del estudio.
           </div>
           {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
         </div>
@@ -163,6 +213,7 @@ export default function PanelEmitirEstudio({ solicitud, onClose, onHecho, onToas
           {(faltaFinal || faltaPreliminar) && <p className="basis-full text-xs text-gray-600 text-right">{faltaFinal ?? ''}{faltaFinal && faltaPreliminar ? ' · ' : ''}{faltaPreliminar ? `Preliminar: ${faltaPreliminar}` : ''}</p>}
         </footer>
       </aside>
-    </div>
+    </div>,
+    document.body
   )
 }

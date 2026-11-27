@@ -24,7 +24,11 @@ export default defineConfig({
         // El fallback offline en sw.js (matchPrecache('/index.html')) ya no encuentra nada, así que
         // sin conexión ahora se ve el aviso "Sin conexión" en vez de un shell potencialmente viejo —
         // trade-off correcto: preferir un error claro sobre servir una app desactualizada.
-        globPatterns: ['**/*.{js,css,ico,png,svg,woff2,woff}'],
+        // PC-08: con las pantallas por demanda (React.lazy) ya NO se precachea todo el JS: el service worker bajaba en segundo plano los ~6 MB de TODOS los portales
+        // apenas se abría el login. Se precachea solo el paquete principal (index-*.js/css) y las imágenes; los demás pedazos (assets/*) se guardan al usarse
+        // (cache-first en src/sw.js: son inmutables, su nombre lleva el hash). Un cambio en cualquier pedazo cambia el nombre del paquete principal, así que
+        // el service worker sigue enterándose de cada versión nueva.
+        globPatterns: ['assets/index-*.{js,css}', '*.{ico,png,svg,woff2,woff}', 'brand/**/*.{png,svg,woff2,woff}'],
         // El bundle principal ya pasó los 2MiB por defecto de Workbox (varios módulos admin
         // nuevos en poco tiempo) — sin esto, el build entero falla en el paso del service
         // worker aunque el bundle de la app haya compilado bien. Subir el límite es la salida

@@ -1076,3 +1076,34 @@ complementa): `docs/DICCIONARIO.md` (glosario de negocio↔código↔BD), `docs/
   como «Consulta interna» (`ConsultaInterna.jsx`). Falta mostrar el Anexo 2 junto a «Relación con el cargo».
 - Estado: sin probar en navegador real; V233–V248 pendientes de aplicar en cada base (reinicio del backend). Las filas «Sin novedad» sin soporte de los servicios #9, #10, #21, #26 y #32 se vaciaron el
   2026-11-03; el servicio #49 conserva 13 sin tocar.
+
+## Producción (PC-08, 2026-11-27)
+
+- Guía de despliegue: `README.md` («Cómo publicar»). Producción = `docker-compose.prod.yml` (solo Caddy publica 80/443; base, backend y nginx quedan en la red interna) + `deploy/Caddyfile`
+  (HTTPS automático para `DOMINIO`). El `docker-compose.yml` de la raíz es SOLO desarrollo (publica la base y pgAdmin). `.env.example` lista TODAS las variables (obligatorias y opcionales).
+- Frontend: pantallas y portales por demanda (`React.lazy` en `App.jsx`, `components/Cargando.jsx`; el login es el único eager). Paquete principal ~390 KB (~120 KB gzip) en vez de 3,3 MB; el
+  service worker precachea SOLO `assets/index-*` y las imágenes (los pedazos se guardan al usarse, cache-first en `src/sw.js`). `frontend/nginx.conf`: gzip, `/assets/` inmutable un año, HTML y sw.js sin
+  caché, `client_max_body_size 12m` (sin eso nginx corta los documentos de 10 MB con 413) y SSE sin búfer.
+- Rutas: ninguna escrita en el código. `UPLOADS_DIR` (documentos, plantillas Word, PDF), `TRABAJOS_DIR`, `LIBREOFFICE_BINARIO` y `LIBREOFFICE_TEMP_DIR` (carpeta de trabajo de las conversiones, vacío = /tmp).
+  `application-dev.yml` solo tiene la ruta típica de LibreOffice de Windows y el CORS de localhost/ngrok: no se usa en producción.
+- No hay contraseña de administrador por defecto. `auth/service/AdministradorInicial` crea el primer administrador desde `ADMIN_EMAIL`/`ADMIN_PASSWORD` solo si no existe ninguno (cambio de contraseña obligatorio).
+- Diagnóstico: Admin → Trabajos → «Diagnóstico del servidor» (`GET /api/v1/admin/sistema/diagnostico`, `POST .../probar-pdf`, `trabajos/service/DiagnosticoServidorService`): LibreOffice (se busca el
+  ejecutable; no se arranca porque `soffice --version` tarda 15-30 s en Windows), carpetas con espacio, avisos (FRONTEND_URL/CORS en localhost, Swagger abierto) y una conversión real de prueba. También se
+  deja en el registro al arrancar. La prueba con LibreOffice real del backend se activa con `PRUEBA_LIBREOFFICE=1`.
+- La cadena completa de migraciones (V1 a V280) corre en una base nueva (probado en un esquema aparte con ROLLBACK, PostgreSQL 18; producción usa 15). El arranque completo del backend contra una base nueva SÍ se probó en PC-09 (ver abajo); falta el despliegue en un servidor real. Una base nueva NO trae el catálogo del negocio (servicios, subprocesos habilitados, países, planes de la tienda): ver README §6.
+
+## Recorrido de punta a punta y cierre (PC-09, 2026-11-27)
+
+- Se probó con el jar de producción contra un esquema aparte (`pc09`, nunca `public`), datos ficticios, API real y Chrome real (sin respuestas simuladas): un Antecedentes solo (enlace corto), una Poligrafía Pre Empleo y un
+  Avanzado (7 subprocesos) de la solicitud a la descarga del PDF por el cliente. Encontró y corrigió defectos que ninguna prueba unitaria veía:
+  - **Enlace corto no se podía enviar**: el DTO `HojaVidaRequest` exigía experiencia y 4 referencias (400). Ahora esas dos reglas viven en `EvaluadoService.exigirMinimosDelEnlace` (la llama el controlador) y solo aplican al
+    enlace completo. Un enlace inválido respondía 500 en vez de 404 (`servicioConAcceso` marcaba la transacción «solo rollback»): lleva `noRollbackFor = ApiException`.
+  - **Criticidad que fijó el cliente (NS-07) bloqueaba el envío a revisión**: nadie la guarda en el formulario, así que `FormularioService.progreso` la contaba como campo por llenar («Datos del evaluado» nunca completa) y
+    `camposObligatoriosVacios` la exigía en los formatos donde es obligatoria (académica, laboral, personal, financiero, visita). Ambos la excluyen con `esCriticidadDeSolicitud`.
+  - **Aviso de fecha de la foto (PB-02 A.1)** faltaba: `FotoEvaluadoService.avisoFecha` / `Estado.avisoFecha` (foto de otro día que la cita → aviso ámbar, NO bloquea). La foto obligatoria para enviar ya existía (PF-07).
+  - **«Revisar y publicar» en la Agenda del gestor (PB-02 B.2)** faltaba: opción del menú de la fila FINALIZADA (`abrirPublicar`), misma ventana de Solicitudes; al publicar el último informe abre «Emitir estudio completo».
+  - `PublicacionSubprocesoService.publicar` valida `AccesoGestor` ANTES del estado (un gestor ajeno recibía 409 con el estado del subproceso en vez de 403).
+- Reversión de un estudio emitido: NO existe una acción que revierta un SUBPROCESO publicado (la página «Reversiones» solo trata cancelaciones). Lo que hay: el ADMIN_POLYGRAPH cambia la SOLICITUD de PUBLICADO a otro estado
+  (`PATCH /requests/{id}/status`); eso invalida el PDF, la pasta vuelve a PENDIENTE y la siguiente emisión es la versión 2. El gestor no puede (403, SE-02). Decisión pendiente del usuario.
+- Pendiente fuera de alcance: editar un POLIGRAFISTA sin cambiar su ciudad+sala responde 409 (`uq_empleado_ciudad_sala`: `UsuariosInternosService.actualizar` hace `clear()`+`addAll()` y Hibernate inserta antes de borrar).
+

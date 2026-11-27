@@ -96,7 +96,7 @@ export default function FormatoAcademica({ inicial, idServicioSubproceso }) {
     estadoDeTemas: (s) => estadoDeTemas(s, filas.length),
     faltantesDe: (s) => faltantesDeAcademica(s, filas.length),
   }
-  const renderPanel = () => <PanelCaso filas={filas} nota={inicial.observacionesAsignacion} />
+  const renderPanel = () => <PanelCaso filas={filas} nota={inicial.devolucion ? null : inicial.observacionesAsignacion} />
   const renderEncabezado = (c) => (!c.soloLectura ? <AvisoCargo cargo={inicial.cargo} onAvisar={c.avisarGestor} clave="ACA_CARGO_NO_COINCIDE" /> : null)
 
   const renderTema = (c) => (

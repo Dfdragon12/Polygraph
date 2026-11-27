@@ -21,6 +21,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
@@ -41,12 +43,23 @@ public class ColaTrabajosService {
     private final AlmacenTrabajos almacen;
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventos;
+    private final JdbcTemplate jdbc;
 
     /** Se publica al encolar: el despachador lo atiende después del commit, sin esperar al
      *  siguiente sondeo. */
     public record TrabajoEncolado(TipoTrabajo tipo) {}
 
     public TrabajoAsincrono encolar(TipoTrabajo tipo, Usuario usuario, Map<String, Object> parametros) {
+        return encolar(tipo, usuario, parametros, null);
+    }
+
+    /**
+     * PC-01: para encolar DESPUÉS de un commit (TransactionSynchronization.afterCommit). En ese punto la transacción original ya se cerró pero sus recursos
+     * siguen activos: un método {@code REQUIRED} se uniría a ella y su INSERT nunca se confirmaría (el trabajo no llegaba a la cola). Con
+     * {@code REQUIRES_NEW} el trabajo queda guardado en su propia transacción y el despachador lo recibe al terminar esa transacción.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public TrabajoAsincrono encolarTrasCommit(TipoTrabajo tipo, Usuario usuario, Map<String, Object> parametros) {
         return encolar(tipo, usuario, parametros, null);
     }
 
@@ -167,11 +180,32 @@ public class ColaTrabajosService {
     private TrabajoAdminResponse aRespuestaAdmin(TrabajoAsincrono t) {
         Long duracion = t.getFechaInicio() != null && t.getFechaFin() != null
                 ? Duration.between(t.getFechaInicio(), t.getFechaFin()).toMillis() : null;
+        Integer[] ref = servicioYVersion(t);
         return new TrabajoAdminResponse(t.getUuid(), t.getTipo().name(), t.getEstado().name(),
                 t.getUsuario() != null ? t.getUsuario().getEmail() : null,
                 t.getProgreso(), t.getIntentos(), t.getMaxIntentos(), t.getMensajeUsuario(), t.getErrorTecnico(),
                 t.getFechaCreacion(), t.getFechaInicio(), t.getFechaFin(), t.getDisponibleDesde(), duracion,
-                t.getEstado() == EstadoTrabajo.FALLIDO);
+                t.getEstado() == EstadoTrabajo.FALLIDO, ref[0], ref[1]);
+    }
+
+    /** PC-01: de qué servicio (y de qué versión del PDF del estudio) es un trabajo, para el panel. {null, null} si no aplica o no se puede saber. */
+    private Integer[] servicioYVersion(TrabajoAsincrono t) {
+        try {
+            Map<String, Object> p = parametros(t);
+            if (p.get("idServicio") instanceof Number n && t.getTipo() != TipoTrabajo.ESTUDIO_PDF) return new Integer[]{n.intValue(), null};
+            if (t.getTipo() == TipoTrabajo.ESTUDIO_PDF && p.get("idDocumento") instanceof Number d) {
+                var filas = jdbc.queryForList("SELECT id_servicio, version FROM documentos_estudio WHERE id = ?", d.longValue());
+                if (!filas.isEmpty()) return new Integer[]{((Number) filas.get(0).get("id_servicio")).intValue(), ((Number) filas.get(0).get("version")).intValue()};
+            }
+            if (t.getTipo() == TipoTrabajo.ESTUDIO_PDF && p.get("idServicio") instanceof Number n) return new Integer[]{n.intValue(), null};
+            if (p.get("idServicioSubproceso") instanceof Number sp) {
+                var filas = jdbc.queryForList("SELECT id_servicio FROM servicio_subprocesos WHERE id = ?", sp.longValue());
+                if (!filas.isEmpty()) return new Integer[]{((Number) filas.get(0).get("id_servicio")).intValue(), null};
+            }
+        } catch (RuntimeException e) {
+            log.debug("No se pudo resolver el servicio del trabajo {}: {}", t.getUuid(), e.getMessage());
+        }
+        return new Integer[]{null, null};
     }
 
     // ───────────────────────────────── JSON ─────────────────────────────────

@@ -35,7 +35,10 @@ public record SolicitudGestorResponse(
         String pastaEstado,
         String proximaAccion,
         String proximaAccionEtiqueta,
-        boolean enlaceEnviado
+        boolean enlaceEnviado,
+        // PC-01: el PDF vigente del estudio (null = sin emitir, GENERANDO, LISTO o ERROR) y su versión, para «PDF v1 listo» / «Reintentar».
+        String estudioPdfEstado,
+        Integer estudioPdfVersion
 ) {
     // programadorAsignado: solo relevante para subprocesos de poligrafía/visita — si el gestor ya
     // le encargó a un PROGRAMADOR coordinarlo (ver ServicioSubproceso.programadorResponsable).

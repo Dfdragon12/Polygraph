@@ -83,6 +83,7 @@ class PB05BandejaTest {
     @Autowired private HojaVidaEvaluadoRepository hojaVidaRepository;
     @Autowired private CalificacionRiesgoRepository calificacionRepository;
     @Autowired private jakarta.persistence.EntityManager em;
+    @Autowired private com.polygraph.erp.modules.solicitudes.repository.DocumentoEstudioRepository documentoEstudioRepository;
 
     private static final LocalDate HOY = LocalDate.of(2026, 11, 10);
 
@@ -118,10 +119,11 @@ class PB05BandejaTest {
         bandeja = new BandejaGestorService(semaforo, servicioRepository, hojaVidaRepository, calificacionRepository, calificaciones, novedades, mensajes,
                 tiempo, notificaciones, usuarioRepository, estadisticas, jdbc);
         ReflectionTestUtils.setField(bandeja, "em", em);
-        inicio = new InicioClienteService(usuarioRepository, subprocesoRepository, calificacionRepository, tiempo, envios, estadisticas, reloj);
+        inicio = new InicioClienteService(usuarioRepository, subprocesoRepository, calificacionRepository, tiempo, envios, estadisticas, reloj, documentoEstudioRepository);
         ReflectionTestUtils.setField(inicio, "em", em);
         when(envios.seguimientoParaCliente(any())).thenReturn(new EnvioEnlaceService.SeguimientoCliente("COMPLETO",
-                LocalDateTime.of(2026, 11, 9, 9, 0), LocalDateTime.of(2026, 11, 9, 10, 0), 2, 5, null, LocalDate.of(2026, 11, 11)));
+                LocalDateTime.of(2026, 11, 9, 9, 0), LocalDateTime.of(2026, 11, 9, 10, 0), 2, 5, null, LocalDate.of(2026, 11, 11), "ABIERTO",
+                "Lo abrió con su cédula y lleva 2 de 5 secciones. Vence el 11 de nov."));
 
         ClasificacionProceso clasificacion = persistir(ClasificacionProceso.builder().codigo("SEG").nombre("Seguridad").activo(true).build());
         avanzado = persistir(Proceso.builder().nombreProceso("Avanzado").clasificacion(clasificacion).aplicaPrecioCiudad(false).build());
@@ -218,6 +220,24 @@ class PB05BandejaTest {
         assertThat(a.sinAsignar().muestras()).extracting(BandejaGestorService.Muestra::idServicio).containsExactly(s3.getIdServicio());
         assertThat(a.citasSinAgendar().cantidad()).isEqualTo(1);                 // la poligrafía en Programando
         assertThat(a.novedades().cantidad()).isZero();
+    }
+
+    @Test
+    @DisplayName("PC-04 · Requiere tu atención muestra lo que el gestor devolvió (con su motivo): «Devuelto» es una marca, el subproceso sigue en Ejecución")
+    void devueltosAlEjecutor() {
+        assertThat(bandeja.bandeja(gestor.getIdUsuario()).atencion().devueltos().cantidad()).isZero();
+        ServicioSubproceso devuelto = em.createQuery("SELECT sp FROM ServicioSubproceso sp WHERE sp.servicio.idServicio = :id AND sp.estado = :e", ServicioSubproceso.class)
+                .setParameter("id", s1.getIdServicio()).setParameter("e", EstadoSubproceso.FINALIZADO).getSingleResult();
+        devuelto.setEstado(EstadoSubproceso.EN_EJECUCION);
+        devuelto.setDevuelto(true);
+        devuelto.setMotivoDevolucion("Redacción o formato del informe");
+        em.flush();
+        em.clear();
+
+        var d = bandeja.bandeja(gestor.getIdUsuario()).atencion().devueltos();
+        assertThat(d.cantidad()).isEqualTo(1);
+        assertThat(d.muestras()).hasSize(1);
+        assertThat(d.muestras().get(0).texto()).contains("#" + s1.getIdServicio()).contains("Devuelto · Redacción o formato del informe");
     }
 
     @Test

@@ -10,6 +10,7 @@ import com.polygraph.erp.modules.servicios.repository.ServicioSubprocesoReposito
 import com.polygraph.erp.modules.solicitudes.dto.CambioEstadoRequest;
 import com.polygraph.erp.modules.solicitudes.dto.EmisionEstudioResponse;
 import com.polygraph.erp.modules.solicitudes.dto.EmitirEstudioRequest;
+import com.polygraph.erp.modules.trabajos.dto.TrabajoResponse;
 import com.polygraph.erp.modules.solicitudes.entity.DocumentoEstudio;
 import com.polygraph.erp.modules.solicitudes.repository.DocumentoEstudioRepository;
 import com.polygraph.erp.modules.trabajos.service.ColaTrabajosService;
@@ -18,7 +19,9 @@ import com.polygraph.erp.shared.enums.EstadoSubproceso;
 import com.polygraph.erp.shared.enums.PastaEstado;
 import com.polygraph.erp.shared.enums.Rol;
 import com.polygraph.erp.shared.enums.TipoTrabajo;
+import com.polygraph.erp.shared.entity.Notificacion;
 import com.polygraph.erp.shared.exceptions.ApiException;
+import com.polygraph.erp.shared.repository.NotificacionRepository;
 import com.polygraph.erp.shared.utils.AccesoGestor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -53,6 +56,10 @@ public class EmisionEstudioService {
     private final ColaTrabajosService cola;
     private final JdbcTemplate jdbc;
     private final com.polygraph.erp.modules.trabajos.service.AlmacenTrabajos almacen;
+    private final NotificacionRepository notificaciones;
+
+    /** PC-01: un PDF que lleva más tiempo que este en GENERANDO se da por fallido (el gestor lo ve y pulsa «Reintentar»). */
+    public static final int MINUTOS_MAXIMOS_GENERANDO = 15;
 
     /** Lo que necesita el armado del PDF, ya leído dentro de una transacción (el trabajo corre sin ella). */
     public record Portada(Integer idServicio, Integer version, String tipo, String nivel, String evaluado, String cedula, String cargo, String cliente,
@@ -113,7 +120,8 @@ public class EmisionEstudioService {
             // Publica el estudio (servicio PUBLICADO, riesgo bloqueado, aviso al cliente) y deja la pasta EMITIDA.
             // Un estudio ya publicado con el flujo anterior (sin PDF único) se reemite sin volver a publicarlo: solo se crea su versión del PDF.
             if (servicio.getEstado() != EstadoServicio.PUBLICADO) {
-                cancelacionSolicitudService.cambiarEstado(idServicio, new CambioEstadoRequest("PUBLICADO", req.concepto().trim()), userDetails);
+                // Sin avisar todavía: el cliente se entera cuando el PDF quede LISTO (marcarListo), no antes.
+                cancelacionSolicitudService.publicarEstudioSinAviso(idServicio, new CambioEstadoRequest("PUBLICADO", req.concepto().trim()), userDetails);
             } else {
                 servicio.setPastaEstado(PastaEstado.EMITIDA);
             }
@@ -126,15 +134,124 @@ public class EmisionEstudioService {
         DocumentoEstudio doc = documentoRepository.save(DocumentoEstudio.builder().idServicio(idServicio).version(version)
                 .tipo(esFinal ? "FINAL" : "PRELIMINAR").nivel(esFinal ? riesgo.nivelEfectivo() : null).idUsuario(actor.getIdUsuario())
                 .detalle(esFinal ? null : "PRELIMINAR – CIERRE PENDIENTE: " + String.join(", ", faltantes)).build());
-        Long idDoc = doc.getId();
-        // El trabajo se encola DESPUÉS del commit: si no, el despachador podría tomarlo antes de que exista la fila.
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override public void afterCommit() {
-                cola.encolar(TipoTrabajo.ESTUDIO_PDF, actor, Map.of("idDocumento", idDoc));
-            }
-        });
+        encolarPdf(actor, doc.getId());
         log.info("Estudio emitido: servicio={}, {} v{}, gestor={}", idServicio, doc.getTipo(), version, actor.getIdUsuario());
         return new EmisionEstudioResponse(version, doc.getTipo(), DocumentoEstudio.GENERANDO);
+    }
+
+    /**
+     * El trabajo se encola DESPUÉS del commit (si no, el despachador podría tomarlo antes de que exista la fila) y en una transacción NUEVA:
+     * en un afterCommit la transacción original ya terminó y un INSERT que se una a ella nunca se confirma (PB-H-23: el PDF quedaba en GENERANDO
+     * para siempre y no había ningún trabajo en la cola).
+     */
+    private void encolarPdf(Usuario actor, Long idDocumento) {
+        Map<String, Object> parametros = Map.of("idDocumento", idDocumento);
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            cola.encolarTrasCommit(TipoTrabajo.ESTUDIO_PDF, actor, parametros);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override public void afterCommit() {
+                cola.encolarTrasCommit(TipoTrabajo.ESTUDIO_PDF, actor, parametros);
+            }
+        });
+    }
+
+    /**
+     * ÚNICA regla de «el estudio está listo para el cliente»: estudio publicado, pasta emitida y el PDF vigente ya armado (LISTO y guardado).
+     * La usan el Dashboard, el detalle, la descarga y el aviso al cliente: ninguna pantalla puede decir «listo» por su cuenta.
+     */
+    @Transactional(readOnly = true)
+    public boolean disponibleParaCliente(Servicio s) {
+        return EstudioListo.paraCliente(s, documentoRepository.findFirstByIdServicioAndVigenteTrueOrderByVersionDesc(s.getIdServicio()).orElse(null));
+    }
+
+    /** El gestor pide armar de nuevo el PDF de la MISMA versión cuando falló (o se quedó atascado). */
+    @Transactional
+    public EmisionEstudioResponse reintentarPdf(Integer idServicio, UserDetails userDetails) {
+        Usuario actor = usuarioRepository.findByEmail(userDetails.getUsername())
+                .orElseThrow(() -> new ApiException("Usuario no encontrado", HttpStatus.NOT_FOUND));
+        Servicio servicio = servicioRepository.findById(idServicio).orElseThrow(() -> new ApiException("Servicio no encontrado", HttpStatus.NOT_FOUND));
+        AccesoGestor.validar(servicio, actor);
+        DocumentoEstudio d = documentoRepository.findFirstByIdServicioAndVigenteTrueOrderByVersionDesc(idServicio)
+                .orElseThrow(() -> new ApiException("Este estudio todavía no tiene un PDF emitido. Emítelo primero.", HttpStatus.CONFLICT));
+        if (DocumentoEstudio.LISTO.equals(d.getEstado())) throw new ApiException("El PDF de la versión " + d.getVersion() + " ya está listo.", HttpStatus.CONFLICT);
+        if (DocumentoEstudio.GENERANDO.equals(d.getEstado()) && d.getFecha().isAfter(LocalDateTime.now().minusMinutes(MINUTOS_MAXIMOS_GENERANDO))) {
+            throw new ApiException("El PDF se está generando. Espera unos minutos antes de reintentar.", HttpStatus.CONFLICT);
+        }
+        d.setEstado(DocumentoEstudio.GENERANDO);
+        d.setDetalle(null);
+        d.setFecha(LocalDateTime.now());
+        encolarPdf(actor, d.getId());
+        log.info("PDF del estudio reintentado: servicio={}, v{}, por={}", idServicio, d.getVersion(), actor.getIdUsuario());
+        return new EmisionEstudioResponse(d.getVersion(), d.getTipo(), DocumentoEstudio.GENERANDO);
+    }
+
+    /**
+     * PC-07 · Reparación: un PDF FINAL que nunca se armó (sigue en GENERANDO o en ERROR y no tiene archivo; es el del #42, que nació cuando el trabajo no entraba a la cola)
+     * se reemplaza por una versión NUEVA que sí va por la cola. La anterior queda en el historial —no vigente y en ERROR, con el motivo—, nunca se borra. El cliente recibe el
+     * aviso «El PDF de tu estudio se actualizó» cuando la versión nueva esté lista. Devuelve el número de la versión nueva, o 0 si no hacía falta (ya está listo, tiene
+     * archivo, no es el vigente o no se sabe quién lo emitió).
+     */
+    @Transactional
+    public int regenerarComoNuevaVersion(Long idDocumento) {
+        DocumentoEstudio d = documentoRepository.findById(idDocumento).orElse(null);
+        if (d == null || d.getRuta() != null || DocumentoEstudio.LISTO.equals(d.getEstado()) || !"FINAL".equals(d.getTipo()) || !Boolean.TRUE.equals(d.getVigente())) return 0;
+        Usuario actor = d.getIdUsuario() == null ? null : usuarioRepository.findById(d.getIdUsuario()).orElse(null);
+        if (actor == null) return 0;
+        int version = documentoRepository.findFirstByIdServicioOrderByVersionDesc(d.getIdServicio()).map(x -> x.getVersion() + 1).orElse(d.getVersion() + 1);
+        d.setVigente(false);
+        d.setEstado(DocumentoEstudio.ERROR);
+        d.setDetalle("Reemplazado por la versión " + version + " (reparación PC-07): este PDF nunca llegó a armarse.");
+        DocumentoEstudio nuevo = documentoRepository.save(DocumentoEstudio.builder().idServicio(d.getIdServicio()).version(version).tipo("FINAL").nivel(d.getNivel())
+                .idUsuario(d.getIdUsuario()).build());
+        encolarPdf(actor, nuevo.getId());
+        log.info("PDF del estudio {} regenerado como versión {} (reparación PC-07)", d.getIdServicio(), version);
+        return version;
+    }
+
+    /**
+     * «Vista previa del PDF completo»: arma el mismo PDF con la nota y las alertas que el gestor lleva escritas, con la marca «VISTA PREVIA», sin emitir ni
+     * guardar versión. Va por la cola (202); el resultado es un archivo temporal del propio trabajo.
+     */
+    @Transactional
+    public TrabajoResponse vistaPrevia(Integer idServicio, EmitirEstudioRequest req, UserDetails userDetails) {
+        Usuario actor = usuarioRepository.findByEmail(userDetails.getUsername())
+                .orElseThrow(() -> new ApiException("Usuario no encontrado", HttpStatus.NOT_FOUND));
+        Servicio servicio = servicioRepository.findById(idServicio).orElseThrow(() -> new ApiException("Servicio no encontrado", HttpStatus.NOT_FOUND));
+        AccesoGestor.validar(servicio, actor);
+        boolean hayPublicados = subprocesoRepository.findByServicio_IdServicioOrderByTipoProgreso_OrdenAsc(idServicio).stream()
+                .anyMatch(sp -> sp.getEstado() == EstadoSubproceso.PUBLICADO);
+        if (!hayPublicados) throw new ApiException("Publica al menos un informe para ver la vista previa.", HttpStatus.CONFLICT);
+        List<String> alertas = req.alertas() == null ? List.of() : req.alertas().stream().map(EmitirEstudioRequest.Alerta::texto)
+                .filter(t -> t != null && !t.isBlank()).map(String::trim).toList();
+        Map<String, Object> parametros = Map.of("idServicio", idServicio, "vistaPrevia", true,
+                "concepto", req.concepto() == null ? "" : req.concepto().trim(), "alertas", alertas);
+        return cola.aRespuesta(cola.encolar(TipoTrabajo.ESTUDIO_PDF, actor, parametros));
+    }
+
+    /** Portada de la vista previa: lo que llevaría el PDF si se emitiera ahora (sin versión ni registro). */
+    @Transactional(readOnly = true)
+    public Portada portadaVistaPrevia(Integer idServicio, String concepto, List<String> alertas, Usuario actor) {
+        Servicio s = servicioRepository.findById(idServicio).orElseThrow(() -> new ApiException("Servicio no encontrado", HttpStatus.NOT_FOUND));
+        List<ServicioSubproceso> sps = subprocesoRepository.findByServicio_IdServicioOrderByTipoProgreso_OrdenAsc(idServicio);
+        List<Informe> informes = sps.stream().filter(sp -> sp.getEstado() == EstadoSubproceso.PUBLICADO)
+                .map(sp -> new Informe(sp.getId(), sp.getTipoProgreso().getNombreProgreso(), sp.getFechaPublicado(),
+                        Boolean.TRUE.equals(sp.getTipoProgreso().getRequiereDocumento()))).toList();
+        List<String> faltantes = sps.stream().filter(sp -> sp.getEstado() != EstadoSubproceso.PUBLICADO && sp.getEstado() != EstadoSubproceso.CANCELADO)
+                .map(sp -> sp.getTipoProgreso().getNombreProgreso()).toList();
+        boolean completo = faltantes.isEmpty();
+        String nivel = null;
+        if (completo) {
+            try { nivel = calificacionRiesgoService.obtener(idServicio, actor).nivelEfectivo(); } catch (RuntimeException e) { log.debug("Vista previa sin nivel: {}", e.getMessage()); }
+        }
+        var c = s.getCandidato();
+        String cliente = s.getCliente() == null ? "" : (s.getCliente().getRazonSocial() != null ? s.getCliente().getRazonSocial()
+                : ((s.getCliente().getNombre() == null ? "" : s.getCliente().getNombre()) + " " + (s.getCliente().getApellido() == null ? "" : s.getCliente().getApellido())).trim());
+        return new Portada(idServicio, 0, completo ? "FINAL" : "PRELIMINAR", nivel,
+                c == null ? "" : ((c.getNombres() == null ? "" : c.getNombres()) + " " + (c.getApellidos() == null ? "" : c.getApellidos())).trim(),
+                c == null ? "" : c.getCedula(), s.getCargo(), cliente, s.getProceso() == null ? "" : s.getProceso().getNombreProceso(),
+                concepto == null ? "" : concepto, alertas == null ? List.of() : alertas, faltantes, informes, actor.getIdUsuario());
     }
 
     /** Estado del PDF vigente del estudio (null si no hay uno disponible para el cliente). */
@@ -164,15 +281,74 @@ public class EmisionEstudioService {
                 s.getConceptoGestor(), alertas, faltantes, informes, d.getIdUsuario());
     }
 
-    /** El trabajo terminó: la versión queda lista (o con error, con el motivo). */
+    /** El trabajo empezó (o se reintenta): el PDF vuelve a GENERANDO y su reloj de 15 minutos arranca de nuevo. */
     @Transactional
-    public void marcarListo(Long idDocumento, String ruta, int paginas) {
-        documentoRepository.findById(idDocumento).ifPresent(d -> { d.setEstado(DocumentoEstudio.LISTO); d.setRuta(ruta); d.setPaginas(paginas); });
+    public void marcarGenerando(Long idDocumento) {
+        documentoRepository.findById(idDocumento).ifPresent(d -> {
+            if (DocumentoEstudio.LISTO.equals(d.getEstado())) return;   // ya está armado: un reintento duplicado no lo deshace
+            d.setEstado(DocumentoEstudio.GENERANDO);
+            d.setDetalle(null);
+            d.setFecha(LocalDateTime.now());
+        });
     }
 
+    /** El trabajo terminó: la versión queda lista y, si es el estudio FINAL, el cliente se entera AHORA (no al emitir). */
+    @Transactional
+    public void marcarListo(Long idDocumento, String ruta, int paginas) {
+        documentoRepository.findById(idDocumento).ifPresent(d -> {
+            boolean yaEstabaListo = DocumentoEstudio.LISTO.equals(d.getEstado());
+            d.setEstado(DocumentoEstudio.LISTO);
+            d.setRuta(ruta);
+            d.setPaginas(paginas);
+            d.setDetalle(null);
+            if (!yaEstabaListo && "FINAL".equals(d.getTipo()) && Boolean.TRUE.equals(d.getVigente())) avisarAlCliente(d);
+        });
+    }
+
+    /** Falló de verdad (sin más reintentos): el PDF queda en ERROR y el gestor del cliente recibe el aviso para reintentar. */
     @Transactional
     public void marcarError(Long idDocumento, String motivo) {
-        documentoRepository.findById(idDocumento).ifPresent(d -> { d.setEstado(DocumentoEstudio.ERROR); d.setDetalle(motivo); });
+        documentoRepository.findById(idDocumento).ifPresent(d -> {
+            boolean yaEstabaEnError = DocumentoEstudio.ERROR.equals(d.getEstado());
+            d.setEstado(DocumentoEstudio.ERROR);
+            d.setDetalle(motivo);
+            if (!yaEstabaEnError) avisarAlGestor(d);
+        });
+    }
+
+    /** Pasa a ERROR los PDF que llevan más de {@link #MINUTOS_MAXIMOS_GENERANDO} minutos en GENERANDO. Devuelve cuántos. */
+    @Transactional
+    public int vencerLosQueTardan() {
+        var vencidos = documentoRepository.findByEstadoAndFechaBefore(DocumentoEstudio.GENERANDO, LocalDateTime.now().minusMinutes(MINUTOS_MAXIMOS_GENERANDO));
+        for (DocumentoEstudio d : vencidos) {
+            log.warn("PDF del estudio {} v{} lleva más de {} min en GENERANDO: se marca como fallido", d.getIdServicio(), d.getVersion(), MINUTOS_MAXIMOS_GENERANDO);
+            marcarError(d.getId(), "No terminó en " + MINUTOS_MAXIMOS_GENERANDO + " minutos. Reintenta.");
+        }
+        return vencidos.size();
+    }
+
+    private void avisarAlCliente(DocumentoEstudio d) {
+        Servicio s = servicioRepository.findById(d.getIdServicio()).orElse(null);
+        if (s == null || s.getCliente() == null) return;
+        String evaluado = s.getCandidato() != null ? ((s.getCandidato().getNombres() == null ? "" : s.getCandidato().getNombres()) + " "
+                + (s.getCandidato().getApellidos() == null ? "" : s.getCandidato().getApellidos())).trim() : "tu solicitud #" + s.getIdServicio();
+        boolean actualizado = d.getVersion() != null && d.getVersion() > 1;
+        String titulo = actualizado ? "El PDF de tu estudio se actualizó" : "Tu informe está listo";
+        String mensaje = actualizado ? "El estudio de " + evaluado + " tiene un PDF nuevo (versión " + d.getVersion() + ") para descargar."
+                : "El estudio de " + evaluado + " ya está listo para descargar.";
+        usuarioRepository.findByIdCliente(s.getCliente().getIdCliente()).stream().filter(u -> Boolean.TRUE.equals(u.getActivo()))
+                .forEach(u -> notificaciones.save(Notificacion.builder().usuario(u).tipo("SOLICITUD_ESTADO").titulo(titulo).mensaje(mensaje).leida(false)
+                        .fechaCreacion(LocalDateTime.now()).referenciaTipo("SERVICIO").referenciaId(s.getIdServicio().longValue()).build()));
+    }
+
+    private void avisarAlGestor(DocumentoEstudio d) {
+        Servicio s = servicioRepository.findById(d.getIdServicio()).orElse(null);
+        if (s == null || s.getCliente() == null || s.getCliente().getIdGestor() == null) return;
+        usuarioRepository.findById(s.getCliente().getIdGestor()).filter(u -> Boolean.TRUE.equals(u.getActivo()))
+                .ifPresent(g -> notificaciones.save(Notificacion.builder().usuario(g).tipo("ESTUDIO_PDF_FALLIDO")
+                        .titulo("No se pudo generar el PDF del estudio #" + s.getIdServicio())
+                        .mensaje("El PDF de la versión " + d.getVersion() + " no se armó. Entra a Solicitudes y pulsa «Reintentar»; el cliente todavía no lo ve como listo.")
+                        .leida(false).fechaCreacion(LocalDateTime.now()).referenciaTipo("SERVICIO").referenciaId(s.getIdServicio().longValue()).build()));
     }
 
     /** Entrega el PDF guardado (nunca lo regenera). El cliente solo lo recibe con el estudio publicado y la pasta emitida; el gestor y el admin, también el preliminar. */
@@ -198,6 +374,6 @@ public class EmisionEstudioService {
     }
 
     public boolean estudioPublicado(Servicio s) {
-        return s.getEstado() == EstadoServicio.PUBLICADO && s.getPastaEstado() == PastaEstado.EMITIDA;
+        return EstudioListo.estudioPublicado(s);
     }
 }

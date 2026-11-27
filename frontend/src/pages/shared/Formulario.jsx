@@ -11,12 +11,16 @@ import Toast from '../../components/Toast'
 import TablaHojaVidaEditable from '../../components/TablaHojaVidaEditable'
 import NovedadesSubproceso from '../../components/NovedadesSubproceso'
 import SoportesInforme from '../../components/SoportesInforme'
+import AvisoConclusion from '../../components/AvisoConclusion'
+import AvisosInforme from '../../components/informe/AvisosInforme'
+import EtiquetaEstado from '../../components/semaforo/EtiquetaEstado'
 import FichaCandidato from '../../components/FichaCandidato'
 import { FotoEvaluadoGestor } from '../poligrafista/FotoEvaluado'
 import { ConfirmModal } from '../../components/ui/Modal'
 import CiudadSelect from '../../components/CiudadSelect'
 import BarrioSelect from '../../components/BarrioSelect'
 import SelectorMotivo, { motivoIncompleto, MOTIVO_VACIO } from '../../components/SelectorMotivo'
+import { useBorrador } from '../../hooks/useBorrador'
 
 // Compartida entre analista, poligrafista y visitador — mismo formulario universal para
 // cualquier subproceso, solo cambia el texto/ruta de "volver" según en cuál portal se abrió (cada
@@ -388,7 +392,7 @@ function IconoCandado() {
     </svg>
   )
 }
-function IconoAprobar() {
+function IconoPublicar() {
   return (
     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
@@ -469,17 +473,6 @@ function AnilloAvance({ porcentaje }) {
       <span className="absolute inset-0 flex items-center justify-center text-sm font-bold text-gray-800">{porcentaje}%</span>
     </div>
   )
-}
-
-// Estado del subproceso en palabras de quien lo ve (pill de la franja del encabezado).
-const ESTADO_SUBPROCESO = {
-  PENDIENTE:  { etiqueta: 'Pendiente',          punto: 'bg-gray-400' },
-  PROGRAMANDO: { etiqueta: 'Programando', punto: 'bg-sky-500' },
-  REPROGRAMADO: { etiqueta: 'Reprogramado', punto: 'bg-orange-500' },
-  EN_EJECUCION:   { etiqueta: 'En curso',           punto: 'bg-primary-500' },
-  FINALIZADO: { etiqueta: 'Enviado a revisión', punto: 'bg-amber-500' },
-  PUBLICADO:  { etiqueta: 'Aprobado',           punto: 'bg-green-500' },
-  CANCELADO:  { etiqueta: 'Cancelado',          punto: 'bg-red-500' },
 }
 
 // Plantilla (campos del formulario) y documento Word van de la mano: la plantilla define QUÉ se
@@ -797,13 +790,13 @@ export default function Formulario() {
   const [guardando, setGuardando] = useState(false)
   const [descargando, setDescargando] = useState(false)
   const [completando, setCompletando] = useState(false)
-  const [aprobando, setAprobando] = useState(false)
+  const [publicando, setPublicando] = useState(false)
   const [devolviendo, setDevolviendo] = useState(false)
   const [motivoDevolver, setMotivoDevolver] = useState(MOTIVO_VACIO)
   const [enviandoDevolver, setEnviandoDevolver] = useState(false)
+  // PC-06: lo escrito en «Devolver este subproceso» se guarda como borrador (si la sesión se cierra a medias, al volver sigue ahí) y se borra al devolver o cancelar.
+  const borradorDevolver = useBorrador('devolver', idServicioSubproceso)
   const [conclusion, setConclusion] = useState('')                 // PB-02: la conclusión que escribe quien ejecuta
-  const [pidiendoCorreccion, setPidiendoCorreccion] = useState(false)
-  const [motivoCorreccion, setMotivoCorreccion] = useState('')
   const [toast, setToast] = useState(null)
   const [meta, setMeta] = useState(null)
   const [riesgo, setRiesgo] = useState(null)
@@ -1053,14 +1046,6 @@ export default function Formulario() {
     try { await asignacionService.guardarConclusion(idServicioSubproceso, conclusion); setMeta(m => ({ ...m, conclusion })) }
     catch (err) { mostrarToast(err.response?.data?.mensaje ?? 'No se pudo guardar la conclusión.', 'error') }
   }
-  const pedirCorreccion = async () => {
-    if (!motivoCorreccion.trim()) { mostrarToast('Cuenta qué hay que corregir.', 'error'); return }
-    try {
-      await asignacionService.solicitarCorreccion(idServicioSubproceso, motivoCorreccion.trim())
-      mostrarToast('Solicitud enviada · tu gestor la verá en sus avisos')
-      setPidiendoCorreccion(false); setMotivoCorreccion('')
-    } catch (err) { mostrarToast(err.response?.data?.mensaje ?? 'No se pudo enviar la solicitud. Reintentar', 'error') }
-  }
   // NS-07: la criticidad del cargo la eligió el cliente al solicitar; solo el gestor (o el admin) la cambia.
   const criticidadBloqueada = (c) => c.calificacion?.uso === 'CRITICIDAD' && !!meta?.criticidadDeSolicitud && prefijo !== 'gestor'
   const PASO_NOVEDADES = 0
@@ -1117,6 +1102,13 @@ export default function Formulario() {
     return obligatorias.filter(c => sec.filas.some(f => !tieneValor(f.valores[c.idColumna])))
       .map(c => ({ clave: `o-${sec.idSeccion}-${c.idColumna}`, texto: `${nombreSeccion} › ${c.nombre || c.clave}`, paso: pasoDeSeccion(sec) }))
   })
+
+  // PC-04: un botón desactivado dice por qué (y qué hacer). El servidor vuelve a validar todo esto al enviar.
+  const razonBloqueoEnvio = !meta?.idFormulario ? 'Guarda el formulario para poder enviarlo.'
+    : pendientes.length > 0 ? `Se habilita cuando completes las ${bloques.length} secciones (faltan ${pendientes.length}: ${pendientes.slice(0, 3).map(x => nombreDe(x.b)).join(', ')}${pendientes.length > 3 ? ` y ${pendientes.length - 3} más` : ''}).`
+    : obligatoriosVacios.length > 0 ? `Se habilita cuando llenes los campos obligatorios (${obligatoriosVacios.length === 1 ? 'falta 1' : `faltan ${obligatoriosVacios.length}`}).`
+    : criticasSinExplicar.length > 0 ? `Se habilita cuando expliques ${criticasSinExplicar.length === 1 ? 'la respuesta determinante' : `las ${criticasSinExplicar.length} respuestas determinantes`}.`
+    : null
 
   const irAPaso = (idx) => {
     setPaso(idx)
@@ -1315,21 +1307,36 @@ export default function Formulario() {
     }
   }
 
-  // Antes eran acciones ciegas en la tabla de Agenda de gestor/programador — se movieron aquí por
-  // el mismo motivo que "Marcar como completado": aprobar o devolver revisando de verdad lo que
-  // se diligenció, no de pasada desde una lista.
-  const aprobarSubproceso = async () => {
-    setAprobando(true)
+  // PC-05: el gestor ya NO publica desde aquí — lo hace en Solicitudes, con la ventana «Publicar» (conclusión, calificación y revisión). Este botón queda solo
+  // para el programador (no tiene Solicitudes) y usa el camino de siempre, que no abre esa ventana: ver REPORTE PC-05.
+  const publicarSubproceso = async () => {
+    setPublicando(true)
     try {
       await asignacionService.aprobar(idServicioSubproceso)
-      mostrarToast('Subproceso aprobado y publicado')
+      mostrarToast('Subproceso publicado')
       setTimeout(() => navigate(volver.ruta), 900)
     } catch (err) {
-      mostrarToast(err.response?.data?.mensaje ?? 'No se pudo aprobar el subproceso.', 'error')
+      mostrarToast(err.response?.data?.mensaje ?? 'No se pudo publicar el subproceso.', 'error')
     } finally {
-      setAprobando(false)
+      setPublicando(false)
     }
   }
+
+  // Con el formulario ya cargado, una devolución que quedó a medias vuelve a abrirse con su texto.
+  const devolucionRecuperada = useRef(false)
+  useEffect(() => {
+    if (cargando || devolucionRecuperada.current) return
+    devolucionRecuperada.current = true
+    const b = borradorDevolver.leer()?.valor
+    if (b && ['gestor', 'programador'].includes(prefijo) && meta?.estado === 'FINALIZADO') { setMotivoDevolver(b); setDevolviendo(true) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cargando])
+  useEffect(() => {
+    if (!devolviendo) return
+    if (!motivoDevolver.idMotivo && !motivoDevolver.texto) borradorDevolver.borrar(); else borradorDevolver.guardar(motivoDevolver)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [devolviendo, motivoDevolver])
+  const cerrarDevolver = () => { borradorDevolver.borrar(); setDevolviendo(false); setMotivoDevolver(MOTIVO_VACIO) }
 
   const confirmarDevolver = async () => {
     const falta = motivoIncompleto(motivoDevolver)
@@ -1341,8 +1348,7 @@ export default function Formulario() {
     try {
       await asignacionService.devolver(idServicioSubproceso, { idMotivo: motivoDevolver.idMotivo, observacion: motivoDevolver.texto.trim() || null })
       mostrarToast('Subproceso devuelto — ya le llegó la notificación.')
-      setDevolviendo(false)
-      setMotivoDevolver(MOTIVO_VACIO)
+      cerrarDevolver()
       setTimeout(() => navigate(volver.ruta), 900)
     } catch (err) {
       mostrarToast(err.response?.data?.mensaje ?? 'No se pudo devolver el subproceso.', 'error')
@@ -1362,6 +1368,16 @@ export default function Formulario() {
     return () => clearTimeout(temporizador)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [secciones, sucio, guardando, autoguardadoActivo, autoguardadoFallido])
+
+  // PC-06 (PB-H-41): 2 minutos antes de cerrar la sesión por inactividad el sistema avisa (evento «sesion-por-expirar»); quien NO tiene guardado automático
+  // (gestor, programador, admin) guarda ahí lo que tenga a medias, mientras la sesión todavía sirve. Los formatos de quien diligencia ya se guardan solos a los 2,5 s.
+  const guardarAlExpirarRef = useRef(null)
+  guardarAlExpirarRef.current = () => { if (sucio && !guardando && !autoguardadoActivo && !meta?.soloLectura) guardar({ silencioso: true }) }
+  useEffect(() => {
+    const alExpirar = () => guardarAlExpirarRef.current?.()
+    window.addEventListener('sesion-por-expirar', alExpirar)
+    return () => window.removeEventListener('sesion-por-expirar', alExpirar)
+  }, [])
 
   // Avisa antes de cerrar/recargar la pestaña si hay cambios sin guardar — cubre tanto a gestor/
   // programador (sin autoguardado) como la ventana de unos segundos antes de que el autoguardado
@@ -1394,7 +1410,6 @@ export default function Formulario() {
     { etiqueta: 'Teléfono', valor: meta?.telefonoEvaluado },
     { etiqueta: 'Ciudad', valor: meta?.ciudadEvaluado },
   ]
-  const estadoInfo = ESTADO_SUBPROCESO[meta?.estado] ?? null
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -1437,12 +1452,8 @@ export default function Formulario() {
                 Cargo: {meta.cargo}
               </span>
             )}
-            {estadoInfo && (
-              <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-white border border-primary-100 text-gray-700">
-                <span className={`w-1.5 h-1.5 rounded-full ${estadoInfo.punto}`} />
-                {estadoInfo.etiqueta}
-              </span>
-            )}
+            {/* PC-04: el estado sale del catálogo de los siete estados (nombre y color), como en el resto de pantallas. */}
+            {meta?.estado && <EtiquetaEstado estado={meta.estado} pequena />}
             {meta?.soloLectura && (
               <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-white border border-primary-100 text-gray-500">
                 <IconoCandado /> Solo lectura
@@ -1474,7 +1485,8 @@ export default function Formulario() {
             </div>
           </div>
 
-          {porcentajeTotal !== null && (
+          {/* PC-04: en un informe enviado o publicado el avance ya no aporta (todo está completo): queda «Solo lectura» arriba. */}
+          {porcentajeTotal !== null && !meta?.soloLectura && (
             <div className="flex-shrink-0 flex items-center gap-3 md:flex-col md:gap-1.5 md:pl-5 md:border-l md:border-primary-100/70 print:hidden">
               <AnilloAvance porcentaje={porcentajeTotal} />
               <p className="text-[11px] text-gray-500 md:text-center leading-tight">
@@ -1531,18 +1543,25 @@ export default function Formulario() {
               <IconoGuardar /> {guardando ? 'Guardando…' : 'Guardar'}
             </button>
           )}
-          {/* Aprobar o devolver revisando de verdad lo diligenciado, aquí mismo. Solo mientras
-              sigue FINALIZADO: una vez PUBLICADO ya no hay nada más que hacer. */}
+          {/* Devolver revisando de verdad lo diligenciado, aquí mismo. Solo mientras sigue FINALIZADO: una vez PUBLICADO ya no hay nada más que hacer.
+              Publicar: el gestor, en Solicitudes (ventana «Publicar»); el programador, desde aquí. */}
           {['gestor', 'programador'].includes(prefijo) && meta?.estado === 'FINALIZADO' && (
             <>
               <button type="button" onClick={() => { setDevolviendo(true); setMotivoDevolver(MOTIVO_VACIO) }}
                 className="inline-flex items-center gap-1.5 border border-primary-100 bg-white text-gray-700 hover:bg-primary-50 text-sm font-medium px-3.5 py-2 rounded-lg transition-colors">
                 <IconoDevolver /> Devolver
               </button>
-              <button type="button" onClick={aprobarSubproceso} disabled={aprobando}
-                className="inline-flex items-center gap-1.5 disabled:opacity-60 text-white text-sm font-medium px-3.5 py-2 rounded-lg transition-colors shadow-sm bg-primary-600 hover:bg-primary-700">
-                <IconoAprobar /> {aprobando ? 'Aprobando…' : 'Aprobar'}
-              </button>
+              {prefijo === 'gestor' ? (
+                <Link to="/gestor/solicitudes?estado=FINALIZADO"
+                  className="inline-flex min-h-[44px] items-center gap-1.5 text-white text-sm font-medium px-3.5 py-2 rounded-lg transition-colors shadow-sm bg-primary-600 hover:bg-primary-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600">
+                  <IconoPublicar /> Publicar en Solicitudes
+                </Link>
+              ) : (
+                <button type="button" onClick={publicarSubproceso} disabled={publicando}
+                  className="inline-flex min-h-[44px] items-center gap-1.5 disabled:opacity-60 text-white text-sm font-medium px-3.5 py-2 rounded-lg transition-colors shadow-sm bg-primary-600 hover:bg-primary-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600">
+                  <IconoPublicar /> {publicando ? 'Publicando…' : 'Publicar'}
+                </button>
+              )}
             </>
           )}
         </div>
@@ -1550,7 +1569,10 @@ export default function Formulario() {
 
       {/* Lo último que dejó quien coordina: indicaciones al asignar, o el motivo si lo devolvió
           para corrección — antes solo llegaba en la notificación y se perdía de vista. */}
-      {meta?.observacionesAsignacion && meta?.estado === 'EN_EJECUCION' && (
+      {/* PC-04: lo que ve el ejecutor después de enviar (enviado, devuelto, publicado + «Solicitar corrección»): un solo componente para todos los formatos. */}
+      <AvisosInforme meta={meta} esEjecutor={esEjecutor} idServicioSubproceso={idServicioSubproceso} onToast={m => mostrarToast(m)} />
+
+      {meta?.observacionesAsignacion && meta?.estado === 'EN_EJECUCION' && !meta?.devolucion && (
         <div className="mb-5 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 print:hidden">
           <p className="text-xs font-semibold text-amber-800 mb-0.5">Observación de quien coordina este servicio</p>
           <p className="text-sm text-amber-900 whitespace-pre-line">{meta.observacionesAsignacion}</p>
@@ -1579,45 +1601,7 @@ export default function Formulario() {
         </div>
       )}
 
-      {meta?.soloLectura && esEjecutor && meta?.estado === 'FINALIZADO' && (
-        <div className="mb-5 bg-gray-100 border border-gray-200 rounded-2xl px-4 py-3 print:hidden" role="status">
-          <p className="text-sm font-semibold text-gray-900">Enviado · en revisión del gestor</p>
-          <p className="text-sm text-gray-700">Quedó en solo lectura. Si el gestor lo devuelve, verás el motivo aquí y podrás corregirlo.</p>
-        </div>
-      )}
-      {meta?.soloLectura && esEjecutor && meta?.estado === 'PUBLICADO' && (
-        <div className="mb-5 bg-teal-50 border border-teal-200 rounded-2xl px-4 py-3 print:hidden" role="status">
-          <p className="text-sm font-semibold text-teal-900">
-            Publicado al cliente{meta.fechaPublicado ? ` el ${new Date(meta.fechaPublicado).toLocaleDateString('es-CO', { dateStyle: 'long' })}` : ''}
-            {meta.nivelPublicado ? ` · ${meta.nivelPublicado}` : ''}
-          </p>
-          {meta.conclusionPublicada && (
-            <p className="text-sm text-teal-900 mt-1 whitespace-pre-line">
-              <span className="font-medium">Conclusión publicada: </span>{meta.conclusionPublicada}
-              {meta.conclusion && meta.conclusion.trim() !== meta.conclusionPublicada.trim() && (
-                <span className="block text-xs text-teal-800 mt-1">El gestor ajustó tu texto. El tuyo era: {meta.conclusion}</span>
-              )}
-            </p>
-          )}
-          {!pidiendoCorreccion ? (
-            <button type="button" onClick={() => setPidiendoCorreccion(true)}
-              className="mt-2 min-h-[44px] px-4 rounded-lg border border-teal-700 text-sm font-semibold text-teal-900 hover:bg-teal-100 focus-visible:outline focus-visible:outline-2">
-              Solicitar corrección
-            </button>
-          ) : (
-            <div className="mt-2 space-y-2">
-              <label htmlFor="motivo-correccion" className="block text-xs font-medium text-teal-900">¿Qué hay que corregir? <span className="text-red-700">*</span></label>
-              <textarea id="motivo-correccion" rows={3} value={motivoCorreccion} onChange={e => setMotivoCorreccion(e.target.value)}
-                className="w-full border border-teal-300 rounded-lg px-3 py-2 text-sm bg-white" />
-              <div className="flex gap-2">
-                <button type="button" onClick={pedirCorreccion} className="min-h-[44px] px-4 rounded-lg bg-teal-700 text-white text-sm font-semibold">Enviar al gestor</button>
-                <button type="button" onClick={() => setPidiendoCorreccion(false)} className="min-h-[44px] px-4 rounded-lg border border-gray-300 text-sm">Cancelar</button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-      {meta?.soloLectura && !(esEjecutor && (meta?.estado === 'FINALIZADO' || meta?.estado === 'PUBLICADO')) && (
+      {meta?.soloLectura && !(esEjecutor && (meta?.estado === 'FINALIZADO' || meta?.estado === 'PUBLICADO')) && meta?.estado !== 'PUBLICADO' && (
         <div className="mb-5 bg-gray-100 border border-gray-200 rounded-2xl px-4 py-3 print:hidden">
           <p className="text-sm text-gray-600">
             Este servicio ya está completado — el formulario quedó en solo lectura, no se pueden hacer más cambios.
@@ -1919,6 +1903,7 @@ export default function Formulario() {
                       <JustificacionCritica valor={s.justificaciones?.[c.idColumna]} disabled={meta?.soloLectura}
                         onChange={t => editarJustificacionCampo(s.idSeccion, c.idColumna, t)} />
                     )}
+                    {c.esConclusion && !meta?.soloLectura && <AvisoConclusion texto={s.valores[c.idColumna]} />}
                   </Campo>
                 ))}
               </div>
@@ -1987,12 +1972,15 @@ export default function Formulario() {
         {esEjecutor && bloques.length > 0 && (
           <section className={`${enEnvio ? 'block' : 'hidden'} print:hidden bg-white border border-gray-200 border-l-4 border-l-green-400 rounded-2xl shadow-sm p-4`}>
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Revisión antes de enviar</p>
-            {!meta?.soloLectura && (
+            {/* PC-02: si el formato ya tiene su campo de conclusión (p. ej. «Concepto del analista») ese ES la conclusión: no se pide dos veces. */}
+            {!meta?.soloLectura && !secciones.some(s => s.columnas?.some(c => c.esConclusion)) && (
               <div className="mb-4">
-                <label htmlFor="conclusion-subproceso" className="block text-sm font-semibold text-gray-900 mb-1">Conclusión</label>
+                <label htmlFor="conclusion-subproceso" className="block text-sm font-semibold text-gray-900 mb-1">Conclusión <span className="text-red-700" title="Obligatoria">*</span></label>
                 <textarea id="conclusion-subproceso" rows={4} maxLength={4000} value={conclusion} onChange={e => setConclusion(e.target.value)} onBlur={guardarConclusion}
+                  aria-describedby="conclusion-subproceso-ayuda"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500" />
-                <p className="text-xs text-gray-600 mt-1">Es lo que leerá el cliente junto a la calificación. Tu gestor puede ajustarla al publicar; el texto original queda en el historial.</p>
+                <p id="conclusion-subproceso-ayuda" className="text-xs text-gray-600 mt-1">Es lo que leerá el cliente junto a la calificación. Tu gestor puede ajustarla al publicar; el texto original queda en el historial.</p>
+                <AvisoConclusion texto={conclusion} />
               </div>
             )}
             {meta?.soloLectura ? (
@@ -2022,8 +2010,8 @@ export default function Formulario() {
                         </li>
                       ))}
                     </ul>
-                    <p className="text-[11px] text-gray-400 mt-2">
-                      Puedes enviarlo igual si esa información no aplica — en ese caso deja una novedad explicando por qué.
+                    <p className="text-[11px] text-gray-600 mt-2">
+                      Si una sección opcional no aplica, quítala con «Quitar sección»; las demás hay que terminarlas para poder enviar.
                     </p>
                   </div>
                 )}
@@ -2067,14 +2055,15 @@ export default function Formulario() {
                   </div>
                 )}
                 <div className="flex flex-wrap items-center justify-end gap-3 mt-4 pt-3 border-t border-gray-100">
-                  <p className="text-[11px] text-gray-400 mr-auto">
-                    Al enviarlo se le avisa a quien coordina para que lo apruebe o te lo devuelva.
+                  <p className="text-xs text-gray-700 mr-auto">
+                    Al enviarlo se le avisa a quien coordina para que lo publique o te lo devuelva.
                   </p>
-                  <button type="button" onClick={completarSubproceso} disabled={completando || !meta?.idFormulario || criticasSinExplicar.length > 0 || obligatoriosVacios.length > 0}
-                    title={!meta?.idFormulario ? 'Guarda el formulario primero' : undefined}
+                  <button type="button" onClick={completarSubproceso} disabled={completando || !!razonBloqueoEnvio}
+                    aria-describedby={razonBloqueoEnvio ? 'razon-envio' : undefined}
                     className="inline-flex items-center gap-1.5 disabled:opacity-60 text-white text-sm font-medium px-5 py-2 rounded-lg transition-colors shadow-sm bg-green-600 hover:bg-green-700 shadow-green-200">
                     <IconoCheckCompletar /> {completando ? 'Enviando…' : 'Marcar como completado'}
                   </button>
+                  {razonBloqueoEnvio && <p id="razon-envio" className="basis-full text-right text-xs text-gray-700">{razonBloqueoEnvio}</p>}
                 </div>
               </>
             )}
@@ -2124,8 +2113,8 @@ export default function Formulario() {
           confirmLabel="Devolver"
           cargando={enviandoDevolver}
           onConfirmar={confirmarDevolver}
-          onCancelar={() => setDevolviendo(false)}
-          onClose={() => setDevolviendo(false)}>
+          onCancelar={cerrarDevolver}
+          onClose={cerrarDevolver}>
           <p className="text-sm text-gray-500 mb-3">
             Vuelve a «En ejecución» para la misma persona, con la marca «Devuelto» y este motivo — le llega una notificación.
           </p>

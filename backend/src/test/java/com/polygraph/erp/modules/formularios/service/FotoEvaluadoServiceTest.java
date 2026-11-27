@@ -62,4 +62,19 @@ class FotoEvaluadoServiceTest {
         byte[] cortada = imagen("jpg");
         assertNull(FotoEvaluadoService.tipoReal(java.util.Arrays.copyOf(cortada, 6)));
     }
+
+    // PC-09 (PB-02 A.1): la foto de un día distinto al de la cita avisa, pero no bloquea.
+    @Test
+    void avisaSiLaFotoEsDeOtroDiaQueLaCita() {
+        String aviso = FotoEvaluadoService.avisoFecha(java.time.LocalDateTime.of(2026, 11, 4, 16, 10), java.time.LocalDateTime.of(2026, 11, 5, 13, 0));
+        org.junit.jupiter.api.Assertions.assertNotNull(aviso);
+        org.junit.jupiter.api.Assertions.assertTrue(aviso.contains("4 de noviembre") && aviso.contains("5 de noviembre") && aviso.contains("puedes enviar el informe igual"), aviso);
+    }
+
+    @Test
+    void noAvisaSiLaFotoEsDelDiaDeLaCitaONoHayFotoOCita() {
+        assertNull(FotoEvaluadoService.avisoFecha(java.time.LocalDateTime.of(2026, 11, 5, 8, 0), java.time.LocalDateTime.of(2026, 11, 5, 13, 0)));
+        assertNull(FotoEvaluadoService.avisoFecha(null, java.time.LocalDateTime.of(2026, 11, 5, 13, 0)));
+        assertNull(FotoEvaluadoService.avisoFecha(java.time.LocalDateTime.of(2026, 11, 5, 8, 0), null));
+    }
 }

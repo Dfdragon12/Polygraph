@@ -14,4 +14,11 @@ public final class FechasLegibles {
     public static String larga(LocalDate fecha) {
         return fecha == null ? "sin fecha" : LARGA.format(fecha);
     }
+
+    private static final String[] MESES_CORTOS = {"ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"};
+
+    /** «24 de nov»: la forma corta para frases del seguimiento. Los meses van fijos (sin depender del idioma del servidor). */
+    public static String corta(LocalDate fecha) {
+        return fecha == null ? "sin fecha" : fecha.getDayOfMonth() + " de " + MESES_CORTOS[fecha.getMonthValue() - 1];
+    }
 }
