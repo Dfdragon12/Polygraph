@@ -8,7 +8,9 @@ import lombok.*;
 // ciudad de cobertura, sin sala). Reemplaza los antiguos campos de texto libre sala_encargada/
 // zonas_visita para poder filtrar "quién cubre la ciudad X" al asignar un servicio.
 @Entity
-@Table(name = "empleado_ciudades")
+// La restricción ya existe en la base (V145); se declara aquí para que las pruebas con H2 la apliquen igual.
+@Table(name = "empleado_ciudades", uniqueConstraints = @UniqueConstraint(
+        name = "uq_empleado_ciudad_sala", columnNames = {"id_empleado", "id_ciudad", "numero_sala"}))
 @Data
 @Builder
 @NoArgsConstructor

@@ -28,6 +28,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 @Slf4j
@@ -179,8 +180,8 @@ public class UsuariosInternosService {
                 emp.setIdCiudadResidencia(req.idCiudadResidencia());
                 emp.setNovedadesSala(req.novedadesSala());
                 emp.setTipoEmpleado(req.rol().name());
-                emp.getCiudadesAsignadas().clear();
-                emp.getCiudadesAsignadas().addAll(construirCiudadesAsignadas(req.rol(), req.ciudadesAsignadas(), emp));
+                // Se valida y arma lo deseado ANTES de tocar lo guardado; luego se concilia (ver el método).
+                conciliarCiudadesAsignadas(emp, construirCiudadesAsignadas(req.rol(), req.ciudadesAsignadas(), emp));
                 if (req.idsSubprocesos() != null) {
                     emp.setSubprocesosAsignados(validarCapacidades(req.rol(), req.idsSubprocesos()));
                 }
@@ -295,6 +296,12 @@ public class UsuariosInternosService {
             if (rol == Rol.POLIGRAFISTA && (numeroSala == null || numeroSala < 1)) {
                 throw new ApiException("Cada ciudad del poligrafista debe tener un número de sala válido", HttpStatus.BAD_REQUEST);
             }
+            // La misma ciudad con la misma sala dos veces no dice nada nuevo (y la base la rechaza: uq_empleado_ciudad_sala).
+            boolean repetida = resultado.stream()
+                    .anyMatch(r -> mismaCobertura(r, ciudad.getIdCiudad(), numeroSala));
+            if (repetida) {
+                continue;
+            }
             resultado.add(EmpleadoCiudad.builder()
                     .empleado(empleado)
                     .ciudad(ciudad)
@@ -302,6 +309,29 @@ public class UsuariosInternosService {
                     .build());
         }
         return resultado;
+    }
+
+    /** Deja las ciudades del empleado iguales a {@code deseadas} tocando SOLO la diferencia. Antes se hacía
+     *  {@code clear()} + {@code addAll()}: Hibernate inserta las filas nuevas antes de borrar las huérfanas, así que
+     *  guardar a un poligrafista sin cambiarle ciudad ni sala chocaba con {@code uq_empleado_ciudad_sala} (409).
+     *  Conciliando por (ciudad, sala) lo que ya está no se borra ni se reinserta, y lo que cambia nunca comparte clave. */
+    private void conciliarCiudadesAsignadas(UsuariosInternos empleado, List<EmpleadoCiudad> deseadas) {
+        List<EmpleadoCiudad> actuales = empleado.getCiudadesAsignadas();
+        actuales.removeIf(a -> deseadas.stream()
+                .noneMatch(d -> mismaCobertura(a, d.getCiudad().getIdCiudad(), d.getNumeroSala())));
+        for (EmpleadoCiudad d : deseadas) {
+            boolean yaEsta = actuales.stream()
+                    .anyMatch(a -> mismaCobertura(a, d.getCiudad().getIdCiudad(), d.getNumeroSala()));
+            if (!yaEsta) {
+                actuales.add(d);
+            }
+        }
+    }
+
+    /** Clave de una cobertura: ciudad + sala (la sala es null para el visitador). Se compara a mano porque el
+     *  {@code equals} generado por Lombok recorre al empleado y a la ciudad completos. */
+    private static boolean mismaCobertura(EmpleadoCiudad c, Integer idCiudad, Integer numeroSala) {
+        return c.getCiudad().getIdCiudad().equals(idCiudad) && Objects.equals(c.getNumeroSala(), numeroSala);
     }
 
     private UsuarioInternoResponse toResponse(Usuario u, UsuariosInternos emp) {
