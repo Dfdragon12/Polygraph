@@ -32,4 +32,12 @@ public class ReferenciaPersonalEvaluado {
 
     @Column(name = "tiempo_conocimiento", length = 100)
     private String tiempoConocimiento;
+
+    /** El candidato confirma que no es su familiar y no vive con él. */
+    @Column(name = "confirma_no_familiar")
+    private Boolean confirmaNoFamiliar;
+
+    /** El candidato confirma que hablaron en los últimos 30 días. */
+    @Column(name = "hablo_ultimos_30_dias")
+    private Boolean habloUltimos30Dias;
 }

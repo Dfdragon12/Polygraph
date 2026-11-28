@@ -1,13 +1,19 @@
 package com.polygraph.erp.modules.auth.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.polygraph.erp.modules.auth.config.GoogleOAuthProperties;
 import com.polygraph.erp.modules.auth.dto.*;
 import com.polygraph.erp.modules.auth.entity.TokenRefresh;
 import com.polygraph.erp.modules.auth.entity.Usuario;
 import com.polygraph.erp.modules.auth.repository.TokenRefreshRepository;
 import com.polygraph.erp.modules.auth.repository.UsuarioRepository;
 import com.polygraph.erp.modules.clientes.entity.Cliente;
+import com.polygraph.erp.modules.clientes.entity.ClientePospago;
 import com.polygraph.erp.modules.clientes.repository.ClienteRepository;
+import com.polygraph.erp.modules.clientes.repository.ClientePospagoRepository;
 import com.polygraph.erp.modules.notificaciones.service.NotificacionService;
+import com.polygraph.erp.modules.pagos.repository.SaldoServicioClienteRepository;
 import com.polygraph.erp.security.JwtUtil;
 import com.polygraph.erp.shared.enums.Rol;
 import com.polygraph.erp.shared.enums.TipoCliente;
@@ -23,7 +29,13 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.time.LocalDateTime;
+import java.util.Comparator;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -34,15 +46,23 @@ public class AuthService {
 
     private final UsuarioRepository usuarioRepository;
     private final ClienteRepository clienteRepository;
+    private final ClientePospagoRepository clientePospagoRepository;
+    private final SaldoServicioClienteRepository saldoServicioClienteRepository;
     private final TokenRefreshRepository tokenRefreshRepository;
     private final JwtUtil jwtUtil;
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final EmailService emailService;
     private final NotificacionService notificacionService;
+    private final GoogleOAuthProperties googleOAuthProperties;
+    private final ObjectMapper objectMapper;
+    private final AceptacionLegalService aceptacionLegalService;
 
     @Value("${app.jwt.refresh-expiration-ms}")
     private long refreshExpiracionMs;
+
+    /** Días que dura una contraseña: pasado este plazo el login exige cambiarla. */
+    public static final int DIAS_VIGENCIA_PASSWORD = 30;
 
     public LoginResponse login(LoginRequest request) {
         authenticationManager.authenticate(
@@ -56,7 +76,7 @@ public class AuthService {
         boolean cambioRequerido = Boolean.TRUE.equals(usuario.getRequiereCambioPassword());
         if (!cambioRequerido && usuario.getFechaUltimoCambioPassword() != null) {
             cambioRequerido = usuario.getFechaUltimoCambioPassword()
-                    .isBefore(LocalDateTime.now().minusDays(30));
+                    .isBefore(LocalDateTime.now().minusDays(DIAS_VIGENCIA_PASSWORD));
         }
 
         String token = jwtUtil.generarToken(usuario);
@@ -90,7 +110,114 @@ public class AuthService {
                 new LoginResponse.UsuarioInfo(
                         usuario.getIdUsuario(), usuario.getEmail(),
                         usuario.getRol().name(), usuario.getNombre(), cambioRequerido,
-                        resolverTipoCliente(usuario)));
+                        resolverTipoCliente(usuario), resolverPuedeSolicitar(usuario)));
+    }
+
+    /** "Continuar con Google" — sirve tanto para registrar (si el email no existe, crea un
+     *  cliente natural PREPAGO, igual que registrarNatural pero sin contraseña ni activación por
+     *  correo, porque Google ya verificó el email) como para iniciar sesión (si ya existe). */
+    public LoginResponse continuarConGoogle(GoogleAuthRequest request, String ip) {
+        GoogleTokenInfo info = verificarTokenGoogle(request.idToken());
+
+        Usuario usuario = usuarioRepository.findByEmail(info.email()).orElse(null);
+        boolean esNuevo = usuario == null;
+
+        if (esNuevo) {
+            if (!Boolean.TRUE.equals(request.aceptaTerminos()) || !Boolean.TRUE.equals(request.aceptaPrivacidad())) {
+                throw new ApiException("Para crear tu cuenta debes aceptar los términos y condiciones y la política de privacidad.",
+                        HttpStatus.BAD_REQUEST);
+            }
+            String nombre = !info.givenName().isBlank() ? info.givenName() : info.email();
+            Cliente cliente = Cliente.builder()
+                    .tipoCliente(TipoCliente.PREPAGO)
+                    .tipoPersona(TipoPersona.NATURAL)
+                    .nombre(nombre)
+                    .apellido(info.familyName())
+                    .emailPrincipal(info.email())
+                    .estado("ACTIVO")
+                    .idGestor(resolverGestorMenosCargado())
+                    .fechaRegistro(LocalDateTime.now())
+                    .build();
+            clienteRepository.save(cliente);
+
+            usuario = Usuario.builder()
+                    .nombre(nombre)
+                    .apellido(info.familyName())
+                    .email(info.email())
+                    // Nunca se usa para iniciar sesión (solo Google) — password NOT NULL en BD,
+                    // se puede definir una real después desde "Olvidé mi contraseña" si se quiere.
+                    .password(passwordEncoder.encode(UUID.randomUUID().toString()))
+                    .rol(Rol.ADMIN_CLIENTE)
+                    .activo(true)
+                    .requiere2fa(false)
+                    .emailVerificado(true)
+                    .idCliente(cliente.getIdCliente())
+                    .fechaCreacion(LocalDateTime.now())
+                    .build();
+            usuarioRepository.save(usuario);
+            aceptacionLegalService.registrarRegistro(usuario.getIdUsuario(), info.email(), request.versionLegal(), ip,
+                    Boolean.TRUE.equals(request.aceptaMarketing()));
+
+            notificacionService.crearParaAdmins("CLIENTE", "Nuevo cliente registrado",
+                    "El cliente " + nombre + " " + (info.familyName() != null ? info.familyName() : "")
+                    + " se registró con Google (PREPAGO)", usuario.getIdUsuario());
+            log.info("Registro con Google completado: {}", info.email());
+        } else if (!Boolean.TRUE.equals(usuario.getActivo())) {
+            // Google ya verificó el email, así que no tiene sentido dejarlo esperando el correo
+            // de activación que se mandó al registrarse manualmente.
+            usuario.setActivo(true);
+            usuario.setEmailVerificado(true);
+        }
+
+        String token = jwtUtil.generarToken(usuario);
+        String refreshToken = crearRefreshToken(usuario);
+        usuario.setUltimoAcceso(LocalDateTime.now());
+        log.info("Inicio de sesión con Google: {} (nuevo={})", usuario.getEmail(), esNuevo);
+
+        return new LoginResponse(token, refreshToken,
+                new LoginResponse.UsuarioInfo(
+                        usuario.getIdUsuario(), usuario.getEmail(),
+                        usuario.getRol().name(), usuario.getNombre(), false,
+                        resolverTipoCliente(usuario), resolverPuedeSolicitar(usuario)));
+    }
+
+    private record GoogleTokenInfo(String email, String givenName, String familyName) {}
+
+    /** Verifica el id_token de Google Identity Services contra el endpoint público de Google
+     *  (tokeninfo) — evita sumar una librería nueva solo para esto. Confirma que el token es
+     *  auténtico, que es para ESTA app (aud) y que el correo está verificado. */
+    private GoogleTokenInfo verificarTokenGoogle(String idToken) {
+        String clientId = googleOAuthProperties.getClientId();
+        if (clientId == null || clientId.isBlank()) {
+            throw new ApiException("El inicio de sesión con Google no está configurado todavía.", HttpStatus.SERVICE_UNAVAILABLE);
+        }
+        try {
+            HttpClient cliente = HttpClient.newHttpClient();
+            HttpRequest peticion = HttpRequest.newBuilder()
+                    .uri(URI.create("https://oauth2.googleapis.com/tokeninfo?id_token=" + idToken))
+                    .GET().build();
+            HttpResponse<String> respuesta = cliente.send(peticion, HttpResponse.BodyHandlers.ofString());
+            if (respuesta.statusCode() != 200) {
+                throw new ApiException("Tu sesión de Google no es válida o expiró. Intenta de nuevo.", HttpStatus.UNAUTHORIZED);
+            }
+            JsonNode nodo = objectMapper.readTree(respuesta.body());
+            if (!clientId.equals(nodo.path("aud").asText())) {
+                throw new ApiException("Ese token de Google no corresponde a esta aplicación.", HttpStatus.UNAUTHORIZED);
+            }
+            if (!"true".equals(nodo.path("email_verified").asText())) {
+                throw new ApiException("Tu cuenta de Google no tiene el correo verificado.", HttpStatus.UNAUTHORIZED);
+            }
+            String email = nodo.path("email").asText();
+            if (email.isBlank()) {
+                throw new ApiException("No se pudo obtener el correo de tu cuenta de Google.", HttpStatus.UNAUTHORIZED);
+            }
+            return new GoogleTokenInfo(email, nodo.path("given_name").asText(""), nodo.path("family_name").asText(""));
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("Error verificando token de Google: {}", e.getMessage());
+            throw new ApiException("No se pudo verificar tu cuenta de Google. Intenta de nuevo.", HttpStatus.UNAUTHORIZED);
+        }
     }
 
     /** Solo aplica a roles del portal cliente (ADMIN_CLIENTE/ANALISTA_CLIENTE); null para roles internos. */
@@ -98,6 +225,36 @@ public class AuthService {
         if (usuario.getIdCliente() == null) return null;
         return clienteRepository.findById(usuario.getIdCliente())
                 .map(cliente -> cliente.getTipoCliente().name())
+                .orElse(null);
+    }
+
+    /** Solo aplica a roles del portal cliente; null para roles internos. Si ya puede ver/usar
+     *  "Solicitudes": pospago solo una vez tiene un acuerdo de crédito vigente (fila en
+     *  ClientePospago con requiereAprobacion=false — eso solo lo deja así un interno, ver
+     *  ClienteAdminService.actualizarPospago), prepago solo una vez completó su primera compra
+     *  (existe una fila en SaldoServicioCliente, que solo se crea tras una compra aprobada). No es
+     *  una aprobación manual aparte — se deriva de datos reales, así que no hay nada que un
+     *  gestor tenga que "aprobar" a mano. */
+    private Boolean resolverPuedeSolicitar(Usuario usuario) {
+        if (usuario.getIdCliente() == null) return null;
+        Cliente cliente = clienteRepository.findById(usuario.getIdCliente()).orElse(null);
+        if (cliente == null) return null;
+        if (cliente.getTipoCliente() == TipoCliente.POSPAGO) {
+            ClientePospago pospago = clientePospagoRepository.findByIdCliente(cliente.getIdCliente()).orElse(null);
+            return pospago != null && !Boolean.TRUE.equals(pospago.getRequiereAprobacion());
+        }
+        return saldoServicioClienteRepository.existsByCliente_IdCliente(cliente.getIdCliente());
+    }
+
+    /** A qué gestor se le asigna un cliente nuevo que se auto-registra — el gestor ACTIVO con
+     *  menos clientes ya asignados (reparte la carga, en vez de que todos los registros nuevos le
+     *  caigan siempre al mismo). null si no hay ningún gestor activo (el cliente queda sin
+     *  gestor, igual que antes — un admin se lo asigna a mano después). */
+    private Long resolverGestorMenosCargado() {
+        return usuarioRepository.findByRolIn(Set.of(Rol.GESTOR)).stream()
+                .filter(u -> Boolean.TRUE.equals(u.getActivo()))
+                .min(Comparator.comparingLong(g -> clienteRepository.countByIdGestor(g.getIdUsuario())))
+                .map(Usuario::getIdUsuario)
                 .orElse(null);
     }
 
@@ -111,7 +268,7 @@ public class AuthService {
         log.info("Contraseña actualizada para: {}", email);
     }
 
-    public void registrarNatural(RegistroNaturalRequest request) {
+    public void registrarNatural(RegistroNaturalRequest request, String ip) {
         validarEmailDisponible(request.email());
 
         Cliente cliente = Cliente.builder()
@@ -122,46 +279,42 @@ public class AuthService {
                 .emailPrincipal(request.email())
                 .telefono(request.telefono())
                 .estado("ACTIVO")
+                .idGestor(resolverGestorMenosCargado())
                 .fechaRegistro(LocalDateTime.now())
                 .build();
         clienteRepository.save(cliente);
 
-        String tokenActivacion = generarToken();
         Usuario usuario = Usuario.builder()
                 .nombre(request.nombre())
                 .apellido(request.apellido())
                 .email(request.email())
                 .password(passwordEncoder.encode(request.password()))
                 .rol(Rol.ADMIN_CLIENTE)
-                .activo(false)
+                .activo(true)
                 .requiere2fa(false)
-                .emailVerificado(false)
-                .tokenActivacion(tokenActivacion)
-                .tokenActivacionExpira(LocalDateTime.now().plusHours(24))
+                .emailVerificado(true)
                 .idCliente(cliente.getIdCliente())
                 .fechaCreacion(LocalDateTime.now())
                 .build();
         usuarioRepository.save(usuario);
+        aceptacionLegalService.registrarRegistro(usuario.getIdUsuario(), request.email(), request.versionLegal(), ip,
+                Boolean.TRUE.equals(request.aceptaMarketing()));
 
-        emailService.enviarActivacion(request.email(), request.nombre(), tokenActivacion);
         notificacionService.crearParaAdmins("CLIENTE", "Nuevo cliente registrado",
                 "El cliente " + request.nombre() + " " + (request.apellido() != null ? request.apellido() : "")
                 + " se registró como persona natural (PREPAGO)", usuario.getIdUsuario());
         log.info("Registro natural completado: {}", request.email());
     }
 
-    public void registrarJuridica(RegistroJuridicaRequest request) {
+    public void registrarJuridica(RegistroJuridicaRequest request, String ip) {
         validarEmailDisponible(request.email());
 
-        TipoCliente tipoCliente;
-        try {
-            tipoCliente = TipoCliente.valueOf(request.tipoCliente().toUpperCase());
-        } catch (IllegalArgumentException e) {
-            throw new ApiException("Tipo de cliente inválido. Use PREPAGO o POSPAGO", HttpStatus.BAD_REQUEST);
-        }
-
+        // Antes se podía elegir PREPAGO o POSPAGO libremente al auto-registrarse — pospago sin
+        // ninguna revisión de crédito previa. Ahora toda empresa que se registra sola entra
+        // siempre como PREPAGO; pasar a pospago requiere que un interno lo gestione después (ver
+        // ClienteAdminService.actualizarPospago).
         Cliente cliente = Cliente.builder()
-                .tipoCliente(tipoCliente)
+                .tipoCliente(TipoCliente.PREPAGO)
                 .tipoPersona(TipoPersona.JURIDICA)
                 .nit(request.nit())
                 .dv(request.dv())
@@ -171,46 +324,30 @@ public class AuthService {
                 .emailPrincipal(request.email())
                 .telefono(request.telefono())
                 .estado("ACTIVO")
+                .idGestor(resolverGestorMenosCargado())
                 .fechaRegistro(LocalDateTime.now())
                 .build();
         clienteRepository.save(cliente);
 
-        String tokenActivacion = generarToken();
         Usuario usuario = Usuario.builder()
                 .nombre(request.razonSocial())
                 .email(request.email())
                 .password(passwordEncoder.encode(request.password()))
                 .rol(Rol.ADMIN_CLIENTE)
-                .activo(false)
+                .activo(true)
                 .requiere2fa(false)
-                .emailVerificado(false)
-                .tokenActivacion(tokenActivacion)
-                .tokenActivacionExpira(LocalDateTime.now().plusHours(24))
+                .emailVerificado(true)
                 .idCliente(cliente.getIdCliente())
                 .fechaCreacion(LocalDateTime.now())
                 .build();
         usuarioRepository.save(usuario);
+        aceptacionLegalService.registrarRegistro(usuario.getIdUsuario(), request.email(), request.versionLegal(), ip,
+                Boolean.TRUE.equals(request.aceptaMarketing()));
 
-        emailService.enviarActivacion(request.email(), request.razonSocial(), tokenActivacion);
         notificacionService.crearParaAdmins("CLIENTE", "Nuevo cliente registrado",
-                "La empresa " + request.razonSocial() + " (NIT: " + request.nit() + ") se registró como cliente "
-                + tipoCliente.name().toLowerCase(), usuario.getIdUsuario());
+                "La empresa " + request.razonSocial() + " (NIT: " + request.nit() + ") se registró como cliente prepago",
+                usuario.getIdUsuario());
         log.info("Registro jurídico completado: {}", request.email());
-    }
-
-    public void activarCuenta(String token) {
-        Usuario usuario = usuarioRepository.findByTokenActivacion(token)
-                .orElseThrow(() -> new ApiException("Token de activación inválido", HttpStatus.BAD_REQUEST));
-
-        if (LocalDateTime.now().isAfter(usuario.getTokenActivacionExpira())) {
-            throw new ApiException("El token de activación ha expirado", HttpStatus.BAD_REQUEST);
-        }
-
-        usuario.setActivo(true);
-        usuario.setEmailVerificado(true);
-        usuario.setTokenActivacion(null);
-        usuario.setTokenActivacionExpira(null);
-        log.info("Cuenta activada: {}", usuario.getEmail());
     }
 
     public LoginResponse refresh(RefreshRequest request) {
@@ -224,6 +361,12 @@ public class AuthService {
         tokenRefresh.setRevocado(true);
 
         Usuario usuario = tokenRefresh.getUsuario();
+        // Un usuario desactivado no renueva su sesión: antes el refresh token lo mantenía adentro
+        // hasta 7 días aunque el admin lo hubiera dado de baja.
+        if (!usuario.isEnabled() || !usuario.isAccountNonLocked()) {
+            log.warn("Refresh denegado: usuario {} inactivo", usuario.getEmail());
+            throw new ApiException("Tu cuenta está inactiva. Contacta a tu administrador.", HttpStatus.UNAUTHORIZED);
+        }
         String nuevoToken = jwtUtil.generarToken(usuario);
         String nuevoRefresh = crearRefreshToken(usuario);
 
@@ -231,7 +374,7 @@ public class AuthService {
                 new LoginResponse.UsuarioInfo(
                         usuario.getIdUsuario(), usuario.getEmail(),
                         usuario.getRol().name(), usuario.getNombre(), false,
-                        resolverTipoCliente(usuario)));
+                        resolverTipoCliente(usuario), resolverPuedeSolicitar(usuario)));
     }
 
     public void forgotPassword(ForgotPasswordRequest request) {

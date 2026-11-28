@@ -1,9 +1,12 @@
 package com.polygraph.erp.modules.servicios.repository;
 
 import com.polygraph.erp.modules.servicios.entity.ServicioSubproceso;
-import com.polygraph.erp.shared.enums.EstadoAsignacion;
+import com.polygraph.erp.shared.enums.EstadoSubproceso;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -18,8 +21,56 @@ public interface ServicioSubprocesoRepository
 
     List<ServicioSubproceso> findByFechaProgramadaBetween(LocalDateTime desde, LocalDateTime hasta);
 
+    /** SE-07: citas en ejecución cuyo informe no se inició y cuya hora (más la tolerancia) ya pasó — la bandeja «Por confirmar». */
+    @Query("select sp from ServicioSubproceso sp where sp.estado = :estado and sp.iniciado = false and sp.fechaProgramada is not null "
+            + "and sp.fechaProgramada <= :limite and sp.tipoProgreso.rolResponsable in :roles order by sp.fechaProgramada")
+    List<ServicioSubproceso> citasSinConfirmar(@Param("estado") EstadoSubproceso estado, @Param("limite") LocalDateTime limite,
+                                               @Param("roles") List<com.polygraph.erp.shared.enums.Rol> roles);
+
+    /** Los subprocesos de un estado cuyo tipo es de uno de esos roles (p. ej. las citas REPROGRAMADAS). */
+    @Query("select sp from ServicioSubproceso sp where sp.estado = :estado and sp.tipoProgreso.rolResponsable in :roles order by sp.fechaProgramada")
+    List<ServicioSubproceso> porEstadoYRoles(@Param("estado") EstadoSubproceso estado, @Param("roles") List<com.polygraph.erp.shared.enums.Rol> roles);
+
+    /** AJ-02: informes (subprocesos) publicados de un cliente en un rango de fechas de publicación; el Dashboard del cliente los cuenta por mes. */
+    @Query("select count(sp) from ServicioSubproceso sp where sp.servicio.cliente.idCliente = :idCliente and sp.estado = com.polygraph.erp.shared.enums.EstadoSubproceso.PUBLICADO "
+            + "and sp.fechaPublicado >= :desde and sp.fechaPublicado < :hasta")
+    long contarPublicadosDeClienteEntre(@Param("idCliente") Integer idCliente, @Param("desde") LocalDateTime desde, @Param("hasta") LocalDateTime hasta);
+
     boolean existsByServicio_IdServicioAndTipoProgreso_IdTipoProgreso(Integer idServicio, Integer idTipoProgreso);
 
     /** Carga actual de un empleado — usada para repartir la autoasignación al que tenga menos pendientes. */
-    long countByUsuarioAsignado_IdUsuarioAndEstado(Long idUsuario, EstadoAsignacion estado);
+    long countByUsuarioAsignado_IdUsuarioAndEstado(Long idUsuario, EstadoSubproceso estado);
+
+    /** Agenda vigente de un empleado — usada para detectar choques de horario al programar. */
+    List<ServicioSubproceso> findByUsuarioAsignado_IdUsuarioAndEstado(Long idUsuario, EstadoSubproceso estado);
+
+    /** ¿Este empleado tiene algún subproceso (de cualquier tipo, en cualquier estado) asignado
+     *  para algún servicio de este candidato? Usado para que ANALISTA_INTERNO/POLIGRAFISTA/
+     *  VISITADOR solo puedan ver/editar la hoja de vida de candidatos con los que tienen relación
+     *  real — ver CandidatoHojaVidaService. */
+    boolean existsByServicio_Candidato_IdCandidatoAndUsuarioAsignado_IdUsuario(Long idCandidato, Long idUsuario);
+
+    /** ¿El candidato tiene algún servicio con un cliente de este gestor? (ver AccesoGestor) */
+    boolean existsByServicio_Candidato_IdCandidatoAndServicio_Cliente_IdGestor(Long idCandidato, Long idGestor);
+
+    /** Para el buscador global de ANALISTA_INTERNO/POLIGRAFISTA/VISITADOR/PROGRAMADOR — solo SUS
+     *  propios subprocesos (asignado a ejecutarlo, o a cargo de coordinarlo si es programador),
+     *  nunca los de otro empleado. Busca por nombre del proceso o del candidato; navega directo
+     *  al formulario de ese subproceso puntual (a diferencia de GESTOR, que ve el Servicio
+     *  completo — estos roles trabajan uno a uno por subproceso). `patron` ya viene armado como
+     *  "%texto%" en minúsculas — ver la nota en ServicioRepository.buscar. */
+    @Query("""
+            select sp from ServicioSubproceso sp
+            join sp.servicio s
+            join s.proceso p
+            left join s.candidato c
+            where (sp.usuarioAsignado.idUsuario = :idUsuario or sp.programadorResponsable.idUsuario = :idUsuario)
+              and (
+                lower(p.nombreProceso) like :patron
+                or lower(coalesce(c.nombres, '')) like :patron
+                or lower(coalesce(c.apellidos, '')) like :patron
+              )
+            order by sp.fechaProgramada desc
+            """)
+    List<ServicioSubproceso> buscarAsignadoA(@Param("patron") String patron, @Param("idUsuario") Long idUsuario, Pageable pageable);
 }

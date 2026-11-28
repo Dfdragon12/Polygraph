@@ -4,7 +4,7 @@ const ESTADOS = {
   PROGRAMANDO:  { color: 'bg-blue-100 text-blue-700',       texto: 'Programando' },
   EN_EJECUCION: { color: 'bg-primary-100 text-primary-700', texto: 'En ejecución' },
   FINALIZADO:   { color: 'bg-green-100 text-green-700',     texto: 'Finalizado' },
-  PUBLICADO:    { color: 'bg-cyan-100 text-cyan-700',       texto: 'Publicado' },
+  PUBLICADO:    { color: 'bg-emerald-100 text-emerald-700', texto: 'Publicado' },
   CANCELADO:    { color: 'bg-red-100 text-red-600',         texto: 'Cancelado' },
   REPROGRAMADO: { color: 'bg-orange-100 text-orange-700',   texto: 'Reprogramado' },
 }

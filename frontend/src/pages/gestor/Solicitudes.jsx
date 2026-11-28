@@ -1,60 +1,92 @@
-import { useState, useEffect, useCallback, Fragment } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { fechaCorta, fechaHora } from '../../utils/fechas'
+import { useId, useState, useEffect, useCallback, useMemo, Fragment } from 'react'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import api from '../../services/api'
 import tokenService from '../../services/tokenService'
 import catalogoService from '../../services/catalogoService'
 import asignacionService from '../../services/asignacionService'
+import formulariosService from '../../services/formulariosService'
+import trabajoService, { esperarTrabajo, guardarBlob, mensajeDeError } from '../../services/trabajoService'
+import PanelPublicarSubproceso from '../../components/gestor/PanelPublicarSubproceso'
+import PanelEmitirEstudio from '../../components/gestor/PanelEmitirEstudio'
+import MarcaDevuelto from '../../components/informe/MarcaDevuelto'
+import PanelEnviarEnlace from '../../components/gestor/PanelEnviarEnlace'
 import Toast from '../../components/Toast'
 import { Modal, ConfirmModal } from '../../components/ui/Modal'
+import Paginacion from '../../components/ui/Paginacion'
+import MenuAcciones from '../../components/ui/MenuAcciones'
+import EstadoTiempo from '../../components/EstadoTiempo'
+import ChipRiesgo from '../../components/ChipRiesgo'
+import bandejaService from '../../services/bandejaService'
 import ModalAsignarSubproceso from '../../components/ModalAsignarSubproceso'
+import ModalAsignarProgramador from '../../components/ModalAsignarProgramador'
+import CiudadSelect from '../../components/CiudadSelect'
+import RiesgoServicio from '../../components/RiesgoServicio'
+import { useCambios } from '../../hooks/useCambios'
+import { iniciarIntervaloVisible } from '../../hooks/useIntervaloVisible'
+import SemaforoEstados from '../../components/semaforo/SemaforoEstados'
+import EtiquetaEstado from '../../components/semaforo/EtiquetaEstado'
 
-const ESTADOS = ['TODOS', 'PENDIENTE', 'PROGRAMANDO', 'EN_EJECUCION', 'FINALIZADO', 'PUBLICADO', 'CANCELADO', 'REPROGRAMADO']
+import SelectorMotivo, { motivoIncompleto, MOTIVO_VACIO } from '../../components/SelectorMotivo'
+/* ─── Iconos de acciones de tabla ─── */
+function IconoOjo() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+    </svg>
+  )
+}
+function IconoCambioEstado() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+    </svg>
+  )
+}
+function IconoEnviar() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+    </svg>
+  )
+}
+function IconoAsignado() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  )
+}
+
+function formatearPrecioCOP(valor) {
+  return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(valor)
+}
 
 // Debe coincidir con PASOS en frontend/src/pages/evaluee/EvalueeForm.jsx
 const PASOS_EVALUADO = ['Autorización', 'Datos personales', 'Educación', 'Experiencia laboral', 'Referencias', 'Documentos', 'Revisión']
-
-const BADGE = {
-  PENDIENTE:    'bg-amber-100 text-amber-700',
-  PROGRAMANDO:  'bg-blue-100 text-blue-700',
-  EN_EJECUCION: 'bg-primary-100 text-primary-700',
-  FINALIZADO:   'bg-green-100 text-green-700',
-  PUBLICADO:    'bg-cyan-100 text-cyan-700',
-  CANCELADO:    'bg-red-100 text-red-600',
-  REPROGRAMADO: 'bg-orange-100 text-orange-700',
-}
 
 const DOT_ESTADO = {
   PENDIENTE:    'bg-amber-400',
   PROGRAMANDO:  'bg-blue-400',
   EN_EJECUCION: 'bg-primary-400',
   FINALIZADO:   'bg-green-400',
-  PUBLICADO:    'bg-cyan-400',
+  PUBLICADO:    'bg-emerald-400',
   CANCELADO:    'bg-red-400',
   REPROGRAMADO: 'bg-orange-400',
 }
 
 // Transiciones permitidas para GESTOR
+// El gestor ya no elige el estado del servicio a mano (SE-02): publica el estudio cuando todo está publicado (FINALIZADO) o
+// cancela la solicitud con motivo. Lo demás se mueve con las acciones de cada subproceso. CANCELADO solo pide reversión.
 const TRANSICIONES_GESTOR = {
-  PENDIENTE:    ['PROGRAMANDO', 'CANCELADO'],
-  PROGRAMANDO:  ['CANCELADO', 'REPROGRAMADO'],
-  EN_EJECUCION: [],
+  PENDIENTE:    ['CANCELADO'],
+  PROGRAMANDO:  ['CANCELADO'],
+  EN_EJECUCION: ['CANCELADO'],
   FINALIZADO:   ['PUBLICADO'],
   PUBLICADO:    [],
   CANCELADO:    ['PROGRAMANDO', 'REPROGRAMADO'],
-  REPROGRAMADO: ['PROGRAMANDO', 'CANCELADO'],
-}
-
-function formatFecha(iso) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
-}
-
-function formatFechaHora(iso) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString('es-CO', {
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  })
+  REPROGRAMADO: ['CANCELADO'],
 }
 
 function tiempoRestante(iso) {
@@ -67,13 +99,6 @@ function tiempoRestante(iso) {
   return `${h}h ${m}m`
 }
 
-function diasHasta(fechaISO) {
-  if (!fechaISO) return null
-  const hoy = new Date(); hoy.setHours(0, 0, 0, 0)
-  const fecha = new Date(fechaISO); fecha.setHours(0, 0, 0, 0)
-  return Math.round((fecha - hoy) / 86400000)
-}
-
 function formatDuracion(minutos) {
   if (minutos == null) return '—'
   if (minutos < 60) return `${minutos} min`
@@ -82,47 +107,44 @@ function formatDuracion(minutos) {
   return m > 0 ? `${h}h ${m}m` : `${h}h`
 }
 
-const BADGE_SUBPROCESO = {
-  PENDIENTE:  'bg-amber-100 text-amber-700',
-  ASIGNADO:   'bg-blue-100 text-blue-700',
-  COMPLETADO: 'bg-green-100 text-green-700',
-  CANCELADO:  'bg-red-100 text-red-600',
+// Subprocesos de poligrafía/visita (los que coordina Programador) de un servicio, y si ya se
+// les asignó un programador a TODOS — para decidir el ícono del botón "Asignar programador".
+function subprocesosProgramadorDe(subprocesos) {
+  const delProgramador = (subprocesos ?? []).filter(sp =>
+    sp.nombre?.toLowerCase().includes('poligraf') || sp.nombre?.toLowerCase().includes('visita'))
+  return {
+    hayAlgunos: delProgramador.length > 0,
+    todosAsignados: delProgramador.length > 0 && delProgramador.every(sp => sp.programadorAsignado),
+  }
 }
 
-const DOT_SUBPROCESO = {
-  PENDIENTE:  'bg-amber-400',
-  ASIGNADO:   'bg-blue-400',
-  COMPLETADO: 'bg-green-400',
-  CANCELADO:  'bg-red-400',
-}
 
-const ORDEN_ESTADOS_SUBPROCESO = ['PENDIENTE', 'ASIGNADO', 'COMPLETADO', 'CANCELADO']
+/* ─── Fila desplegable (PB-02): una fila por subproceso con su estado, su calificación y UN botón principal según el estado ─── */
+const COLOR_NIVEL = { BAJO: 'bg-[#E6F3EC] text-[#1f6b44]', MEDIO: 'bg-[#FBF1DE] text-[#8a5a0c]', ALTO: 'bg-[#F9E8EA] text-[#8c2733]' }
+const botonFila = 'min-h-[44px] w-full sm:w-[150px] px-3 rounded-lg text-xs font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#A8323F]'
 
-function BolitasSubprocesos({ subprocesos }) {
-  if (!subprocesos?.length) return <span className="text-gray-300 text-xs">—</span>
-
-  const conteo = subprocesos.reduce((acc, sp) => {
-    acc[sp.estado] = (acc[sp.estado] ?? 0) + 1
-    return acc
-  }, {})
-
+// Calificación del subproceso: publicada (la del cliente) o, en Finalizado, la sugerida; siempre con el nombre del nivel escrito.
+function ChipCalificacion({ sp }) {
+  const nivel = sp.estado === 'PUBLICADO' ? sp.nivelPublicado : sp.estado === 'FINALIZADO' ? sp.riesgoNivel : null
+  const puntaje = sp.estado === 'PUBLICADO' ? sp.puntajePublicado : sp.riesgoPuntaje
+  if (!nivel) return <span className="inline-block px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 text-[11px] font-semibold" aria-label="Sin calificación">—</span>
   return (
-    <div className="flex items-center gap-1">
-      {ORDEN_ESTADOS_SUBPROCESO.filter(e => conteo[e] > 0).map(e => (
-        <span key={e} title={`${e}: ${conteo[e]}`}
-          className={`flex items-center justify-center min-w-[20px] h-5 px-1 rounded-full text-white text-[10px] font-bold flex-shrink-0 ${DOT_SUBPROCESO[e]}`}>
-          {conteo[e]}
-        </span>
-      ))}
-    </div>
+    <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold tabular-nums ${COLOR_NIVEL[nivel] ?? 'bg-gray-100 text-gray-700'}`}>
+      {nivel}{puntaje != null ? ` ${Number(puntaje).toLocaleString('es-CO', { maximumFractionDigits: 1 })}` : ''}{sp.estado === 'FINALIZADO' ? ' · sugerido' : ''}
+    </span>
   )
 }
 
-/* ─── Fila desplegable: subprocesos reales del servicio (con tiempo estimado) ─── */
-function FilaSubprocesos({ idServicio, colSpan, onToast }) {
+function FilaSubprocesos({ idServicio, colSpan, onToast, candidatoCompletado, estadoServicio, onEmitir }) {
+  const navigate = useNavigate()
   const [subprocesos, setSubprocesos] = useState(null)
   const [error, setError] = useState(false)
   const [seleccionado, setSeleccionado] = useState(null)
+  const [publicando, setPublicando] = useState(null)
+  const [asignandoProgramadorDe, setAsignandoProgramadorDe] = useState(null)
+  // false = el candidato todavía no diligenció su link — null/true no restringen (ver SolicitudGestorResponse.candidatoCompletado).
+  const bloqueadoPorCandidato = candidatoCompletado === false
+  const tituloBloqueo = 'El candidato todavía no ha diligenciado su información (link pendiente).'
 
   const cargar = useCallback(() => {
     asignacionService.listar({ idServicio, size: 50 })
@@ -131,36 +153,96 @@ function FilaSubprocesos({ idServicio, colSpan, onToast }) {
   }, [idServicio])
 
   useEffect(() => { cargar() }, [cargar])
+  useCambios(cargar, { servicios: idServicio })
+
+  const vigentes = (subprocesos ?? []).filter(sp => sp.estado !== 'CANCELADO')
+  const publicados = vigentes.filter(sp => sp.estado === 'PUBLICADO').length
+  const completo = vigentes.length > 0 && publicados === vigentes.length
+  const puedeEmitir = completo && estadoServicio === 'FINALIZADO'
+
+  const verInforme = async (sp) => {
+    try {
+      const inicial = await formulariosService.solicitarDocumentoPdf(sp.id)
+      const listo = await esperarTrabajo(inicial)
+      guardarBlob(await trabajoService.descargarResultado(listo.id), listo.nombreArchivo ?? `informe-${sp.id}.pdf`)
+    } catch (e) {
+      onToast(mensajeDeError(e, 'No se pudo generar el PDF. Reintentar'), 'error')
+    }
+  }
+
+  // Poligrafía y visita las agenda el programador: se abre su asignación como «Programador»; el resto como «Asignación».
+  const abrirAsignacion = (sp) => {
+    if (sp.rolResponsable !== 'ANALISTA_INTERNO') setAsignandoProgramadorDe(sp)
+    else setSeleccionado(sp)
+  }
+  const asignacionDisponible = (sp) => ['PENDIENTE', 'PROGRAMANDO', 'EN_EJECUCION', 'REPROGRAMADO'].includes(sp.estado)
 
   return (
     <Fragment>
     <tr className="bg-gray-50/60">
       <td colSpan={colSpan} className="px-4 py-3">
         {error ? (
-          <p className="text-xs text-red-500">No se pudieron cargar los subprocesos.</p>
+          <p className="text-xs text-red-700">No se pudieron cargar los subprocesos.</p>
         ) : subprocesos === null ? (
-          <div className="flex items-center gap-2 text-xs text-gray-400 py-2">
+          <div className="flex items-center gap-2 text-xs text-gray-600 py-2">
             <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary-500 border-t-transparent" />
             Cargando subprocesos...
           </div>
         ) : subprocesos.length === 0 ? (
-          <p className="text-xs text-gray-400">Este servicio no tiene subprocesos generados.</p>
+          <p className="text-xs text-gray-600">Este servicio no tiene subprocesos generados.</p>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
-            {subprocesos.map(sp => (
-              <button key={sp.id} onClick={() => setSeleccionado(sp)}
-                className="flex items-center justify-between gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2 text-left hover:border-primary-300 hover:shadow-sm transition-all">
-                <div className="min-w-0">
-                  <p className="text-xs font-medium text-gray-800 truncate">{sp.subproceso}</p>
-                  <p className="text-[11px] text-gray-400 truncate">
-                    {sp.nombreAsignado ?? 'Sin asignar'} · {formatDuracion(sp.duracionMinutos)}
-                  </p>
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-700">
+              Subprocesos · {publicados} de {vigentes.length} publicados
+            </p>
+            {subprocesos.map((sp, i) => {
+              const porPublicar = sp.estado === 'FINALIZADO'
+              const bloqueado = sp.estado === 'PENDIENTE' && bloqueadoPorCandidato
+              return (
+                <div key={sp.id} className={`flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg px-3 py-2 border ${porPublicar ? 'border-[#A8323F] bg-[#FBEFF0]' : 'border-gray-200 bg-white'}`}>
+                  <span className="text-xs text-gray-600 tabular-nums w-5">{i + 1}</span>
+                  <div className="min-w-[160px] flex-1">
+                    <p className="text-sm font-semibold text-gray-900">{sp.subproceso}</p>
+                    <p className="text-xs text-gray-600">{sp.nombreAsignado ?? (sp.nombreProgramadorResponsable ? `Programador: ${sp.nombreProgramadorResponsable}` : 'Sin asignar')}</p>
+                  </div>
+                  <div className="min-w-[150px]">
+                    <EtiquetaEstado estado={sp.estado} pequena />
+                    {/* PC-04: «Devuelto» es una marca gris con el motivo, no un estado: el subproceso sigue en Ejecución. */}
+                    {sp.devuelto && sp.estado === 'EN_EJECUCION' && <MarcaDevuelto motivo={sp.motivoDevolucion} detalle={sp.detalleDevolucion} className="mt-1" />}
+                    {porPublicar && <span className="block text-[11px] text-gray-700 mt-0.5">control de calidad</span>}
+                  </div>
+                  <div className="min-w-[110px]"><ChipCalificacion sp={sp} /></div>
+                  <div className="flex flex-wrap gap-2 sm:ml-auto">
+                    {porPublicar ? (
+                      <button type="button" onClick={() => setPublicando(sp)} className={`${botonFila} bg-[#A8323F] text-white hover:bg-[#8f2a35]`}>Revisar y publicar</button>
+                    ) : sp.estado === 'PUBLICADO' ? (
+                      <button type="button" onClick={() => verInforme(sp)} className={`${botonFila} border border-[#A8323F] text-[#A8323F] hover:bg-red-50`}>Ver informe</button>
+                    ) : (
+                      <button type="button" onClick={() => navigate(`/gestor/formulario/${sp.id}`)} disabled={sp.estado === 'CANCELADO'}
+                        className={`${botonFila} border border-[#A8323F] text-[#A8323F] hover:bg-red-50 disabled:opacity-50`}>Ver avance</button>
+                    )}
+                    <button type="button" onClick={() => abrirAsignacion(sp)} disabled={!asignacionDisponible(sp) || bloqueado}
+                      title={bloqueado ? tituloBloqueo : undefined}
+                      className={`${botonFila} border border-gray-300 text-gray-900 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed`}>Asignación</button>
+                  </div>
                 </div>
-                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0 ${BADGE_SUBPROCESO[sp.estado] ?? 'bg-gray-100 text-gray-600'}`}>
-                  {sp.estado}
-                </span>
+              )
+            })}
+            <div className="rounded-lg bg-gray-100 px-3 py-3 flex flex-wrap items-center gap-3">
+              <p className="text-sm text-gray-900 flex-1 min-w-[200px]">
+                <strong>Estudio completo:</strong> {publicados} de {vigentes.length} publicados.{' '}
+                {completo ? (puedeEmitir ? 'Listo para emitir.' : 'Todos publicados.') : `Se habilita con ${vigentes.length} de ${vigentes.length}.`}
+              </p>
+              <button type="button" onClick={onEmitir} disabled={publicados === 0 || completo}
+                title={completo ? 'Con todo publicado se emite el estudio completo' : publicados === 0 ? 'Publica al menos un informe' : undefined}
+                className="min-h-[44px] px-4 rounded-lg text-sm font-semibold border border-gray-300 bg-white text-gray-900 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
+                Emitir preliminar
               </button>
-            ))}
+              <button type="button" onClick={onEmitir} disabled={!puedeEmitir}
+                className="min-h-[44px] px-4 rounded-lg text-sm font-semibold bg-[#A8323F] text-white hover:bg-[#8f2a35] disabled:bg-gray-200 disabled:text-gray-600 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
+                Emitir estudio completo
+              </button>
+            </div>
           </div>
         )}
       </td>
@@ -174,28 +256,44 @@ function FilaSubprocesos({ idServicio, colSpan, onToast }) {
         onToast={onToast}
       />
     )}
+
+    {asignandoProgramadorDe && (
+      <ModalAsignarProgramador
+        subprocesos={[asignandoProgramadorDe]}
+        onClose={() => setAsignandoProgramadorDe(null)}
+        onGuardado={() => { setAsignandoProgramadorDe(null); cargar() }}
+        onToast={onToast}
+      />
+    )}
+
+    {publicando && (
+      <PanelPublicarSubproceso
+        asignacion={publicando} publicados={publicados} total={vigentes.length}
+        onClose={() => setPublicando(null)}
+        // PC-02: si este era el último informe (1 de 1, 3 de 3…), a continuación se abre «Emitir estudio completo».
+        onHecho={(r) => { setPublicando(null); cargar(); if (r?.cierraEstudio) onEmitir?.() }}
+        onToast={onToast}
+      />
+    )}
     </Fragment>
   )
 }
 
-function EtiquetaEntrega({ fecha }) {
-  const dias = diasHasta(fecha)
-  if (dias === null) return <span className="text-gray-400">—</span>
-  if (dias < 0) {
-    return <span className="text-red-600 font-semibold">Se venció hace {Math.abs(dias)} día{Math.abs(dias) !== 1 ? 's' : ''}</span>
-  }
-  if (dias === 0) return <span className="text-amber-600 font-semibold">Vence hoy</span>
-  return (
-    <span className={dias <= 1 ? 'text-amber-600 font-medium' : 'text-gray-500'}>
-      {dias} día{dias !== 1 ? 's' : ''} para entregar
-    </span>
-  )
+// El estado de tiempo (en días hábiles, "Vencida · 17 días hábiles") lo calcula el servidor: aquí solo se muestra.
+function EtiquetaEntrega({ tiempo }) {
+  if (!tiempo) return <span className="text-gray-400">—</span>
+  return <EstadoTiempo tiempo={tiempo} />
 }
 
 /* ── Estados del link de validación del evaluado ── */
+// Desde V197 el link no vence a las 36 h: el candidato entra (y edita, ve citas y documentos)
+// mientras el servicio esté abierto. PENDIENTE y USADO ("Enviado") tienen acceso; REVOCADO,
+// BLOQUEADO y CERRADO no. EXPIRADO queda solo por compatibilidad con datos viejos.
 const ESTADO_LINK_CFG = {
-  PENDIENTE: { color: 'bg-emerald-100 text-emerald-700', label: 'Pendiente' },
-  USADO:     { color: 'bg-slate-100 text-slate-600',     label: 'Usado'     },
+  PENDIENTE: { color: 'bg-emerald-100 text-emerald-700', label: 'Activo — sin enviar' },
+  USADO:     { color: 'bg-sky-100 text-sky-700',         label: 'Enviado — activo' },
+  REVOCADO:  { color: 'bg-slate-100 text-slate-600',     label: 'Revocado'  },
+  CERRADO:   { color: 'bg-slate-100 text-slate-600',     label: 'Servicio cerrado' },
   EXPIRADO:  { color: 'bg-red-100 text-red-600',         label: 'Expirado'  },
   BLOQUEADO: { color: 'bg-orange-100 text-orange-700',   label: 'Bloqueado' },
 }
@@ -279,11 +377,31 @@ function ModalResumenEvaluado({ idServicio, nombreEvaluado, onClose }) {
               </div>
             </div>
 
+            {/* Autorización de tratamiento de datos (Ley 1581) — la acepta el candidato; aquí solo se consulta */}
+            <div className={`flex items-start gap-3 rounded-lg border px-4 py-3 ${
+              resumen.autorizacionDatos ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
+              <span className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white ${
+                resumen.autorizacionDatos ? 'bg-emerald-500' : 'bg-amber-400'}`}>
+                {resumen.autorizacionDatos ? '✓' : '!'}
+              </span>
+              <div className="text-sm">
+                <p className={`font-semibold ${resumen.autorizacionDatos ? 'text-emerald-900' : 'text-amber-900'}`}>
+                  Autorización de tratamiento de datos: {resumen.autorizacionDatos ? 'aceptada' : 'pendiente'}
+                </p>
+                <p className={`text-xs ${resumen.autorizacionDatos ? 'text-emerald-800/80' : 'text-amber-800/80'}`}>
+                  {resumen.autorizacionDatos
+                    ? `El candidato la aceptó el ${fechaHora(resumen.fechaAutorizacion)} desde su link (Ley 1581 de 2012).`
+                    : 'El candidato todavía no la acepta. Hasta que lo haga no puede diligenciar su hoja de vida ni cargar documentos.'}
+                </p>
+              </div>
+            </div>
+
             {/* Datos personales */}
             <section>
               <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Datos personales</h3>
               <div className="bg-gray-50 rounded-lg p-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-                {resumen.fechaNacimiento && <div><span className="text-gray-400">F. nacimiento: </span><span className="text-gray-800">{formatFecha(resumen.fechaNacimiento)}</span></div>}
+                {resumen.fechaNacimiento && <div><span className="text-gray-400">F. nacimiento: </span><span className="text-gray-800">{fechaCorta(resumen.fechaNacimiento)}</span></div>}
+                {(resumen.fechaExpedicion || resumen.ciudadExpedicion) && <div><span className="text-gray-400">Expedición del documento: </span><span className="text-gray-800">{[resumen.fechaExpedicion && fechaCorta(resumen.fechaExpedicion), resumen.ciudadExpedicion].filter(Boolean).join(' · ')}</span></div>}
                 {resumen.ciudadNacimiento && <div><span className="text-gray-400">Ciudad nacimiento: </span><span className="text-gray-800">{resumen.ciudadNacimiento}</span></div>}
                 {resumen.ciudadResidencia && <div><span className="text-gray-400">Ciudad residencia: </span><span className="text-gray-800">{resumen.ciudadResidencia}</span></div>}
                 {resumen.estadoCivil && <div><span className="text-gray-400">Estado civil: </span><span className="text-gray-800">{resumen.estadoCivil}</span></div>}
@@ -293,15 +411,15 @@ function ModalResumenEvaluado({ idServicio, nombreEvaluado, onClose }) {
                 {resumen.eps && <div><span className="text-gray-400">EPS: </span><span className="text-gray-800">{resumen.eps}</span></div>}
                 {resumen.fondoPensiones && <div><span className="text-gray-400">Pensiones: </span><span className="text-gray-800">{resumen.fondoPensiones}</span></div>}
                 {resumen.celular && <div><span className="text-gray-400">Celular: </span><span className="text-gray-800">{resumen.celular}</span></div>}
-                {resumen.telefonoFijo && <div><span className="text-gray-400">Tel. fijo: </span><span className="text-gray-800">{resumen.telefonoFijo}</span></div>}
+                {resumen.telefonoFijo && <div><span className="text-gray-400">Fijo / WhatsApp: </span><span className="text-gray-800">{resumen.telefonoFijo}</span></div>}
                 {resumen.email && <div><span className="text-gray-400">Email: </span><span className="text-gray-800">{resumen.email}</span></div>}
                 {resumen.libretaMilitar && <div><span className="text-gray-400">Libreta militar: </span><span className="text-gray-800">{resumen.libretaMilitar}</span></div>}
-                {resumen.visa && <div><span className="text-gray-400">Visa: </span><span className="text-gray-800">{resumen.visa}</span></div>}
-                {resumen.pasaporte && <div><span className="text-gray-400">Pasaporte: </span><span className="text-gray-800">{resumen.pasaporte}</span></div>}
+                {(resumen.visa || resumen.tieneVisa != null) && <div><span className="text-gray-400">Visa: </span><span className="text-gray-800">{resumen.tieneVisa === false ? 'No tiene' : [resumen.visaPais, resumen.visa].filter(Boolean).join(' · ')}</span></div>}
+                {(resumen.pasaporte || resumen.tienePasaporte != null) && <div><span className="text-gray-400">Pasaporte: </span><span className="text-gray-800">{resumen.tienePasaporte === false ? 'No tiene' : resumen.pasaporte}</span></div>}
                 {resumen.direccion && (
                   <div className="col-span-2">
                     <span className="text-gray-400">Dirección: </span>
-                    <span className="text-gray-800">{resumen.direccion}{resumen.barrio ? `, ${resumen.barrio}` : ''}</span>
+                    <span className="text-gray-800">{[resumen.direccion, resumen.direccionAdicional, resumen.barrio].filter(Boolean).join(', ')}</span>
                   </div>
                 )}
               </div>
@@ -312,7 +430,7 @@ function ModalResumenEvaluado({ idServicio, nombreEvaluado, onClose }) {
               <section>
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Educación</h3>
                 <div className="overflow-x-auto rounded-lg border border-gray-200">
-                  <table className="w-full text-sm">
+                  <table className="table-stack w-full text-sm">
                     <thead className="bg-gray-50 text-gray-500 text-xs">
                       <tr>
                         <th className="px-3 py-2 text-left">Nivel</th>
@@ -324,10 +442,10 @@ function ModalResumenEvaluado({ idServicio, nombreEvaluado, onClose }) {
                     <tbody className="divide-y divide-gray-100">
                       {resumen.educacion.map((e, i) => (
                         <tr key={i}>
-                          <td className="px-3 py-2 text-gray-800">{e.nivel ?? '—'}</td>
-                          <td className="px-3 py-2 text-gray-800">{e.institucion ?? '—'}</td>
-                          <td className="px-3 py-2 text-gray-600">{e.ciudad ?? '—'}</td>
-                          <td className="px-3 py-2 text-gray-600">{e.enCurso ? 'En curso' : (e.fechaFin ? formatFecha(e.fechaFin) : '—')}</td>
+                          <td data-label="Nivel" className="px-3 py-2 text-gray-800">{e.nivel ?? '—'}</td>
+                          <td data-label="Institución" className="px-3 py-2 text-gray-800">{e.institucion ?? '—'}</td>
+                          <td data-label="Ciudad" className="px-3 py-2 text-gray-600">{e.ciudad ?? '—'}</td>
+                          <td data-label="Estado" className="px-3 py-2 text-gray-600">{e.enCurso ? 'En curso' : (e.fechaFin ? fechaCorta(e.fechaFin) : '—')}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -341,24 +459,30 @@ function ModalResumenEvaluado({ idServicio, nombreEvaluado, onClose }) {
               <section>
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Experiencia laboral</h3>
                 <div className="overflow-x-auto rounded-lg border border-gray-200">
-                  <table className="w-full text-sm">
+                  <table className="table-stack w-full text-sm">
                     <thead className="bg-gray-50 text-gray-500 text-xs">
                       <tr>
                         <th className="px-3 py-2 text-left">Empresa</th>
                         <th className="px-3 py-2 text-left">Cargo</th>
                         <th className="px-3 py-2 text-left">Inicio</th>
                         <th className="px-3 py-2 text-left">Fin</th>
+                        <th className="px-3 py-2 text-left">Contrato</th>
+                        <th className="px-3 py-2 text-left">Salario</th>
+                        <th className="px-3 py-2 text-left">Llamados de atención</th>
                         <th className="px-3 py-2 text-left">Motivo retiro</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {resumen.experienciaLaboral.map((ex, i) => (
                         <tr key={i}>
-                          <td className="px-3 py-2 text-gray-800">{ex.empresa ?? '—'}</td>
-                          <td className="px-3 py-2 text-gray-800">{ex.cargo ?? '—'}</td>
-                          <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{formatFecha(ex.fechaInicio)}</td>
-                          <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{ex.laboraActualmente ? 'Actual' : formatFecha(ex.fechaFin)}</td>
-                          <td className="px-3 py-2 text-gray-600 max-w-[140px]"><span className="truncate block">{ex.motivoRetiro ?? '—'}</span></td>
+                          <td data-label="Empresa" className="px-3 py-2 text-gray-800">{ex.empresa ?? '—'}</td>
+                          <td data-label="Cargo" className="px-3 py-2 text-gray-800">{ex.cargo ?? '—'}</td>
+                          <td data-label="Inicio" className="px-3 py-2 text-gray-600 whitespace-nowrap">{fechaCorta(ex.fechaInicio)}</td>
+                          <td data-label="Fin" className="px-3 py-2 text-gray-600 whitespace-nowrap">{ex.laboraActualmente ? 'Actual' : fechaCorta(ex.fechaFin)}</td>
+                          <td data-label="Contrato" className="px-3 py-2 text-gray-600">{ex.tipoContrato ?? '—'}</td>
+                          <td data-label="Salario" className="px-3 py-2 text-gray-600 whitespace-nowrap">{ex.salario != null ? `$ ${Number(ex.salario).toLocaleString('es-CO')}` : '—'}</td>
+                          <td data-label="Llamados de atención" className="px-3 py-2 text-gray-600 max-w-[140px]"><span className="truncate block" title={ex.llamadosAtencion ?? ''}>{ex.llamadosAtencion ?? '—'}</span></td>
+                          <td data-label="Motivo retiro" className="px-3 py-2 text-gray-600 max-w-[140px]"><span className="truncate block" title={ex.motivoRetiro ?? ''}>{ex.motivoRetiro ?? '—'}</span></td>
                         </tr>
                       ))}
                     </tbody>
@@ -369,7 +493,7 @@ function ModalResumenEvaluado({ idServicio, nombreEvaluado, onClose }) {
                     {resumen.inactividades.map((g, i) => (
                       <div key={i} className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm">
                         <p className="text-red-700 font-medium">
-                          Tiempo muerto de {g.diasInactivo} días ({formatFecha(g.fechaInicio)} → {formatFecha(g.fechaFin)})
+                          Tiempo muerto de {g.diasInactivo} días ({fechaCorta(g.fechaInicio)} → {fechaCorta(g.fechaFin)})
                         </p>
                         {g.justificacion
                           ? <p className="text-red-600 text-xs mt-1">Justificación: {g.justificacion}</p>
@@ -398,6 +522,22 @@ function ModalResumenEvaluado({ idServicio, nombreEvaluado, onClose }) {
               </section>
             )}
 
+            {/* Declaraciones del candidato (preguntas de Admin → Hoja de vida del candidato) */}
+            {resumen.declaraciones?.length > 0 && (
+              <section>
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Declaraciones</h3>
+                <ul className="space-y-2">
+                  {resumen.declaraciones.map((d, i) => (
+                    <li key={i} className={`text-sm rounded-lg px-4 py-2.5 ${d.respuesta ? 'bg-amber-50 border border-amber-200' : 'bg-gray-50'}`}>
+                      <p className="text-gray-500">{d.pregunta}</p>
+                      <p className="font-medium text-gray-800">{d.respuesta == null ? '—' : d.respuesta ? 'Sí' : 'No'}</p>
+                      {d.detalle && <p className="text-gray-700 mt-0.5 whitespace-pre-line">{d.detalle}</p>}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
             {/* Documentos */}
             {resumen.documentos?.length > 0 && (
               <section>
@@ -408,7 +548,7 @@ function ModalResumenEvaluado({ idServicio, nombreEvaluado, onClose }) {
                       <div className="min-w-0">
                         <p className="text-gray-800 truncate">{doc.nombreArchivo}</p>
                         <p className="text-xs text-gray-400 mt-0.5">
-                          {doc.tipoDocumento}{doc.fechaCarga ? ` · ${formatFechaHora(doc.fechaCarga)}` : ''}
+                          {doc.tipoDocumento}{doc.fechaCarga ? ` · ${fechaHora(doc.fechaCarga)}` : ''}
                         </p>
                       </div>
                       <button onClick={() => descargar(doc)} disabled={descargandoId === doc.id}
@@ -428,9 +568,12 @@ function ModalResumenEvaluado({ idServicio, nombreEvaluado, onClose }) {
 }
 
 /* ─── Modal cambio de estado ─── */
-function ModalCambioEstado({ solicitud, onClose, onGuardado }) {
-  const esReversion = solicitud.estado === 'CANCELADO'
-  const siguientes = TRANSICIONES_GESTOR[solicitud.estado] ?? []
+function ModalCambioEstado({ solicitud, modo, onClose, onGuardado }) {
+  const idCampos = useId()
+  const esDesistimiento = modo === 'desistimiento'
+  const esReversion = !esDesistimiento && solicitud.estado === 'CANCELADO'
+  const siguientes = esDesistimiento ? ['CANCELADO'] : (TRANSICIONES_GESTOR[solicitud.estado] ?? [])
+  const [motivo, setMotivo] = useState(MOTIVO_VACIO)
   const [nuevoEstado, setNuevoEstado] = useState(siguientes[0] ?? '')
   const [observacion, setObservacion] = useState('')
   const [guardando, setGuardando]     = useState(false)
@@ -442,9 +585,24 @@ function ModalCambioEstado({ solicitud, onClose, onGuardado }) {
       setError('Debes indicar el motivo de la solicitud.')
       return
     }
+    const conMotivo = esDesistimiento || (!esReversion && nuevoEstado === 'CANCELADO')
+    if (conMotivo) {
+      const falta = motivoIncompleto(motivo)
+      if (falta) { setError(falta); return }
+    }
     setGuardando(true); setError(null)
     try {
-      if (esReversion) {
+      if (esDesistimiento) {
+        await api.post(`/gestor/solicitudes/${solicitud.idServicio}/desistimiento`, {
+          idMotivo: motivo.idMotivo, texto: motivo.texto.trim() || null,
+        })
+        onGuardado('Desistimiento registrado: se canceló lo que no había iniciado.')
+      } else if (!esReversion && nuevoEstado === 'CANCELADO') {
+        await api.patch(`/gestor/solicitudes/${solicitud.idServicio}/estado`, {
+          estado: 'CANCELADO', idMotivo: motivo.idMotivo, observacion: motivo.texto.trim() || null,
+        })
+        onGuardado('Solicitud cancelada')
+      } else if (esReversion) {
         await api.post(`/gestor/solicitudes/${solicitud.idServicio}/solicitar-reversion`, {
           estado: nuevoEstado,
           observacion,
@@ -474,7 +632,7 @@ function ModalCambioEstado({ solicitud, onClose, onGuardado }) {
 
   return (
     <Modal
-      titulo={esReversion ? 'Solicitar reversión de estado' : 'Cambiar estado'}
+      titulo={esDesistimiento ? 'El candidato desistió' : esReversion ? 'Solicitar reversión de estado' : nuevoEstado === 'CANCELADO' ? 'Cancelar la solicitud' : 'Publicar el estudio'}
       subtitulo={`${solicitud.nombresEvaluado} ${solicitud.apellidosEvaluado}`}
       onClose={onClose} ancho="max-w-md">
       <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
@@ -488,32 +646,47 @@ function ModalCambioEstado({ solicitud, onClose, onGuardado }) {
 
         <div>
           <p className="text-xs text-gray-500 mb-2">
-            Estado actual: <span className={`font-medium px-2 py-0.5 rounded-full text-xs ${BADGE[solicitud.estado]}`}>{solicitud.estado}</span>
+            Estado actual: <EtiquetaEstado estado={solicitud.estado} />
           </p>
-          <label className="block text-xs font-medium text-gray-600 mb-1">
-            {esReversion ? 'Estado deseado' : 'Nuevo estado'} <span className="text-red-500">*</span>
-          </label>
-          <select value={nuevoEstado} onChange={e => setNuevoEstado(e.target.value)} required
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
-            {siguientes.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+          {esReversion && (
+            <>
+              <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">
+                Estado deseado <span className="text-red-500">*</span>
+              </label>
+              <select id={`${idCampos}-1`} value={nuevoEstado} onChange={e => setNuevoEstado(e.target.value)} required
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
+                {siguientes.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </>
+          )}
         </div>
 
+        {esDesistimiento && (
+          <p className="text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5">
+            Si ningún subproceso ha iniciado, se cancelan todos y la solicitud queda cancelada. Si alguno ya inició, ese sigue hasta
+            publicarse, el resto se cancela y la solicitud lleva la marca «Candidato desistió».
+          </p>
+        )}
+
+        {(esDesistimiento || (!esReversion && nuevoEstado === 'CANCELADO')) ? (
+          <SelectorMotivo tipo="CANCELACION" valor={motivo} onChange={setMotivo} etiqueta="Motivo de la cancelación" autoFocus />
+        ) : (
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">
+          <label htmlFor={`${idCampos}-2`} className="block text-xs font-medium text-gray-600 mb-1">
             {esReversion ? 'Motivo de la solicitud' : 'Observación'} {esReversion && <span className="text-red-500">*</span>}
           </label>
-          <textarea value={observacion} onChange={e => setObservacion(e.target.value)} rows={3}
+          <textarea id={`${idCampos}-2`} value={observacion} onChange={e => setObservacion(e.target.value)} rows={3}
             required={esReversion}
             placeholder={esReversion ? 'Explica por qué debe revertirse esta cancelación…' : (nuevoEstado === 'PUBLICADO' ? 'Concepto final del estudio…' : 'Motivo o notas adicionales…')}
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" />
         </div>
+        )}
 
         <div className="flex justify-end gap-3 pt-1">
           <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancelar</button>
           <button type="submit" disabled={guardando}
             className="bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white text-sm font-medium px-5 py-2 rounded-lg transition-colors">
-            {guardando ? 'Enviando...' : (esReversion ? 'Enviar solicitud' : 'Confirmar cambio')}
+            {guardando ? 'Enviando...' : esReversion ? 'Enviar solicitud' : esDesistimiento ? 'Registrar desistimiento' : nuevoEstado === 'CANCELADO' ? 'Cancelar solicitud' : 'Publicar estudio'}
           </button>
         </div>
       </form>
@@ -533,10 +706,8 @@ function SeccionLink({ idServicio, onToast }) {
   const [enviandoCorreo, setEnviandoCorreo]       = useState(false)
   const [resumenAbierto, setResumenAbierto]       = useState(false)
 
-  const [historial, setHistorial]             = useState([])
-  const [cargandoHistorial, setCargandoHistorial] = useState(true)
-  const [eliminandoId, setEliminandoId]       = useState(null)
-  const [confirmarEliminar, setConfirmarEliminar] = useState(null)
+  // Un solo link por servicio: generar uno nuevo elimina el anterior (hay que confirmarlo).
+  const [confirmarReemplazo, setConfirmarReemplazo] = useState(false)
 
   const cargar = useCallback(() => {
     setCargando(true)
@@ -546,38 +717,19 @@ function SeccionLink({ idServicio, onToast }) {
       .finally(() => setCargando(false))
   }, [idServicio])
 
-  const cargarHistorial = useCallback(() => {
-    setCargandoHistorial(true)
-    return tokenService.historialPorServicio(idServicio)
-      .then(setHistorial)
-      .catch(() => setHistorial([]))
-      .finally(() => setCargandoHistorial(false))
-  }, [idServicio])
-
-  useEffect(() => { cargar(); cargarHistorial() }, [cargar, cargarHistorial])
-
-  const eliminar = async (idLink) => {
-    setEliminandoId(idLink)
-    try {
-      await tokenService.eliminar(idLink)
-      onToast('Link eliminado correctamente')
-      await cargarHistorial()
-    } catch (e) {
-      onToast(e.response?.data?.mensaje ?? 'Error al eliminar el link.', 'error')
-    } finally { setEliminandoId(null); setConfirmarEliminar(null) }
-  }
+  useEffect(() => { cargar() }, [cargar])
+  useCambios(cargar, { servicios: idServicio })
 
   const generar = async () => {
     setProcesando(true)
     try {
       const nuevo = await tokenService.generar(idServicio)
       setLink(nuevo)
-      onToast('Link generado correctamente')
-      await cargarHistorial()
+      onToast(link ? 'Link nuevo generado. El anterior se eliminó y ya no funciona.' : 'Link generado correctamente')
     } catch (e) {
       const msg = e.response?.data?.mensaje
       onToast(msg ?? 'Error al generar el link.', 'error')
-    } finally { setProcesando(false) }
+    } finally { setProcesando(false); setConfirmarReemplazo(false) }
   }
 
   const copiar = async () => {
@@ -611,7 +763,6 @@ function SeccionLink({ idServicio, onToast }) {
       await tokenService.revocar(link.id)
       onToast('Link revocado correctamente')
       await cargar()
-      await cargarHistorial()
     } catch (e) {
       onToast(e.response?.data?.mensaje ?? 'Error al revocar el link.', 'error')
     } finally { setProcesando(false); setConfirmarRevocar(false) }
@@ -623,7 +774,6 @@ function SeccionLink({ idServicio, onToast }) {
       const actualizado = await tokenService.revertir(link.id)
       setLink(actualizado)
       onToast('Link revertido a Pendiente. El evaluado puede diligenciar nuevamente.')
-      await cargarHistorial()
     } catch (e) {
       const status = e.response?.status
       const msg    = e.response?.data?.mensaje
@@ -645,7 +795,7 @@ function SeccionLink({ idServicio, onToast }) {
   const cfg = link ? (ESTADO_LINK_CFG[link.estado] ?? ESTADO_LINK_CFG.EXPIRADO) : null
   const esPendiente  = link?.estado === 'PENDIENTE'
   const esUsado      = link?.estado === 'USADO'
-  const esReenviable = link?.estado === 'EXPIRADO' || link?.estado === 'BLOQUEADO'
+  const esReenviable = link?.estado === 'EXPIRADO' || link?.estado === 'BLOQUEADO' || link?.estado === 'REVOCADO'
 
   return (
     <section>
@@ -667,16 +817,19 @@ function SeccionLink({ idServicio, onToast }) {
           </div>
 
           <p className="text-xs text-gray-500">
-            {esPendiente && <>Expira en <span className="font-medium text-emerald-600">{tiempoRestante(link.fechaExpiracion)}</span></>}
-            {esUsado && <>Usado el {formatFechaHora(link.fechaUso)}</>}
-            {!esPendiente && !esUsado && <>Expiró el {formatFechaHora(link.fechaExpiracion)}</>}
+            {esPendiente && <>Activo mientras el servicio esté abierto — el candidato aún no ha enviado su hoja de vida.</>}
+            {esUsado && <>Enviado el {fechaHora(link.fechaUso)} — el candidato sigue pudiendo editar, ver sus citas y documentos.</>}
+            {link.estado === 'REVOCADO' && <>Revocado — el candidato ya no puede entrar. Genera uno nuevo si lo necesita.</>}
+            {link.estado === 'CERRADO' && <>El servicio ya se cerró; el link dejó de funcionar.</>}
+            {link.estado === 'BLOQUEADO' && <>Bloqueado por intentos fallidos.</>}
+            {link.estado === 'EXPIRADO' && <>Expiró el {fechaHora(link.fechaExpiracion)}</>}
           </p>
 
           <div className="bg-white border border-gray-100 rounded-lg px-3 py-2.5 space-y-2">
             <p className="text-xs">
               {link.fechaPrimerIngreso ? (
                 <span className="text-gray-600">
-                  El candidato ingresó al link el <span className="font-medium text-gray-800">{formatFechaHora(link.fechaPrimerIngreso)}</span>
+                  El candidato ingresó al link el <span className="font-medium text-gray-800">{fechaHora(link.fechaPrimerIngreso)}</span>
                 </span>
               ) : (
                 <span className="text-amber-600 font-medium">El candidato aún no ha ingresado al link.</span>
@@ -703,7 +856,7 @@ function SeccionLink({ idServicio, onToast }) {
             )}
 
             <p className="text-xs text-gray-400">
-              Generado el {formatFechaHora(link.fechaCreacion)}{link.generadoPorNombre ? ` por ${link.generadoPorNombre}` : ''}
+              Generado el {fechaHora(link.fechaCreacion)}{link.generadoPorNombre ? ` por ${link.generadoPorNombre}` : ''}
             </p>
 
             {link.intentosFallidos > 0 && (
@@ -721,7 +874,8 @@ function SeccionLink({ idServicio, onToast }) {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap pt-1">
-            {esPendiente && (
+            {/* Enviado también sigue activo (V197): se puede volver a compartir o revocar. */}
+            {(esPendiente || esUsado) && (
               <>
                 <button onClick={copiar}
                   className={`text-xs font-medium px-2.5 py-1 rounded-lg transition-colors ${
@@ -745,8 +899,8 @@ function SeccionLink({ idServicio, onToast }) {
                 Revertir a Pendiente
               </button>
             )}
-            {esReenviable && (
-              <button onClick={generar} disabled={procesando}
+            {(esReenviable || esPendiente || esUsado) && (
+              <button onClick={() => setConfirmarReemplazo(true)} disabled={procesando}
                 className="text-xs font-medium px-2.5 py-1 rounded-lg border border-primary-200 text-primary-600 hover:bg-primary-50 transition-colors">
                 {procesando ? 'Generando...' : 'Generar nuevo link'}
               </button>
@@ -755,60 +909,23 @@ function SeccionLink({ idServicio, onToast }) {
         </div>
       )}
 
-      {/* Historial de links del servicio — permite ver y eliminar los que ya no sirven */}
-      <div className="mt-4">
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-          Historial de links {historial.length > 0 && `(${historial.length})`}
-        </p>
-        {cargandoHistorial ? (
-          <div className="flex justify-center py-4">
-            <div className="animate-spin rounded-full h-5 w-5 border-2 border-primary-500 border-t-transparent" />
-          </div>
-        ) : historial.length === 0 ? (
-          <p className="text-sm text-gray-400">Sin links generados para este servicio.</p>
-        ) : (
-          <div className="divide-y divide-gray-100 border border-gray-200 rounded-lg overflow-hidden">
-            {historial.map(h => {
-              const hcfg = ESTADO_LINK_CFG[h.estado] ?? ESTADO_LINK_CFG.EXPIRADO
-              const esActual = link && h.id === link.id
-              return (
-                <div key={h.id} className="flex items-center justify-between gap-3 px-3 py-2.5 bg-white">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${hcfg.color}`}>{hcfg.label}</span>
-                      {esActual && (
-                        <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-primary-50 text-primary-600">Vigente</span>
-                      )}
-                      <span className="text-xs text-gray-400 font-mono">{h.tokenMascarado}</span>
-                    </div>
-                    <p className="text-xs text-gray-400 mt-1">
-                      Creado {formatFechaHora(h.fechaCreacion)}{h.generadoPorNombre ? ` · ${h.generadoPorNombre}` : ''}
-                    </p>
-                  </div>
-                  {h.estado === 'PENDIENTE' ? (
-                    <span className="text-xs text-gray-300 flex-shrink-0" title="Revócalo antes de poder eliminarlo">—</span>
-                  ) : (
-                    <button onClick={() => setConfirmarEliminar(h)} disabled={eliminandoId === h.id}
-                      className="flex-shrink-0 text-xs font-medium px-2.5 py-1 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50">
-                      {eliminandoId === h.id ? 'Eliminando...' : 'Eliminar'}
-                    </button>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
+      <p className="mt-2 text-[11px] text-gray-400">
+        Cada servicio tiene un solo link. Si generas uno nuevo, el anterior se elimina y deja de funcionar;
+        la información que el candidato ya registró se conserva.
+      </p>
 
-      {confirmarEliminar && (
+      {confirmarReemplazo && (
         <ConfirmModal
-          titulo="Eliminar link"
+          titulo="Generar nuevo link"
           danger
-          confirmLabel="Eliminar"
-          cargando={eliminandoId === confirmarEliminar.id}
-          onConfirmar={() => eliminar(confirmarEliminar.id)}
-          onCancelar={() => setConfirmarEliminar(null)}>
-          <p className="text-sm text-gray-600">Este link se eliminará permanentemente. Esta acción no se puede deshacer.</p>
+          confirmLabel="Generar y reemplazar"
+          cargando={procesando}
+          onConfirmar={generar}
+          onCancelar={() => setConfirmarReemplazo(false)}>
+          <p className="text-sm text-gray-600">
+            El link actual se eliminará y el candidato ya no podrá entrar con él. Tendrás que compartirle el nuevo.
+            Su hoja de vida, documentos y autorización se conservan.
+          </p>
         </ConfirmModal>
       )}
 
@@ -844,7 +961,7 @@ function SeccionLink({ idServicio, onToast }) {
           onConfirmar={enviarCorreo}
           onCancelar={() => setConfirmarReenvio(false)}>
           <p className="text-sm text-gray-600">
-            Ingresó el <strong>{formatFechaHora(link.fechaPrimerIngreso)}</strong>
+            Ingresó el <strong>{fechaHora(link.fechaPrimerIngreso)}</strong>
             {typeof link.progresoFormulario === 'number' && (
               <> y lleva un <strong>{link.progresoFormulario}%</strong> del formulario completado</>
             )}.
@@ -879,7 +996,7 @@ function TarjetaContacto({ icono, label, valor, href, copiado, onCopiar }) {
       </div>
       {valor && (
         <button onClick={onCopiar} title="Copiar" type="button"
-          className={`flex-shrink-0 p-1.5 rounded-md transition-all ${
+          className={`flex-shrink-0 p-1.5 rounded-md transition-[color,background-color,opacity] ${
             copiado ? 'opacity-100 bg-emerald-100 text-emerald-600' : 'opacity-0 group-hover:opacity-100 text-gray-400 hover:text-primary-600 hover:bg-primary-100'
           }`}>
           {copiado ? (
@@ -910,9 +1027,13 @@ const ICONO_EMAIL = (
 )
 
 /* ─── Sección: ficha del candidato, segmentada e interactiva ─── */
-function SeccionCandidato({ detalle }) {
+function SeccionCandidato({ detalle, onCiudadCorregida }) {
   const [copiado, setCopiado] = useState(null)
   const [resumenAbierto, setResumenAbierto] = useState(false)
+  const [editandoCiudad, setEditandoCiudad] = useState(false)
+  const [nuevaCiudad, setNuevaCiudad] = useState(null)
+  const [guardandoCiudad, setGuardandoCiudad] = useState(false)
+  const [errorCiudad, setErrorCiudad] = useState(null)
 
   const copiar = async (texto, campo) => {
     if (!texto) return
@@ -921,6 +1042,27 @@ function SeccionCandidato({ detalle }) {
       setCopiado(campo)
       setTimeout(() => setCopiado(null), 2000)
     } catch { /* silencioso */ }
+  }
+
+  const abrirEdicionCiudad = () => {
+    setNuevaCiudad(detalle?.idCiudad ?? null)
+    setErrorCiudad(null)
+    setEditandoCiudad(true)
+  }
+
+  const guardarCiudad = async () => {
+    if (!nuevaCiudad) { setErrorCiudad('Selecciona una ciudad.'); return }
+    setGuardandoCiudad(true)
+    setErrorCiudad(null)
+    try {
+      const r = await api.patch(`/gestor/solicitudes/${detalle.idServicio}/ciudad`, { idCiudad: nuevaCiudad })
+      onCiudadCorregida?.(r.data)
+      setEditandoCiudad(false)
+    } catch (err) {
+      setErrorCiudad(err.response?.data?.mensaje ?? 'No se pudo actualizar la ciudad.')
+    } finally {
+      setGuardandoCiudad(false)
+    }
   }
 
   return (
@@ -973,7 +1115,81 @@ function SeccionCandidato({ detalle }) {
           onCopiar={() => copiar(detalle?.emailEvaluado, 'email')}
           icono={ICONO_EMAIL}
         />
+
+        <div className="flex items-center gap-3 py-2 -mx-2 px-2 rounded-lg hover:bg-gray-50/80 transition-colors group">
+          <span className="text-gray-400 group-hover:text-primary-500 flex-shrink-0 transition-colors">📍</span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">Ciudad</p>
+            <p className="text-sm font-medium text-gray-800">{detalle?.nombreCiudad ?? '—'}</p>
+          </div>
+          <button onClick={abrirEdicionCiudad} title="Corregir ciudad" type="button"
+            className="flex-shrink-0 p-1.5 rounded-md opacity-0 group-hover:opacity-100 text-gray-400 hover:text-primary-600 hover:bg-primary-100 transition-[color,background-color,opacity]">
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
+            </svg>
+          </button>
+        </div>
       </div>
+
+      {detalle?.historialRecargoCiudad?.length > 0 && (
+        <div className="mt-2 rounded-lg border border-gray-200 px-3 py-2 text-xs">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-gray-700">
+            <span>
+              📍 Recargo ciudad — pagado: <span className="font-semibold text-green-700">{formatearPrecioCOP(detalle.totalPagadoRecargoCiudad)}</span>
+            </span>
+            {detalle.totalPendienteRecargoCiudad !== 0 && (
+              <span className={detalle.totalPendienteRecargoCiudad < 0 ? 'text-green-700' : 'text-red-700'}>
+                {detalle.totalPendienteRecargoCiudad < 0 ? 'crédito: ' : 'pendiente: '}
+                <span className="font-semibold">{formatearPrecioCOP(detalle.totalPendienteRecargoCiudad)}</span>
+              </span>
+            )}
+          </div>
+          <ul className="mt-1.5 space-y-1 border-t border-gray-100 pt-1.5 text-[11px] text-gray-500">
+            {detalle.historialRecargoCiudad.map((m, i) => (
+              <li key={i} className="flex items-center justify-between gap-2">
+                <span>
+                  {m.ciudad}{m.motivo ? ` — ${m.motivo}` : ''} · {fechaCorta(m.fechaGenerado)}
+                </span>
+                <span className={`flex-shrink-0 font-medium ${m.monto < 0 ? 'text-green-600' : 'text-gray-700'}`}>
+                  {formatearPrecioCOP(m.monto)}
+                  <span className={`ml-1.5 rounded-full px-1.5 py-0.5 ${m.estado === 'PAGADO' ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
+                    {m.estado}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {editandoCiudad && (
+        <Modal titulo="Corregir ciudad del candidato" subtitulo="Si ya se había cobrado un recargo, se genera un crédito" onClose={() => setEditandoCiudad(false)} ancho="max-w-sm">
+          <div className="px-6 py-5 space-y-4">
+            {errorCiudad && (
+              <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{errorCiudad}</div>
+            )}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Ciudad correcta</label>
+              <CiudadSelect value={nuevaCiudad} onChange={setNuevaCiudad} />
+            </div>
+            <p className="text-xs text-gray-400">
+              Si el recargo de la ciudad anterior ya se había cobrado, se registra como crédito para la
+              siguiente compra del cliente en vez de un reembolso. Si la ciudad nueva también tiene
+              recargo, queda pendiente de cobro.
+            </p>
+          </div>
+          <div className="px-6 pb-5 flex justify-end gap-3">
+            <button type="button" onClick={() => setEditandoCiudad(false)} disabled={guardandoCiudad}
+              className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 border border-gray-200 rounded-lg hover:bg-gray-50/70 transition-colors">
+              Cancelar
+            </button>
+            <button type="button" onClick={guardarCiudad} disabled={guardandoCiudad}
+              className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50 transition-colors">
+              {guardandoCiudad ? 'Guardando...' : 'Guardar'}
+            </button>
+          </div>
+        </Modal>
+      )}
     </section>
   )
 }
@@ -1093,6 +1309,7 @@ const TABS_DETALLE = [
   { key: 'informacion',  label: 'Información básica', icono: '🧾' },
   { key: 'programacion', label: 'Programación',       icono: '🗓️' },
   { key: 'link',         label: 'Link',               icono: '🔗' },
+  { key: 'riesgo',       label: 'Riesgo',             icono: '🛡️' },
   { key: 'historial',    label: 'Historial',          icono: '🕒' },
 ]
 
@@ -1108,6 +1325,9 @@ function ModalDetalle({ solicitud, onClose, onToast }) {
       .then(r => setDetalle(r.data))
       .finally(() => setCargando(false))
   }, [solicitud.idServicio])
+  // Tiempo real: si otro usuario cambia este servicio, el detalle se actualiza solo.
+  useCambios(() => api.get(`/gestor/solicitudes/${solicitud.idServicio}`).then(r => setDetalle(r.data)).catch(() => {}),
+    { servicios: solicitud.idServicio })
 
   const numHistorial = detalle?.historial?.length ?? 0
 
@@ -1141,7 +1361,7 @@ function ModalDetalle({ solicitud, onClose, onToast }) {
               {tab === 'informacion' && (
                 <div className="space-y-5">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
-                    <SeccionCandidato detalle={detalle} />
+                    <SeccionCandidato detalle={detalle} onCiudadCorregida={setDetalle} />
                     <SeccionCliente detalle={detalle} />
                   </div>
 
@@ -1150,7 +1370,7 @@ function ModalDetalle({ solicitud, onClose, onToast }) {
                       <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">Proceso solicitado</p>
                       <p className="text-sm font-medium text-gray-800 mt-0.5">{detalle?.proceso}</p>
                     </div>
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap ${BADGE[detalle?.estado] ?? 'bg-gray-100 text-gray-600'}`}>{detalle?.estado}</span>
+                    <EtiquetaEstado estado={detalle?.estado} />
                   </div>
 
                   {detalle?.notas && (
@@ -1166,6 +1386,8 @@ function ModalDetalle({ solicitud, onClose, onToast }) {
 
               {tab === 'link' && <SeccionLink idServicio={solicitud.idServicio} onToast={onToast} />}
 
+              {tab === 'riesgo' && <RiesgoServicio idServicio={solicitud.idServicio} onToast={onToast} />}
+
               {tab === 'historial' && (
                 numHistorial === 0 ? (
                   <p className="text-sm text-gray-400 text-center py-8">Sin historial de cambios registrado.</p>
@@ -1179,10 +1401,10 @@ function ModalDetalle({ solicitud, onClose, onToast }) {
                         <span className={`absolute left-0 top-1 w-2.5 h-2.5 rounded-full ring-4 ring-white ${DOT_ESTADO[h.estadoNuevo] ?? 'bg-gray-300'}`} />
 
                         <div className="flex items-center justify-between gap-3">
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${BADGE[h.estadoNuevo] ?? 'bg-gray-100 text-gray-600'}`}>
-                            {h.estadoNuevo}
+                          <span>
+                            <EtiquetaEstado estado={h.estadoNuevo} />
                           </span>
-                          <span className="text-xs text-gray-400 whitespace-nowrap">{formatFechaHora(h.fechaCambio)}</span>
+                          <span className="text-xs text-gray-400 whitespace-nowrap">{fechaHora(h.fechaCambio)}</span>
                         </div>
                         <p className="text-xs text-gray-400 mt-1">{h.usuario}</p>
                         {h.observacion && <p className="text-sm text-gray-700 mt-1">{h.observacion}</p>}
@@ -1203,7 +1425,7 @@ function ModalDetalle({ solicitud, onClose, onToast }) {
         )}
 
         <div className="px-6 py-4 border-t border-gray-100 sticky bottom-0 bg-white">
-          <button onClick={onClose} className="w-full py-2 text-sm text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">Cerrar</button>
+          <button onClick={onClose} className="w-full py-2 text-sm text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50/70 transition-colors">Cerrar</button>
         </div>
       </>
     </Modal>
@@ -1211,181 +1433,389 @@ function ModalDetalle({ solicitud, onClose, onToast }) {
 }
 
 /* ─── Página principal ─── */
+// PB-05: las tarjetas de estado, el grupo de tiempo, cliente, estudio, responsable y el buscador se combinan y quedan EN LA URL (para volver atrás o
+// compartir la vista). No hay filtro por riesgo; la columna Riesgo se conserva. Cada fila trae UN botón de «Próxima acción» (la calcula el servidor).
+
+const GRUPOS_TIEMPO = [['VENCIDAS', 'Vencidas'], ['VENCE_HOY', 'Vence hoy'], ['VENCE_MANANA', 'Vence mañana'], ['A_TIEMPO', 'A tiempo'], ['EN_PAUSA', 'En pausa']]
+const PASTA_TEXTO = { PENDIENTE: 'pendiente', PRELIMINAR: 'preliminar', EMITIDA: 'emitida' }
+const ACCION_RELLENA = new Set(['REVISAR', 'EMITIR_PASTA', 'ENVIAR_ENLACE'])
+const FOCO = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600'
+const nfN = new Intl.NumberFormat('es-CO')
+
 export default function Solicitudes() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const estadoParam = searchParams.get('estado') ?? 'TODOS'
+  // Enlaces viejos (?estado=VENCIDAS) pasan al filtro de tiempo
+  const estadoParam = (searchParams.get('estado') ?? 'TODOS') === 'VENCIDAS' ? 'TODOS' : (searchParams.get('estado') ?? 'TODOS')
+  const tiempoParam = searchParams.get('estado') === 'VENCIDAS' ? 'VENCIDAS' : (searchParams.get('tiempo') ?? '')
+  const clienteParam = searchParams.get('cliente') ?? ''
+  const estudioParam = searchParams.get('estudio') ?? ''
+  const responsableParam = searchParams.get('responsable') ?? ''
+  const qParam = searchParams.get('q') ?? ''
 
   const [solicitudes, setSolicitudes]     = useState([])
   const [cargando, setCargando]           = useState(true)
   const [error, setError]                 = useState(null)
   const [toast, setToast]                 = useState(null)
   const [pagina, setPagina]               = useState(0)
-  const [totalPaginas, setTotalPaginas]   = useState(0)
   const [totalElementos, setTotalElementos] = useState(0)
-  const [busqueda, setBusqueda]           = useState('')
+  const POR_PAGINA = 10
+  const [busqueda, setBusqueda]           = useState(qParam)
+  const [tiempos, setTiempos]             = useState(null)
+  const [opciones, setOpciones]           = useState({ clientes: [], estudios: [], responsables: [] })
   const [cambiandoEstado, setCambiandoEstado] = useState(null)
+  const [emitiendo, setEmitiendo] = useState(null)   // PB-03: ventana «Emitir estudio completo»
+  const [enviandoEnlace, setEnviandoEnlace] = useState(null)   // PB-04: ventana «Enviar enlace al candidato»
   const [detalle, setDetalle]             = useState(null)
-  const [expandidos, setExpandidos]       = useState(() => new Set())
+  // PC-06 (PB-H-45): los servicios con sus subprocesos abiertos viven en la URL (?abierto=52 o ?abierto=52,53): al cerrar una ventana, recargar o volver a
+  // entrar después de que se cerró la sesión, la pantalla queda como estaba. Se escribe con replace para no llenar el historial.
+  const abiertoParam = searchParams.get('abierto') ?? ''
+  const abiertos = useMemo(() => new Set(abiertoParam.split(',').map(Number).filter(Number.isFinite).filter(n => n > 0)), [abiertoParam])
+  const cambiarAbiertos = useCallback((cambio) => setSearchParams(prev => {
+    const n = new URLSearchParams(prev)
+    const nuevo = cambio(new Set((n.get('abierto') ?? '').split(',').map(Number).filter(Number.isFinite).filter(x => x > 0)))
+    if (nuevo.size > 0) n.set('abierto', [...nuevo].join(',')); else n.delete('abierto')
+    return n
+  }, { replace: true }), [setSearchParams])
+  const [cargandoPendientesId, setCargandoPendientesId] = useState(null)
+  const [asignandoProgramadorPara, setAsignandoProgramadorPara] = useState(null)
+  const [avisandoId, setAvisandoId]       = useState(null)
+  const [reintentandoPdf, setReintentandoPdf] = useState(null)
 
-  const toggleExpandir = (idServicio) => {
-    setExpandidos(prev => {
-      const next = new Set(prev)
-      if (next.has(idServicio)) next.delete(idServicio)
-      else next.add(idServicio)
-      return next
+  /** Cambia filtros en la URL (y vuelve a la primera página). Un valor vacío quita el filtro. */
+  const actualizar = useCallback((cambios) => {
+    setSearchParams(prev => {
+      const n = new URLSearchParams(prev)
+      n.delete('expandir'); n.delete('emitir'); n.delete('enlace')
+      if (n.get('estado') === 'VENCIDAS') { n.delete('estado'); n.set('tiempo', 'VENCIDAS') }
+      Object.entries(cambios).forEach(([k, v]) => { if (v === '' || v == null || v === 'TODOS') n.delete(k); else n.set(k, v) })
+      return n
     })
-  }
+  }, [setSearchParams])
 
-  const cargar = useCallback(async (estado, page = 0) => {
-    setCargando(true); setError(null)
+  const toggleExpandir = (idServicio) => cambiarAbiertos(prev => {
+    const next = new Set(prev)
+    if (next.has(idServicio)) next.delete(idServicio)
+    else next.add(idServicio)
+    return next
+  })
+
+  const filtrosAlcance = { idCliente: clienteParam || undefined, idProceso: estudioParam || undefined, idResponsable: responsableParam || undefined }
+
+  const cargar = useCallback(async (page = 0, silencioso = false) => {
+    if (!silencioso) { setCargando(true); setError(null) }
     try {
-      const params = new URLSearchParams({ page, size: 15 })
-      if (estado && estado !== 'TODOS') params.append('estado', estado)
+      const params = new URLSearchParams({ page, size: POR_PAGINA })
+      if (estadoParam !== 'TODOS') params.append('estado', estadoParam)
+      if (tiempoParam) params.append('tiempo', tiempoParam)
+      if (tiempoParam === 'VENCIDAS') params.append('orden', 'retraso')
+      if (clienteParam) params.append('idCliente', clienteParam)
+      if (estudioParam) params.append('idProceso', estudioParam)
+      if (responsableParam) params.append('idResponsable', responsableParam)
+      if (qParam) params.append('q', qParam)
       const r = await api.get(`/gestor/solicitudes?${params}`)
       setSolicitudes(r.data.content ?? [])
-      setTotalPaginas(r.data.totalPages ?? 0)
       setTotalElementos(r.data.totalElements ?? 0)
-    } catch { setError('Error al cargar solicitudes.') }
-    finally { setCargando(false) }
-  }, [])
+    } catch { if (!silencioso) setError('No se pudieron cargar las solicitudes.') }
+    finally { if (!silencioso) setCargando(false) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [estadoParam, tiempoParam, clienteParam, estudioParam, responsableParam, qParam])
 
+  const cargarTiempos = useCallback(() => {
+    bandejaService.tiempos({ idCliente: clienteParam || undefined, idProceso: estudioParam || undefined, idResponsable: responsableParam || undefined })
+      .then(t => setTiempos(t.conteo)).catch(() => setTiempos(null))
+  }, [clienteParam, estudioParam, responsableParam])
+
+  useEffect(() => { bandejaService.opcionesFiltro().then(setOpciones).catch(() => {}) }, [])
+  useEffect(() => { setPagina(0); cargar(0) }, [cargar])
+  useEffect(() => { cargarTiempos() }, [cargarTiempos])
+
+  // El buscador escribe en la URL con una pausa: busca en TODAS las solicitudes del gestor, no solo en la página visible.
   useEffect(() => {
-    setPagina(0)
-    cargar(estadoParam, 0)
-  }, [estadoParam, cargar])
+    if (busqueda.trim() === qParam) return undefined
+    const t = setTimeout(() => actualizar({ q: busqueda.trim() }), 350)
+    return () => clearTimeout(t)
+  }, [busqueda, qParam, actualizar])
 
+  // Tiempo real: la lista y los conteos se actualizan solos (nuevas solicitudes, cambios de estado).
+  useCambios(() => { cargar(pagina, true); cargarTiempos() })
+
+  // PC-01: mientras algún PDF del estudio se está armando, la lista se refresca sola (no hay aviso en tiempo real de ese archivo).
+  const hayPdfGenerando = solicitudes.some(s => s.estudioPdfEstado === 'GENERANDO')
+  useEffect(() => {
+    if (!hayPdfGenerando) return undefined
+    return iniciarIntervaloVisible(() => cargar(pagina, true), 8000)
+  }, [hayPdfGenerando, cargar, pagina])
+
+  const reintentarPdf = async (s) => {
+    setReintentandoPdf(s.idServicio)
+    try {
+      const r = await api.post(`/requests/${s.idServicio}/estudio-pdf/reintentar`)
+      setToast({ mensaje: `Generando de nuevo el PDF del estudio #${s.idServicio} · v${r.data.version}…`, tipo: 'exito' })
+      cargar(pagina, true)
+    } catch (err) {
+      setToast({ mensaje: `${err.response?.data?.mensaje ?? 'No se pudo reintentar el PDF.'} Intenta de nuevo en un momento.`, tipo: 'error' })
+    } finally { setReintentandoPdf(null) }
+  }
+
+  // Entradas desde el tablero: ?id= abre «Ver»; ?expandir= abre los subprocesos; ?emitir= y ?enlace= abren sus ventanas (una sola vez).
   useEffect(() => {
     const idParam = searchParams.get('id')
-    if (!idParam) return
-    setDetalle({ idServicio: Number(idParam) })
+    const expandir = searchParams.get('expandir')
+    const emitir = searchParams.get('emitir')
+    const enlace = searchParams.get('enlace')
+    if (!idParam && !expandir && !emitir && !enlace) return
+    if (idParam) setDetalle({ idServicio: Number(idParam) })
+    const abrir = async (id, fn) => {
+      try {
+        const r = await api.get('/gestor/solicitudes', { params: { q: `#${id}`, size: 5 } })
+        const s = (r.data.content ?? []).find(x => x.idServicio === Number(id))
+        if (s) fn(s)
+        else setToast({ mensaje: `No se encontró la solicitud #${id}.`, tipo: 'error' })
+      } catch { setToast({ mensaje: 'No se pudo abrir la solicitud.', tipo: 'error' }) }
+    }
+    if (emitir) abrir(emitir, setEmitiendo)
+    if (enlace) abrir(enlace, setEnviandoEnlace)
+    // Una sola escritura a la URL: ?expandir= (entrada desde el tablero) pasa a ?abierto= y los demás avisos de entrada se borran.
     setSearchParams(prev => {
-      const next = new URLSearchParams(prev)
-      next.delete('id')
-      return next
+      const n = new URLSearchParams(prev)
+      if (expandir) {
+        const ya = (n.get('abierto') ?? '').split(',').filter(Boolean)
+        if (!ya.includes(String(Number(expandir)))) ya.push(String(Number(expandir)))
+        n.set('abierto', ya.join(','))
+      }
+      ;['id', 'expandir', 'emitir', 'enlace'].forEach(k => n.delete(k))
+      return n
     }, { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const cambiarTab = (estado) => {
-    const params = new URLSearchParams()
-    if (estado !== 'TODOS') params.set('estado', estado)
-    setSearchParams(params)
+  // Trae los subprocesos de poligrafía/visita del servicio (Pendientes o ya Programados — a estos
+  // últimos también se les puede cambiar quién los coordina) y abre el selector de programador
+  // para encargárselos/reasignárselos todos de una vez.
+  const abrirAsignarProgramador = async (idServicio) => {
+    setCargandoPendientesId(idServicio)
+    try {
+      const r = await asignacionService.listar({ idServicio, size: 50 })
+      const elegibles = (r.content ?? []).filter(sp =>
+        sp.rolResponsable !== 'ANALISTA_INTERNO' && (sp.estado === 'PENDIENTE' || sp.estado === 'PROGRAMANDO' || sp.estado === 'EN_EJECUCION'))
+      if (elegibles.length === 0) {
+        setToast({ mensaje: 'No hay subprocesos de poligrafía/visita a los que asignarles programador en este servicio.', tipo: 'error' })
+        return
+      }
+      setAsignandoProgramadorPara(elegibles)
+    } catch (err) {
+      setToast({ mensaje: err.response?.data?.mensaje ?? 'No se pudieron cargar los subprocesos.', tipo: 'error' })
+    } finally {
+      setCargandoPendientesId(null)
+    }
   }
 
-  const solicitudesFiltradas = busqueda.trim()
-    ? solicitudes.filter(s =>
-        `${s.nombresEvaluado} ${s.apellidosEvaluado}`.toLowerCase().includes(busqueda.toLowerCase()) ||
-        s.cedulaEvaluado?.includes(busqueda) ||
-        s.cargo?.toLowerCase().includes(busqueda.toLowerCase())
-      )
-    : solicitudes
+  const avisarProgramador = async (idServicio) => {
+    setAvisandoId(idServicio)
+    try {
+      const r = await bandejaService.avisarProgramador(idServicio)
+      setToast({ mensaje: `Aviso enviado al programador · ${r.citas} ${r.citas === 1 ? 'cita' : 'citas'}. Queda registrado.`, tipo: 'exito' })
+    } catch (err) {
+      setToast({ mensaje: `${err.response?.data?.mensaje ?? 'No se pudo avisar al programador.'} Intenta de nuevo con «Avisar al programador».`, tipo: 'error' })
+    } finally { setAvisandoId(null) }
+  }
+
+  /** El botón de «Próxima acción» de la fila. */
+  const ejecutarAccion = (s) => {
+    switch (s.proximaAccion) {
+      case 'EMITIR_PASTA': setEmitiendo(s); break
+      case 'ENVIAR_ENLACE': case 'REENVIAR_ENLACE': setEnviandoEnlace(s); break
+      case 'AVISAR_PROGRAMADOR': avisarProgramador(s.idServicio); break
+      case 'VER_EXPEDIENTE': setDetalle(s); break
+      default: cambiarAbiertos(prev => new Set(prev).add(s.idServicio))   // revisar, asignar, ver avance: se abren sus subprocesos
+    }
+  }
+
+  const hayFiltros = estadoParam !== 'TODOS' || tiempoParam || clienteParam || estudioParam || responsableParam || qParam
+  const limpiar = () => { setBusqueda(''); setSearchParams(new URLSearchParams()) }
+  const selectCls = `min-h-[44px] rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 ${FOCO}`
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-5">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Solicitudes</h2>
-          <p className="text-sm text-gray-500 mt-0.5">{totalElementos} solicitud{totalElementos !== 1 ? 'es' : ''} en total</p>
+          <h1 className="text-2xl font-bold text-gray-900">Solicitudes</h1>
+          <p className="mt-0.5 text-sm text-gray-700">
+            {nfN.format(totalElementos)} solicitud{totalElementos !== 1 ? 'es' : ''} {hayFiltros ? 'con estos filtros' : 'en total'} · un servicio cuenta en cada estado donde tenga un subproceso
+          </p>
         </div>
+        <label className="flex items-center gap-2 text-sm text-gray-700">
+          <span>Buscar</span>
+          <input type="search" value={busqueda} onChange={e => setBusqueda(e.target.value)} aria-label="Buscar por evaluado, cédula, cliente o número" placeholder="Evaluado, cédula, cliente o N.º"
+            className={`min-h-[44px] w-72 max-w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 ${FOCO}`} />
+        </label>
       </div>
 
       {error && (
-        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg flex items-center justify-between">
-          {error} <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 ml-4">×</button>
+        <div role="alert" className="mb-4 flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <span>{error} <button type="button" onClick={() => cargar(pagina)} className={`font-semibold underline ${FOCO}`}>Reintentar</button></span>
+          <button type="button" aria-label="Cerrar aviso" onClick={() => setError(null)} className={`ml-4 text-red-500 hover:text-red-700 ${FOCO}`}>×</button>
         </div>
       )}
 
-      {/* ── Tabs de estado ── */}
-      <div className="flex gap-1 mb-4 overflow-x-auto border-b border-gray-200 pb-0">
-        {ESTADOS.map(e => (
-          <button key={e}
-            onClick={() => cambiarTab(e)}
-            className={`px-3 py-2.5 text-xs font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
-              estadoParam === e
-                ? 'border-primary-600 text-primary-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}>
-            {e === 'TODOS' ? 'Todos' : e.replace('_', ' ')}
-          </button>
-        ))}
-      </div>
+      <SemaforoEstados seleccionado={estadoParam === 'TODOS' ? '' : estadoParam.includes(',') ? '' : estadoParam} onSeleccionar={(e) => actualizar({ estado: e })}
+        filtros={{ grupoTiempo: tiempoParam || undefined, ...filtrosAlcance }} titulo="Estado de las solicitudes" />
 
-      {/* ── Buscador ── */}
-      <div className="mb-4">
-        <input type="search" value={busqueda} onChange={e => setBusqueda(e.target.value)}
-          placeholder="Buscar por nombre, cédula o cargo…"
-          className="w-full max-w-sm border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
-      </div>
+      {/* ── Filtros ── */}
+      <section aria-label="Filtros" className="mb-4 space-y-3 rounded-2xl border border-gray-200 bg-white p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="w-16 text-sm text-gray-700">Tiempo</span>
+          {GRUPOS_TIEMPO.map(([k, nombre]) => (
+            <button key={k} type="button" aria-pressed={tiempoParam === k} onClick={() => actualizar({ tiempo: tiempoParam === k ? '' : k })}
+              className={`min-h-[44px] rounded-full border px-4 text-sm ${FOCO} ${tiempoParam === k ? 'border-slate-900 bg-slate-900 font-semibold text-white' : 'border-gray-300 bg-white text-gray-900 hover:bg-gray-50'}`}>
+              {nombre} <span className="tabular-nums">{tiempos ? nfN.format(tiempos[k] ?? 0) : '…'}</span>
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="w-16 text-sm text-gray-700">Filtrar</span>
+          <label className="flex items-center gap-2 text-sm text-gray-700">Cliente
+            <select value={clienteParam} onChange={e => actualizar({ cliente: e.target.value })} className={selectCls}>
+              <option value="">Todos</option>{opciones.clientes.map(o => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+            </select></label>
+          <label className="flex items-center gap-2 text-sm text-gray-700">Estudio
+            <select value={estudioParam} onChange={e => actualizar({ estudio: e.target.value })} className={selectCls}>
+              <option value="">Todos</option>{opciones.estudios.map(o => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+            </select></label>
+          <label className="flex items-center gap-2 text-sm text-gray-700">Responsable
+            <select value={responsableParam} onChange={e => actualizar({ responsable: e.target.value })} className={selectCls}>
+              <option value="">Todos</option>{opciones.responsables.map(o => <option key={o.id} value={o.id}>{o.nombre} · {o.detalle}</option>)}
+            </select></label>
+          {hayFiltros && <button type="button" onClick={limpiar} className={`min-h-[44px] rounded-lg px-3 text-sm font-semibold text-primary-700 underline underline-offset-2 ${FOCO}`}>Quitar filtros</button>}
+        </div>
+      </section>
 
       {/* ── Tabla ── */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-900/5">
         {cargando ? (
-          <div className="flex justify-center py-16">
-            <div className="animate-spin rounded-full h-8 w-8 border-4 border-primary-600 border-t-transparent" />
+          <div className="flex justify-center py-16" role="status" aria-label="Cargando solicitudes">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-600 border-t-transparent" />
           </div>
-        ) : solicitudesFiltradas.length === 0 ? (
-          <div className="text-center py-16 text-gray-400 text-sm">No hay solicitudes para este filtro.</div>
+        ) : solicitudes.length === 0 ? (
+          <div className="py-16 text-center text-sm text-gray-700">
+            {qParam ? `No hay solicitudes que coincidan con «${qParam}».` : 'No hay solicitudes con estos filtros.'}
+            {hayFiltros && <> <button type="button" onClick={limpiar} className={`font-semibold text-primary-700 underline ${FOCO}`}>Quitar filtros</button></>}
+          </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-100">
-              <thead className="bg-gray-50">
+          /* PB-H-14: la tabla se desplaza DENTRO de su caja. `relative` importa: los textos `sr-only` de las filas son absolutos y, sin un ancestro
+              posicionado, se quedan en su lugar dentro de la tabla (más allá del borde derecho) y ensanchan la PÁGINA entera (1.106 px en una ventana de 804). */
+          <div className="relative overflow-x-auto">
+            <table className="table-stack min-w-full divide-y divide-gray-100">
+              <thead className="bg-gray-50/80">
                 <tr>
-                  {['#', 'Evaluado', 'Cargo', 'Proceso', 'Estado', 'Solicitud', 'Entrega', 'Subprocesos', 'Acciones'].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                  {['N.º', 'Evaluado · cargo', 'Cliente', 'Estudio', 'Avance', 'Riesgo', 'Tiempo', 'Próxima acción'].map(h => (
+                    <th key={h} scope="col" className="whitespace-nowrap px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-700">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {solicitudesFiltradas.map(s => (
+                {solicitudes.map(s => (
                   <Fragment key={s.idServicio}>
-                  <tr className="hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-3 text-xs text-gray-400">
-                      <button onClick={() => toggleExpandir(s.idServicio)}
-                        className="flex items-center gap-1.5 hover:text-primary-600 transition-colors">
-                        <svg className={`h-3.5 w-3.5 flex-shrink-0 transition-transform ${expandidos.has(s.idServicio) ? 'rotate-90' : ''}`}
-                          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <tr className="align-top transition-colors hover:bg-gray-50/70">
+                    <td className="whitespace-nowrap py-3 pl-3 pr-1 text-sm font-semibold text-gray-700">
+                      <button type="button" onClick={() => toggleExpandir(s.idServicio)} aria-expanded={abiertos.has(s.idServicio)} aria-label={`Subprocesos del estudio ${s.idServicio}`}
+                        className={`flex min-h-[44px] items-center gap-1.5 rounded hover:text-primary-700 ${FOCO}`}>
+                        <svg aria-hidden="true" className={`h-3.5 w-3.5 flex-shrink-0 transition-transform ${abiertos.has(s.idServicio) ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                         </svg>
                         #{s.idServicio}
                       </button>
                     </td>
-                    <td className="px-4 py-3">
-                      <p className="text-sm font-medium text-gray-900 whitespace-nowrap">{s.nombresEvaluado} {s.apellidosEvaluado}</p>
-                      <p className="text-xs text-gray-400">{s.cedulaEvaluado}</p>
+                    <td className="px-3 py-3">
+                      <p className="text-sm font-semibold text-gray-900">{s.nombresEvaluado} {s.apellidosEvaluado}</p>
+                      <p className="text-xs text-gray-700">{s.cargo ?? '—'}</p>
+                      <p className="text-xs text-gray-700">{s.cedulaEvaluado}</p>
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{s.cargo ?? '—'}</td>
-                    <td className="px-4 py-3">
-                      <span className="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded whitespace-nowrap">{s.proceso}</span>
+                    <td className="px-3 py-3 text-sm text-gray-900">{s.cliente ?? '—'}</td>
+                    <td className="px-3 py-3 text-sm text-gray-900">{s.proceso}</td>
+                    <td className="px-3 py-3">
+                      <ul className="flex flex-wrap gap-1" aria-label="Subprocesos por estado">
+                        {(s.resumen ?? []).map(r => (
+                          <li key={r.codigo} className={estadoParam.split(',').includes(r.codigo) ? 'rounded-full ring-2 ring-offset-1 ring-gray-900' : ''}>
+                            <EtiquetaEstado estado={r.codigo} pequena /><span className="sr-only">{r.cantidad}</span><span aria-hidden="true" className="ml-0.5 text-[11px] font-semibold text-gray-700">{r.cantidad}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      {s.vigentes > 0 && (
+                        <p className="mt-1 text-xs text-gray-700">{s.publicados} de {s.vigentes} publicados · pasta: {PASTA_TEXTO[s.pastaEstado] ?? 'pendiente'}
+                          {s.pastaEstado !== 'PENDIENTE' && s.estudioPdfEstado === 'LISTO' && ` · PDF v${s.estudioPdfVersion} listo`}
+                          {s.pastaEstado !== 'PENDIENTE' && s.estudioPdfEstado === 'GENERANDO' && ` · generando el PDF v${s.estudioPdfVersion}…`}</p>
+                      )}
+                      {s.pastaEstado !== 'PENDIENTE' && s.estudioPdfEstado === 'ERROR' && (
+                        <p role="alert" className="mt-1 text-xs font-semibold text-red-800">No se pudo generar el PDF del estudio ·{' '}
+                          <button type="button" onClick={() => reintentarPdf(s)} disabled={reintentandoPdf === s.idServicio}
+                            className={`min-h-[44px] rounded px-1 font-semibold underline disabled:opacity-60 ${FOCO}`}>
+                            {reintentandoPdf === s.idServicio ? 'Reintentando…' : 'Reintentar'}<span className="sr-only"> el PDF del estudio {s.idServicio}</span></button></p>
+                      )}
+                      {s.candidatoCompletado === false && s.estado !== 'CANCELADO' && (
+                        <p className="text-xs text-gray-700">{s.enlaceEnviado ? 'Enlace enviado, sin terminar' : 'Enlace sin enviar'}</p>
+                      )}
                     </td>
-                    <td className="px-4 py-3">
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap ${BADGE[s.estado] ?? 'bg-gray-100 text-gray-600'}`}>
-                        {s.estado}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{formatFecha(s.fechaSolicitud)}</td>
-                    <td className="px-4 py-3 text-xs whitespace-nowrap"><EtiquetaEntrega fecha={s.fechaEntregaEstimada} /></td>
-                    <td className="px-4 py-3"><BolitasSubprocesos subprocesos={s.subprocesos} /></td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => setDetalle(s)}
-                          className="text-xs font-medium px-3 py-1 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors whitespace-nowrap">
-                          Ver
+                    <td className="px-3 py-3"><ChipRiesgo nivel={s.riesgoNivel} puntaje={s.riesgoPuntaje} critico={s.riesgoCritico} /></td>
+                    <td className="px-3 py-3 text-sm"><EtiquetaEntrega tiempo={s.tiempo} /></td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-1.5">
+                        <button type="button" onClick={() => ejecutarAccion(s)} disabled={avisandoId === s.idServicio}
+                          className={`min-h-[44px] min-w-[8.5rem] rounded-lg px-3 text-sm font-semibold disabled:opacity-60 ${FOCO} ${ACCION_RELLENA.has(s.proximaAccion)
+                            ? 'bg-primary-600 text-white hover:bg-primary-700' : 'border border-primary-600 bg-white text-primary-700 hover:bg-primary-50'}`}>
+                          {avisandoId === s.idServicio ? 'Avisando…' : s.proximaAccionEtiqueta}<span className="sr-only"> del estudio {s.idServicio}</span>
                         </button>
-                        {(TRANSICIONES_GESTOR[s.estado]?.length ?? 0) > 0 && (
-                          <button onClick={() => setCambiandoEstado(s)}
-                            className={`text-xs font-medium px-3 py-1 rounded-full border transition-colors whitespace-nowrap ${
-                              s.estado === 'CANCELADO'
-                                ? 'border-amber-200 text-amber-600 hover:bg-amber-50'
-                                : 'border-primary-200 text-primary-600 hover:bg-primary-50'
-                            }`}>
-                            {s.estado === 'CANCELADO' ? 'Solicitar reversión' : 'Cambiar estado'}
-                          </button>
-                        )}
+                        <MenuAcciones etiqueta={`Más acciones del estudio ${s.idServicio}`} opciones={[
+                        { label: 'Ver', icono: <IconoOjo />, onClick: () => setDetalle(s) },
+                        (() => {
+                          const { hayAlgunos, todosAsignados } = subprocesosProgramadorDe(s.subprocesos)
+                          if (!hayAlgunos) return null
+                          const cargando = cargandoPendientesId === s.idServicio
+                          // candidatoCompletado === false: el candidato todavía no diligenció su
+                          // link — el backend igual lo bloquearía (409), pero se deshabilita acá
+                          // para que el gestor no intente y reciba el motivo de una vez.
+                          const bloqueadoPorCandidato = s.candidatoCompletado === false
+                          return {
+                            label: cargando ? 'Cargando...' : (todosAsignados ? 'Programador ya asignado — reasignar' : 'Asignar programador'),
+                            icono: todosAsignados ? <IconoAsignado /> : <IconoEnviar />,
+                            destacado: todosAsignados ? 'text-green-600' : 'text-cyan-600',
+                            disabled: cargando || bloqueadoPorCandidato,
+                            title: bloqueadoPorCandidato ? 'El candidato todavía no ha diligenciado su información (link pendiente).' : undefined,
+                            onClick: () => abrirAsignarProgramador(s.idServicio),
+                          }
+                        })(),
+                        (TRANSICIONES_GESTOR[s.estado]?.length ?? 0) > 0 && {
+                          label: s.estado === 'CANCELADO' ? 'Solicitar reversión' : s.estado === 'FINALIZADO' ? 'Publicar estudio' : 'Cancelar solicitud',
+                          icono: <IconoCambioEstado />,
+                          destacado: s.estado === 'CANCELADO' ? 'text-amber-600' : 'text-primary-600',
+                          onClick: () => (s.estado === 'FINALIZADO' ? setEmitiendo(s) : setCambiandoEstado(s)),
+                        },
+                        // PB-04: mientras el candidato no haya enviado su información, el gestor puede enviar o reenviar el enlace
+                        (s.candidatoCompletado === false || s.candidatoCompletado == null) && !['CANCELADO', 'FINALIZADO', 'PUBLICADO'].includes(s.estado) && {
+                          label: s.enlaceEnviado ? 'Reenviar enlace' : 'Enviar enlace',
+                          icono: <IconoEnviar />,
+                          destacado: 'text-primary-600',
+                          onClick: () => setEnviandoEnlace(s),
+                        },
+                        s.estado === 'PUBLICADO' && {
+                          label: 'Reemitir estudio (PDF)',
+                          icono: <IconoCambioEstado />,
+                          destacado: 'text-primary-600',
+                          onClick: () => setEmitiendo(s),
+                        },
+                        ['PENDIENTE', 'PROGRAMANDO', 'EN_EJECUCION', 'FINALIZADO', 'REPROGRAMADO'].includes(s.estado) && {
+                          label: 'El candidato desistió',
+                          icono: <IconoCambioEstado />,
+                          destacado: 'text-amber-600',
+                          onClick: () => setCambiandoEstado({ ...s, modo: 'desistimiento' }),
+                        },
+                      ]} />
                       </div>
                     </td>
                   </tr>
-                  {expandidos.has(s.idServicio) && (
-                    <FilaSubprocesos idServicio={s.idServicio} colSpan={9}
+                  {abiertos.has(s.idServicio) && (
+                    <FilaSubprocesos idServicio={s.idServicio} colSpan={8} candidatoCompletado={s.candidatoCompletado}
+                      estadoServicio={s.estado} onEmitir={() => setEmitiendo(s)}
                       onToast={(mensaje, tipo = 'exito') => setToast({ mensaje, tipo: tipo === 'error' ? 'error' : 'exito' })} />
                   )}
                   </Fragment>
@@ -1394,30 +1824,35 @@ export default function Solicitudes() {
             </table>
           </div>
         )}
+        {!cargando && solicitudes.length > 0 && (
+          <Paginacion
+            pagina={pagina + 1}
+            total={totalElementos}
+            porPagina={POR_PAGINA}
+            onChange={(p) => { setPagina(p - 1); cargar(p - 1) }}
+          />
+        )}
       </div>
 
-      {/* ── Paginación ── */}
-      {totalPaginas > 1 && (
-        <div className="flex items-center justify-center gap-2 mt-4">
-          <button onClick={() => { setPagina(p => p - 1); cargar(estadoParam, pagina - 1) }}
-            disabled={pagina === 0}
-            className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
-            Anterior
-          </button>
-          <span className="text-xs text-gray-500">{pagina + 1} / {totalPaginas}</span>
-          <button onClick={() => { setPagina(p => p + 1); cargar(estadoParam, pagina + 1) }}
-            disabled={pagina >= totalPaginas - 1}
-            className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
-            Siguiente
-          </button>
-        </div>
+      {enviandoEnlace && (
+        <PanelEnviarEnlace solicitud={enviandoEnlace} onClose={() => setEnviandoEnlace(null)}
+          onHecho={() => cargar(pagina)}
+          onToast={(mensaje) => setToast({ mensaje, tipo: 'exito' })} />
+      )}
+
+      {emitiendo && (
+        <PanelEmitirEstudio solicitud={{ ...emitiendo, nombres: emitiendo.nombresEvaluado, apellidos: emitiendo.apellidosEvaluado }}
+          onClose={() => setEmitiendo(null)}
+          onHecho={() => { setEmitiendo(null); cargar(pagina) }}
+          onToast={(mensaje) => setToast({ mensaje, tipo: 'exito' })} />
       )}
 
       {cambiandoEstado && (
         <ModalCambioEstado
           solicitud={cambiandoEstado}
+          modo={cambiandoEstado.modo}
           onClose={() => setCambiandoEstado(null)}
-          onGuardado={msg => { setToast({ mensaje: msg, tipo: 'exito' }); cargar(estadoParam, pagina) }}
+          onGuardado={msg => { setToast({ mensaje: msg, tipo: 'exito' }); cargar(pagina) }}
         />
       )}
 
@@ -1425,6 +1860,15 @@ export default function Solicitudes() {
         <ModalDetalle
           solicitud={detalle}
           onClose={() => setDetalle(null)}
+          onToast={(mensaje, tipo = 'exito') => setToast({ mensaje, tipo: tipo === 'error' ? 'error' : 'exito' })}
+        />
+      )}
+
+      {asignandoProgramadorPara && (
+        <ModalAsignarProgramador
+          subprocesos={asignandoProgramadorPara}
+          onClose={() => setAsignandoProgramadorPara(null)}
+          onGuardado={() => { setAsignandoProgramadorPara(null); cargar(pagina) }}
           onToast={(mensaje, tipo = 'exito') => setToast({ mensaje, tipo: tipo === 'error' ? 'error' : 'exito' })}
         />
       )}

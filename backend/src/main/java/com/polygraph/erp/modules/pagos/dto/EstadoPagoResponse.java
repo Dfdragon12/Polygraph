@@ -10,6 +10,13 @@ public record EstadoPagoResponse(
         String metodoPago,
         String descripcion,
         LocalDateTime fechaCreacion,
-        LocalDateTime fechaActualizacion
+        LocalDateTime fechaActualizacion,
+        String idTransaccionPasarela,
+        String numeroAprobacion,
+        String nombrePagador,
+        String telefonoPagador,
+        String emailPagador,
+        Long facturaOConceptoId,
+        String tipoConcepto
 ) {
 }

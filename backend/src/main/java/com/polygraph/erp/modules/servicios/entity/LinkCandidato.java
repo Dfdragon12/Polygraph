@@ -7,6 +7,7 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 @Entity
+@jakarta.persistence.EntityListeners(com.polygraph.erp.modules.tiemporeal.CambiosEntityListener.class)
 @Table(name = "links_candidato")
 @Data
 @Builder
@@ -42,6 +43,17 @@ public class LinkCandidato {
     @Column(name = "ip_origen", length = 45)
     private String ipOrigen;
 
+    /** PB-04: la primera vez que Polygraph lo envió al candidato, y el recordatorio automático (uno por periodo de 24 h). */
+    @Column(name = "enviado_en")
+    private LocalDateTime enviadoEn;
+
+    @Column(name = "ultimo_recordatorio_en")
+    private LocalDateTime ultimoRecordatorioEn;
+
+    @Builder.Default
+    @Column(name = "recordatorios_enviados", nullable = false)
+    private Integer recordatoriosEnviados = 0;
+
     @Column(name = "fecha_primer_ingreso")
     private LocalDateTime fechaPrimerIngreso;
 
@@ -52,4 +64,11 @@ public class LinkCandidato {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "generado_por_id")
     private Usuario generadoPor;
+
+    /** El gestor cerró este link a propósito. Distinto de "usado" (= el candidato ya envió el
+     *  formulario), que desde V197 NO cierra el acceso: el candidato sigue editando, viendo sus
+     *  citas y documentos hasta que el servicio se cierre. Ver EvaluadoService.obtenerLinkValido. */
+    @Column(name = "revocado", nullable = false)
+    @Builder.Default
+    private Boolean revocado = false;
 }

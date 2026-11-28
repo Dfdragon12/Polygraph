@@ -1,9 +1,11 @@
 package com.polygraph.erp.modules.catalogo.entity;
 
+import com.polygraph.erp.shared.enums.NivelCiudad;
 import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
+@jakarta.persistence.EntityListeners(com.polygraph.erp.modules.tiemporeal.CambiosEntityListener.class)
 @Table(name = "ciudades")
 @Data
 @Builder
@@ -27,4 +29,16 @@ public class Ciudad {
 
     @Column(name = "codigo_dane_depto", length = 2)
     private String codigoDaneDepto;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "nivel_ciudad", nullable = false, length = 30)
+    private NivelCiudad nivelCiudad;
+
+    @Column(name = "pendiente_confirmacion", nullable = false)
+    private Boolean pendienteConfirmacion;
+
+    /** TP-08: ciudad sede (hoy Bogotá y Medellín): sin recargo por ciudad en el paquete por sede. */
+    @Builder.Default
+    @Column(name = "es_sede", nullable = false)
+    private Boolean esSede = false;
 }

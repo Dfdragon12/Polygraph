@@ -2,6 +2,7 @@ package com.polygraph.erp.modules.usuarios.dto;
 
 import com.polygraph.erp.modules.auth.entity.Usuario;
 import com.polygraph.erp.modules.catalogo.entity.TipoProgreso;
+import com.polygraph.erp.modules.usuarios.entity.EmpleadoCiudad;
 import com.polygraph.erp.modules.usuarios.entity.UsuariosInternos;
 import com.polygraph.erp.shared.enums.Rol;
 
@@ -21,9 +22,8 @@ public record UsuarioInternoResponse(
         String documento,
         Integer idCiudadResidencia,
         String nombreCiudad,
-        String salaEncargada,
         String novedadesSala,
-        String zonasVisita,
+        List<CiudadAsignadaResponse> ciudadesAsignadas,
         Boolean activo,
         LocalDate fechaIngreso,
         LocalDateTime fechaCreacion,
@@ -37,6 +37,16 @@ public record UsuarioInternoResponse(
     public record SubprocesoAsignadoResponse(Integer idTipoProgreso, String nombreProgreso) {
         public static SubprocesoAsignadoResponse from(TipoProgreso tp) {
             return new SubprocesoAsignadoResponse(tp.getIdTipoProgreso(), tp.getNombreProgreso());
+        }
+    }
+
+    public record CiudadAsignadaResponse(Integer idCiudad, String nombreCiudad, String departamento, Integer numeroSala) {
+        public static CiudadAsignadaResponse from(EmpleadoCiudad ec) {
+            return new CiudadAsignadaResponse(
+                    ec.getCiudad().getIdCiudad(),
+                    ec.getCiudad().getNombreCiudad(),
+                    ec.getCiudad().getDepartamento(),
+                    ec.getNumeroSala());
         }
     }
 
@@ -57,9 +67,8 @@ public record UsuarioInternoResponse(
                 emp != null ? emp.getDocumento() : null,
                 emp != null ? emp.getIdCiudadResidencia() : null,
                 nombreCiudad,
-                emp != null ? emp.getSalaEncargada() : null,
                 emp != null ? emp.getNovedadesSala() : null,
-                emp != null ? emp.getZonasVisita() : null,
+                emp != null ? emp.getCiudadesAsignadas().stream().map(CiudadAsignadaResponse::from).toList() : List.of(),
                 u.getActivo(),
                 emp != null ? emp.getFechaIngreso() : null,
                 u.getFechaCreacion(),

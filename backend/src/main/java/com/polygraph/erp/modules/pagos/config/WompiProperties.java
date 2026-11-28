@@ -22,4 +22,5 @@ public class WompiProperties {
     private String eventsSecret;
     private String baseUrl;
     private String redirectUrl;
+    private String checkoutUrl;
 }

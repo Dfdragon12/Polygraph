@@ -30,10 +30,21 @@ app:
     secret: dev-secret-key-must-be-at-least-256-bits-long-for-hs256-algorithm
     expiration-ms: 86400000
     refresh-expiration-ms: 604800000
+  # Ruta típica del instalador oficial de LibreOffice en Windows de 64 bits — si lo instalaste en
+  # otra carpeta, ajusta esto (o define la variable de entorno LIBREOFFICE_BINARIO, que tiene
+  # prioridad sobre este archivo).
+  libreoffice:
+    binario: 'C:\Program Files\LibreOffice\program\soffice.exe'
   cors:
-    allowed-origins: http://localhost:5173
+    allowed-origins: http://localhost:5173,https://rhyme-pastrami-common.ngrok-free.dev
   frontend:
     url: http://localhost:5173
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
 
 logging:
   level:

@@ -1,10 +1,12 @@
 package com.polygraph.erp.shared.exceptions;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.DisabledException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.LockedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -61,10 +63,32 @@ public class GlobalExceptionHandler {
                 .body(construirRespuesta("Cuenta bloqueada. Contacta al administrador.", HttpStatus.FORBIDDEN));
     }
 
+    // Respaldo genérico ante CUALQUIER violación de integridad en BD (unique, not-null, check,
+    // foreign key...) — cubre, por ejemplo, el caso raro de dos solicitudes simultáneas que pasan
+    // la validación de "email disponible" antes de que cualquiera de las dos inserte. El mensaje
+    // al usuario se queda neutral a propósito: este handler dispara para CUALQUIER tabla del
+    // sistema, no solo usuarios/email, así que un texto fijo tipo "el correo ya está en uso"
+    // confunde en cualquier otro contexto (ej. admin/catálogo → Plantilla). La causa real sí se
+    // deja completa en el log (getMostSpecificCause trae el mensaje nativo del driver de
+    // Postgres — qué constraint/columna exactamente) para poder diagnosticar sin adivinar.
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, Object>> manejarViolacionIntegridad(DataIntegrityViolationException ex) {
+        log.warn("Violación de integridad de datos: {}", ex.getMostSpecificCause().getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(construirRespuesta("Ya existe un registro con esos datos, o falta completar un campo obligatorio.", HttpStatus.CONFLICT));
+    }
+
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<Map<String, Object>> manejarArchivoDemasiadoGrande(MaxUploadSizeExceededException ex) {
         return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
                 .body(construirRespuesta("El archivo supera el tamaño máximo permitido (10MB)", HttpStatus.PAYLOAD_TOO_LARGE));
+    }
+
+    /** PC-01 (PB-H-39): sin permiso es 403, no «Error interno» (el manejador general se tragaba el AccessDeniedException de @PreAuthorize). */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<Map<String, Object>> manejarSinPermiso(AccessDeniedException ex) {
+        log.warn("Acceso denegado: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(construirRespuesta("No tienes permiso para esta acción.", HttpStatus.FORBIDDEN));
     }
 
     @ExceptionHandler(Exception.class)

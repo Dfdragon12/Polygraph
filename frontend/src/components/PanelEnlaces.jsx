@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useId, useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import enlacesService from '../services/enlacesService'
 import { alCambiarTexto } from '../utils/texto'
@@ -25,6 +25,7 @@ const FORM_VACIO = {
 }
 
 function FormEnlace({ enlace, onGuardado, onCancelar }) {
+  const idCampos = useId()
   const [form, setForm] = useState(enlace
     ? {
         categoria:       enlace.categoria,
@@ -73,8 +74,8 @@ function FormEnlace({ enlace, onGuardado, onCancelar }) {
             <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded-lg">{error}</div>
           )}
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Categoría <span className="text-red-500">*</span></label>
-            <select value={form.categoria} onChange={e => set('categoria', e.target.value)} required
+            <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">Categoría <span className="text-red-500">*</span></label>
+            <select id={`${idCampos}-1`} value={form.categoria} onChange={e => set('categoria', e.target.value)} required
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
               {ORDEN_CATS.map(cat => (
                 <option key={cat} value={cat}>{CATEGORIAS[cat].icono} {CATEGORIAS[cat].label}</option>
@@ -82,45 +83,45 @@ function FormEnlace({ enlace, onGuardado, onCancelar }) {
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Nombre de la entidad <span className="text-red-500">*</span></label>
-            <input value={form.nombreEntidad} required maxLength={200}
+            <label htmlFor={`${idCampos}-2`} className="block text-xs font-medium text-gray-600 mb-1">Nombre de la entidad <span className="text-red-500">*</span></label>
+            <input id={`${idCampos}-2`} value={form.nombreEntidad} required maxLength={200}
               onChange={e => set('nombreEntidad', alCambiarTexto(e.target.value))}
               placeholder="Ej: Universidad Nacional de Colombia"
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">URL</label>
-            <input type="url" value={form.url} maxLength={500}
+            <label htmlFor={`${idCampos}-3`} className="block text-xs font-medium text-gray-600 mb-1">URL</label>
+            <input id={`${idCampos}-3`} type="url" value={form.url} maxLength={500}
               onChange={e => set('url', e.target.value)}
               placeholder="https://..."
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Correo</label>
-              <input type="email" value={form.correoContacto} maxLength={150}
+              <label htmlFor={`${idCampos}-4`} className="block text-xs font-medium text-gray-600 mb-1">Correo</label>
+              <input id={`${idCampos}-4`} type="email" value={form.correoContacto} maxLength={150}
                 onChange={e => set('correoContacto', e.target.value)}
                 placeholder="contacto@entidad.co"
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Teléfono</label>
-              <input value={form.telefonoContacto} maxLength={30}
+              <label htmlFor={`${idCampos}-5`} className="block text-xs font-medium text-gray-600 mb-1">Teléfono</label>
+              <input id={`${idCampos}-5`} value={form.telefonoContacto} maxLength={30}
                 onChange={e => set('telefonoContacto', e.target.value)}
                 placeholder="601 234 5678"
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
             </div>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Ciudad</label>
-            <input value={form.ciudad} maxLength={100}
+            <label htmlFor={`${idCampos}-6`} className="block text-xs font-medium text-gray-600 mb-1">Ciudad</label>
+            <input id={`${idCampos}-6`} value={form.ciudad} maxLength={100}
               onChange={e => set('ciudad', alCambiarTexto(e.target.value))}
               placeholder="Bogotá"
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Notas</label>
-            <textarea value={form.notas} rows={2}
+            <label htmlFor={`${idCampos}-7`} className="block text-xs font-medium text-gray-600 mb-1">Notas</label>
+            <textarea id={`${idCampos}-7`} value={form.notas} rows={2}
               onChange={e => set('notas', alCambiarTexto(e.target.value))}
               placeholder="Instrucciones de acceso, observaciones…"
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" />
@@ -320,7 +321,7 @@ export default function PanelEnlaces({ abierto, onCerrar }) {
               className="inline-flex items-center gap-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg transition-colors">
               <span className="text-sm leading-none">+</span> Agregar
             </button>
-            <button onClick={onCerrar}
+            <button onClick={onCerrar} aria-label="Cerrar panel"
               className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors">
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -335,7 +336,7 @@ export default function PanelEnlaces({ abierto, onCerrar }) {
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
-            <input
+            <input aria-label="Buscar en todas las categorías…"
               type="search"
               value={busqueda}
               onChange={e => setBusqueda(e.target.value)}

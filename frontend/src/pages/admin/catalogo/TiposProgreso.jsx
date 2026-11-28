@@ -1,5 +1,9 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useId, useState, useEffect, useMemo } from 'react'
 import api from '../../../services/api'
+import Paginacion from '../../../components/ui/Paginacion'
+import MenuAcciones from '../../../components/ui/MenuAcciones'
+
+const POR_PAGINA = 10
 
 const FORM_VACIO = { nombreProgreso: '', descripcion: '', orden: 0, rolResponsable: 'ANALISTA_INTERNO' }
 
@@ -47,29 +51,46 @@ function IconoOrden({ activo, dir }) {
   return <span className="ml-1 text-primary-500 text-xs">{dir === 'asc' ? '↑' : '↓'}</span>
 }
 
+/* ─── Iconos de acciones de tabla ─── */
+function IconoLapiz() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+    </svg>
+  )
+}
+function IconoPower() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5.636 5.636a9 9 0 1012.728 0M12 3v9" />
+    </svg>
+  )
+}
+
 function Formulario({ form, onChange, onSubmit, onCancel, guardando, error, esEdicion }) {
+  const idCampos = useId()
   return (
     <form onSubmit={onSubmit} className="px-6 py-5 space-y-4">
       {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{error}</div>}
 
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Nombre <span className="text-red-500">*</span></label>
-        <input name="nombreProgreso" value={form.nombreProgreso} onChange={onChange} required
+        <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">Nombre <span className="text-red-500">*</span></label>
+        <input id={`${idCampos}-1`} name="nombreProgreso" value={form.nombreProgreso} onChange={onChange} required
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
       </div>
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Descripción</label>
-        <textarea name="descripcion" value={form.descripcion} onChange={onChange} rows={3}
+        <label htmlFor={`${idCampos}-2`} className="block text-xs font-medium text-gray-600 mb-1">Descripción</label>
+        <textarea id={`${idCampos}-2`} name="descripcion" value={form.descripcion} onChange={onChange} rows={3}
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" />
       </div>
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Orden</label>
-        <input name="orden" type="number" min={0} value={form.orden} onChange={onChange}
+        <label htmlFor={`${idCampos}-3`} className="block text-xs font-medium text-gray-600 mb-1">Orden</label>
+        <input id={`${idCampos}-3`} name="orden" type="number" min={0} value={form.orden} onChange={onChange}
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
       </div>
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Rol responsable <span className="text-red-500">*</span></label>
-        <select name="rolResponsable" value={form.rolResponsable} onChange={onChange} required
+        <label htmlFor={`${idCampos}-4`} className="block text-xs font-medium text-gray-600 mb-1">Rol responsable <span className="text-red-500">*</span></label>
+        <select id={`${idCampos}-4`} name="rolResponsable" value={form.rolResponsable} onChange={onChange} required
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
           {ROLES_RESPONSABLE.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
         </select>
@@ -101,6 +122,7 @@ export default function TiposProgreso() {
   const [filtroEstado, setFiltroEstado] = useState('todos')
   const [ordenCol, setOrdenCol] = useState(null)
   const [ordenDir, setOrdenDir] = useState('asc')
+  const [pagina, setPagina] = useState(1)
 
   const cargar = async () => {
     setCargando(true)
@@ -186,6 +208,10 @@ export default function TiposProgreso() {
     return lista
   }, [tipos, filtroEstado, busqueda, ordenCol, ordenDir])
 
+  useEffect(() => { setPagina(1) }, [busqueda, filtroEstado])
+
+  const tiposPagina = tiposVisibles.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA)
+
   const cuentaActivos   = tipos.filter(t => t.activo).length
   const cuentaInactivos = tipos.filter(t => !t.activo).length
 
@@ -195,7 +221,7 @@ export default function TiposProgreso() {
     { key: 'descripcion',   label: 'Descripción',  sortable: false },
     { key: 'rolResponsable',label: 'Rol responsable', sortable: true },
     { key: 'activo',        label: 'Estado',       sortable: true  },
-    { key: '_acciones',     label: 'Acciones',     sortable: false },
+    { key: '_acciones',     label: '···',          sortable: false },
   ]
 
   return (
@@ -215,7 +241,7 @@ export default function TiposProgreso() {
 
       {/* Barra de filtros */}
       <div className="flex flex-wrap items-center gap-3 mb-3">
-        <input
+        <input aria-label="Buscar por nombre o descripción…"
           type="search"
           value={busqueda}
           onChange={e => setBusqueda(e.target.value)}
@@ -253,7 +279,7 @@ export default function TiposProgreso() {
         )}
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl ring-1 ring-gray-900/5 shadow-sm overflow-hidden">
         {cargando ? (
           <div className="flex items-center justify-center py-16">
             <div className="animate-spin rounded-full h-8 w-8 border-4 border-primary-600 border-t-transparent" />
@@ -264,15 +290,15 @@ export default function TiposProgreso() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-100">
-              <thead className="bg-gray-50">
+            <table className="table-stack min-w-full divide-y divide-gray-100">
+              <thead className="bg-gray-50/80">
                 <tr>
                   {columnas.map(col => (
                     <th
                       key={col.key}
                       onClick={col.sortable ? () => manejarOrden(col.key) : undefined}
-                      className={`px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider select-none ${
-                        col.sortable ? 'cursor-pointer hover:text-gray-700' : ''
+                      className={`px-4 py-3 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider select-none whitespace-nowrap ${
+                        col.sortable ? 'cursor-pointer hover:text-gray-600' : ''
                       }`}
                     >
                       {col.label}
@@ -282,32 +308,32 @@ export default function TiposProgreso() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {tiposVisibles.map(t => (
-                  <tr key={t.idTipoProgreso} className="hover:bg-gray-50 transition-colors">
+                {tiposPagina.map(t => (
+                  <tr key={t.idTipoProgreso} className="hover:bg-gray-50/70 transition-colors">
                     <td className="px-4 py-3 text-sm text-gray-500 text-center w-16">{t.orden ?? 0}</td>
                     <td className="px-4 py-3 text-sm text-gray-900 font-medium">{t.nombreProgreso}</td>
                     <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">{t.descripcion ?? '—'}</td>
                     <td className="px-4 py-3"><BadgeRol rol={t.rolResponsable} /></td>
                     <td className="px-4 py-3"><Badge activo={t.activo} /></td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => abrirEditar(t)}
-                          className="text-xs font-medium px-3 py-1 rounded-full border border-primary-200 text-primary-600 hover:bg-primary-50 transition-colors">
-                          Editar
-                        </button>
-                        <button onClick={() => cambiarEstado(t)}
-                          className={`text-xs font-medium px-3 py-1 rounded-full border transition-colors ${
-                            t.activo ? 'border-red-200 text-red-600 hover:bg-red-50' : 'border-green-200 text-green-700 hover:bg-green-50'
-                          }`}>
-                          {t.activo ? 'Desactivar' : 'Activar'}
-                        </button>
-                      </div>
+                    <td className="px-4 py-3 text-center">
+                      <MenuAcciones opciones={[
+                        { label: 'Editar', icono: <IconoLapiz />, onClick: () => abrirEditar(t) },
+                        {
+                          label: t.activo ? 'Desactivar' : 'Activar',
+                          icono: <IconoPower />,
+                          destacado: t.activo ? 'text-red-600' : 'text-green-700',
+                          onClick: () => cambiarEstado(t),
+                        },
+                      ]} />
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+        )}
+        {tiposVisibles.length > 0 && (
+          <Paginacion pagina={pagina} total={tiposVisibles.length} porPagina={POR_PAGINA} onChange={setPagina} />
         )}
       </div>
 

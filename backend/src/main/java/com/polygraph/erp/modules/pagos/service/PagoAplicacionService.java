@@ -1,9 +1,10 @@
 package com.polygraph.erp.modules.pagos.service;
 
-import com.polygraph.erp.modules.clientes.entity.ClientePospago;
 import com.polygraph.erp.modules.clientes.repository.ClientePospagoRepository;
+import com.polygraph.erp.modules.pagos.entity.PagoWompi;
 import com.polygraph.erp.modules.pagos.event.PagoAprobadoEvent;
-import com.polygraph.erp.shared.enums.EstadoMora;
+import com.polygraph.erp.modules.pagos.repository.PagoWompiRepository;
+import com.polygraph.erp.shared.enums.TipoConceptoPago;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
@@ -12,6 +13,8 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
+
+import java.util.UUID;
 
 /**
  * Efectos de dominio de un pago Wompi aprobado. Se ejecuta de forma asíncrona después de que
@@ -24,25 +27,29 @@ import org.springframework.transaction.event.TransactionalEventListener;
 public class PagoAplicacionService {
 
     private final ClientePospagoRepository clientePospagoRepository;
+    private final PagoWompiRepository pagoWompiRepository;
+    private final ClientePospagoService clientePospagoService;
+    private final MoraService moraService;
 
     @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void alPagoAprobado(PagoAprobadoEvent evento) {
+        // TP-14: primero se registra el pago de la factura y DESPUÉS se recalcula la mora: así el cliente vuelve a «Al día» en el momento
+        marcarFacturaPospagoPagadaSiAplica(evento.idPago());
         levantarRestriccionPorDeuda(evento.idCliente());
+    }
+
+    private void marcarFacturaPospagoPagadaSiAplica(UUID idPago) {
+        PagoWompi pago = pagoWompiRepository.findById(idPago).orElse(null);
+        if (pago != null && pago.getTipoConcepto() == TipoConceptoPago.FACTURA_POSPAGO && pago.getFacturaOConceptoId() != null) {
+            clientePospagoService.marcarFacturaPagada(pago.getFacturaOConceptoId());
+        }
     }
 
     /** Regla de negocio: un pago APPROVED levanta la restricción de acceso por deuda del cliente. */
     public void levantarRestriccionPorDeuda(Integer idCliente) {
-        clientePospagoRepository.findByIdCliente(idCliente).ifPresent(this::normalizarMora);
-    }
-
-    private void normalizarMora(ClientePospago clientePospago) {
-        if (clientePospago.getEstadoMora() != EstadoMora.NORMAL) {
-            clientePospago.setEstadoMora(EstadoMora.NORMAL);
-            clientePospago.setDiasMora(0);
-            clientePospagoRepository.save(clientePospago);
-            log.info("Restricción de acceso por deuda levantada para cliente {}", clientePospago.getIdCliente());
-        }
+        // NS-05: la mora se calcula desde las facturas; pagar una de varias facturas vencidas no levanta la restricción.
+        moraService.sincronizar(idCliente);
     }
 }

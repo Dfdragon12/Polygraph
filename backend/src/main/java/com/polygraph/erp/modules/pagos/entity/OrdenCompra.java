@@ -1,6 +1,7 @@
 package com.polygraph.erp.modules.pagos.entity;
 
 import com.polygraph.erp.modules.auth.entity.Usuario;
+import com.polygraph.erp.modules.catalogo.entity.Descuento;
 import com.polygraph.erp.modules.clientes.entity.Cliente;
 import com.polygraph.erp.shared.enums.EstadoOrdenCompra;
 import jakarta.persistence.*;
@@ -34,8 +35,29 @@ public class OrdenCompra {
     @Column(name = "referencia", nullable = false, unique = true, length = 50)
     private String referencia;
 
+    /** Lo que se cobra y se envía a la pasarela: subtotal + IVA (TP-03). */
     @Column(name = "monto_total", precision = 15, scale = 2, nullable = false)
     private BigDecimal montoTotal;
+
+    /** Suma de las líneas y los recargos, sin IVA. */
+    @Builder.Default
+    @Column(name = "monto_subtotal", precision = 15, scale = 2, nullable = false)
+    private BigDecimal montoSubtotal = BigDecimal.ZERO;
+
+    /** IVA total (líneas + recargos). */
+    @Builder.Default
+    @Column(name = "monto_iva", precision = 15, scale = 2, nullable = false)
+    private BigDecimal montoIva = BigDecimal.ZERO;
+
+    /** Parte del IVA que corresponde a los recargos por ciudad. */
+    @Builder.Default
+    @Column(name = "monto_iva_recargos", precision = 15, scale = 2, nullable = false)
+    private BigDecimal montoIvaRecargos = BigDecimal.ZERO;
+
+    /** Porcentaje usado (snapshot); 0 si el cobro con IVA estaba apagado. */
+    @Builder.Default
+    @Column(name = "iva_porcentaje", precision = 5, scale = 2, nullable = false)
+    private BigDecimal ivaPorcentaje = BigDecimal.ZERO;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "estado", nullable = false, length = 20)
@@ -50,6 +72,18 @@ public class OrdenCompra {
     @Column(name = "metodo_pago", length = 50)
     private String metodoPago;
 
+    @Column(name = "nombre_pagador", length = 150)
+    private String nombrePagador;
+
+    @Column(name = "telefono_pagador", length = 30)
+    private String telefonoPagador;
+
+    @Column(name = "email_pagador", length = 150)
+    private String emailPagador;
+
+    @Column(name = "numero_aprobacion", length = 50)
+    private String numeroAprobacion;
+
     @Column(name = "url_checkout", columnDefinition = "TEXT")
     private String urlCheckout;
 
@@ -61,4 +95,14 @@ public class OrdenCompra {
 
     @Column(name = "fecha_expiracion")
     private LocalDateTime fechaExpiracion;
+
+    /** Cupón validado y reservado para esta orden al crearla — el uso se confirma solo si la orden se aprueba. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "id_descuento_cupon")
+    private Descuento descuentoCupon;
+
+    /** Recargos por ciudad de solicitudes anteriores, todavía sin cobrar, que se suman al total de esta compra. */
+    @Builder.Default
+    @Column(name = "monto_recargos_pendientes", precision = 15, scale = 2, nullable = false)
+    private BigDecimal montoRecargosPendientes = BigDecimal.ZERO;
 }

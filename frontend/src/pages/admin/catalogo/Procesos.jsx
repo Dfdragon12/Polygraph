@@ -1,5 +1,9 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useId, useState, useEffect, useMemo } from 'react'
 import api from '../../../services/api'
+import Paginacion from '../../../components/ui/Paginacion'
+import MenuAcciones from '../../../components/ui/MenuAcciones'
+
+const POR_PAGINA = 10
 
 function Badge({ activo }) {
   return (
@@ -19,7 +23,7 @@ function Modal({ titulo, onClose, ancho = 'max-w-md', children }) {
           <h3 className="text-base font-semibold text-gray-900">{titulo}</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
         </div>
-        <div className="overflow-y-auto flex-1">{children}</div>
+        <div className="overflow-y-auto flex-1 scrollbar-thin">{children}</div>
       </div>
     </div>
   )
@@ -30,8 +34,32 @@ function IconoOrden({ activo, dir }) {
   return <span className="ml-1 text-primary-500 text-xs">{dir === 'asc' ? '↑' : '↓'}</span>
 }
 
+/* ─── Iconos de acciones de tabla ─── */
+function IconoPasos() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
+    </svg>
+  )
+}
+function IconoLapiz() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+    </svg>
+  )
+}
+function IconoPower() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5.636 5.636a9 9 0 1012.728 0M12 3v9" />
+    </svg>
+  )
+}
+
 /* ─── Modal crear / editar proceso ─── */
 function ModalProceso({ proceso, onClose, onGuardado }) {
+  const idCampos = useId()
   const [form, setForm] = useState({
     nombreProceso: proceso?.nombreProceso ?? '',
     descripcion: proceso?.descripcion ?? '',
@@ -59,13 +87,13 @@ function ModalProceso({ proceso, onClose, onGuardado }) {
       {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{error}</div>}
 
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Nombre del proceso <span className="text-red-500">*</span></label>
-        <input name="nombreProceso" value={form.nombreProceso} onChange={handleChange} required
+        <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">Nombre del proceso <span className="text-red-500">*</span></label>
+        <input id={`${idCampos}-1`} name="nombreProceso" value={form.nombreProceso} onChange={handleChange} required
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500" />
       </div>
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Descripción</label>
-        <textarea name="descripcion" value={form.descripcion} onChange={handleChange} rows={3}
+        <label htmlFor={`${idCampos}-2`} className="block text-xs font-medium text-gray-600 mb-1">Descripción</label>
+        <textarea id={`${idCampos}-2`} name="descripcion" value={form.descripcion} onChange={handleChange} rows={3}
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" />
       </div>
 
@@ -82,6 +110,7 @@ function ModalProceso({ proceso, onClose, onGuardado }) {
 
 /* ─── Modal configurar pasos de un proceso ─── */
 function ModalPasos({ proceso, onClose }) {
+  const idCampos = useId()
   const [pasos, setPasos] = useState([])
   const [tipos, setTipos] = useState([])
   const [cargando, setCargando] = useState(true)
@@ -197,8 +226,8 @@ function ModalPasos({ proceso, onClose }) {
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Agregar paso</p>
           <form onSubmit={agregarPaso} className="flex items-end gap-3">
             <div className="flex-1">
-              <label className="block text-xs font-medium text-gray-600 mb-1">Tipo de subproceso</label>
-              <select value={formPaso.idTipoProgreso} onChange={e => setFormPaso(p => ({ ...p, idTipoProgreso: e.target.value }))}
+              <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">Tipo de subproceso</label>
+              <select id={`${idCampos}-1`} value={formPaso.idTipoProgreso} onChange={e => setFormPaso(p => ({ ...p, idTipoProgreso: e.target.value }))}
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white">
                 <option value="">Seleccionar...</option>
                 {tiposDisponibles.map(t => (
@@ -235,6 +264,7 @@ export default function Procesos() {
   const [filtroEstado, setFiltroEstado] = useState('todos')
   const [ordenCol, setOrdenCol] = useState(null)
   const [ordenDir, setOrdenDir] = useState('asc')
+  const [pagina, setPagina] = useState(1)
 
   const cargar = async () => {
     setCargando(true)
@@ -288,6 +318,10 @@ export default function Procesos() {
     return lista
   }, [procesos, filtroEstado, busqueda, ordenCol, ordenDir])
 
+  useEffect(() => { setPagina(1) }, [busqueda, filtroEstado])
+
+  const procesosPagina = procesosVisibles.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA)
+
   const cuentaActivos   = procesos.filter(p => p.activo).length
   const cuentaInactivos = procesos.filter(p => !p.activo).length
 
@@ -296,7 +330,7 @@ export default function Procesos() {
     { key: 'descripcion',   label: 'Descripción',        sortable: false },
     { key: 'totalPasos',    label: 'Pasos',              sortable: true  },
     { key: 'activo',        label: 'Estado',             sortable: true  },
-    { key: '_acciones',     label: 'Acciones',           sortable: false },
+    { key: '_acciones',     label: '···',                sortable: false },
   ]
 
   return (
@@ -316,7 +350,7 @@ export default function Procesos() {
 
       {/* Barra de filtros */}
       <div className="flex flex-wrap items-center gap-3 mb-3">
-        <input
+        <input aria-label="Buscar por nombre o descripción…"
           type="search"
           value={busqueda}
           onChange={e => setBusqueda(e.target.value)}
@@ -354,7 +388,7 @@ export default function Procesos() {
         )}
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl ring-1 ring-gray-900/5 shadow-sm overflow-hidden">
         {cargando ? (
           <div className="flex items-center justify-center py-16">
             <div className="animate-spin rounded-full h-8 w-8 border-4 border-primary-600 border-t-transparent" />
@@ -365,15 +399,15 @@ export default function Procesos() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-100">
-              <thead className="bg-gray-50">
+            <table className="table-stack min-w-full divide-y divide-gray-100">
+              <thead className="bg-gray-50/80">
                 <tr>
                   {columnas.map(col => (
                     <th
                       key={col.key}
                       onClick={col.sortable ? () => manejarOrden(col.key) : undefined}
-                      className={`px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider select-none ${
-                        col.sortable ? 'cursor-pointer hover:text-gray-700' : ''
+                      className={`px-4 py-3 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider select-none whitespace-nowrap ${
+                        col.sortable ? 'cursor-pointer hover:text-gray-600' : ''
                       }`}
                     >
                       {col.label}
@@ -383,8 +417,8 @@ export default function Procesos() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {procesosVisibles.map(p => (
-                  <tr key={p.idProceso} className="hover:bg-gray-50 transition-colors">
+                {procesosPagina.map(p => (
+                  <tr key={p.idProceso} className="hover:bg-gray-50/70 transition-colors">
                     <td className="px-4 py-3 text-sm text-gray-900 font-medium whitespace-nowrap">{p.nombreProceso}</td>
                     <td className="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">{p.descripcion ?? '—'}</td>
                     <td className="px-4 py-3">
@@ -393,29 +427,26 @@ export default function Procesos() {
                       </span>
                     </td>
                     <td className="px-4 py-3"><Badge activo={p.activo} /></td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <button onClick={() => setConfigurando(p)}
-                          className="text-xs font-medium px-3 py-1 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">
-                          Pasos
-                        </button>
-                        <button onClick={() => setEditando(p)}
-                          className="text-xs font-medium px-3 py-1 rounded-full border border-primary-200 text-primary-600 hover:bg-primary-50 transition-colors">
-                          Editar
-                        </button>
-                        <button onClick={() => cambiarEstado(p)}
-                          className={`text-xs font-medium px-3 py-1 rounded-full border transition-colors ${
-                            p.activo ? 'border-red-200 text-red-600 hover:bg-red-50' : 'border-green-200 text-green-700 hover:bg-green-50'
-                          }`}>
-                          {p.activo ? 'Desactivar' : 'Activar'}
-                        </button>
-                      </div>
+                    <td className="px-4 py-3 text-center">
+                      <MenuAcciones opciones={[
+                        { label: 'Pasos', icono: <IconoPasos />, onClick: () => setConfigurando(p) },
+                        { label: 'Editar', icono: <IconoLapiz />, onClick: () => setEditando(p) },
+                        {
+                          label: p.activo ? 'Desactivar' : 'Activar',
+                          icono: <IconoPower />,
+                          destacado: p.activo ? 'text-red-600' : 'text-green-700',
+                          onClick: () => cambiarEstado(p),
+                        },
+                      ]} />
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+        )}
+        {procesosVisibles.length > 0 && (
+          <Paginacion pagina={pagina} total={procesosVisibles.length} porPagina={POR_PAGINA} onChange={setPagina} />
         )}
       </div>
 

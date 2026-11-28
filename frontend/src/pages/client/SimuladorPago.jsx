@@ -64,10 +64,16 @@ export default function SimuladorPago() {
           {orden.items.map((i) => (
             <li key={i.idProceso} className="py-2 flex items-center justify-between text-sm gap-3">
               <span className="text-gray-700">{i.cantidad} × {i.nombreProceso}</span>
-              <span className="font-medium text-gray-800 flex-shrink-0">{formatearPrecio(i.subtotal)}</span>
+              <span className="font-medium text-gray-800 flex-shrink-0">{formatearPrecio(i.subtotal)}{Number(i.iva) > 0 && <span className="block text-[11px] font-normal text-gray-400">+ IVA {formatearPrecio(i.iva)}</span>}</span>
             </li>
           ))}
         </ul>
+        {Number(orden.montoIva) > 0 && (
+          <div className="space-y-1 border-t border-gray-100 pt-3 text-sm text-gray-600">
+            <div className="flex items-center justify-between"><span>Subtotal</span><span>{formatearPrecio(orden.montoSubtotal)}</span></div>
+            <div className="flex items-center justify-between"><span>IVA {Number(orden.ivaPorcentaje)} %</span><span>{formatearPrecio(orden.montoIva)}</span></div>
+          </div>
+        )}
         <div className="flex items-center justify-between border-t border-gray-100 pt-3">
           <span className="text-sm font-semibold text-gray-600">Total</span>
           <span className="text-lg font-bold text-primary-700">{formatearPrecio(orden.montoTotal)}</span>

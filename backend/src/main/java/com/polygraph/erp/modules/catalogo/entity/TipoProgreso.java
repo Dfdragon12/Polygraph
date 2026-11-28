@@ -41,4 +41,29 @@ public class TipoProgreso {
     @Enumerated(EnumType.STRING)
     @Column(name = "rol_responsable", nullable = false, length = 30)
     private Rol rolResponsable;
+
+    /** Si este subproceso necesita un documento/verificación estructurada (como Antecedentes) —
+     *  controla si admin/catálogo → Subprocesos le muestra el botón de plantilla. No implica que
+     *  el constructor de documento ya exista: hoy solo "Antecedentes" lo tiene. */
+    @Column(name = "requiere_documento", nullable = false)
+    private Boolean requiereDocumento;
+
+    /** Contador simple: sube en 1 cada vez que admin/catálogo → Plantilla guarda cambios de
+     *  secciones/columnas (ver FormularioPlantillaService.guardar()) — cada ServicioSubproceso
+     *  guarda en su propio versionPlantilla el valor vigente al momento de crearse, para poder
+     *  comparar "con qué versión se creó" contra "cuál es la versión actual". */
+    @Column(name = "version_plantilla", nullable = false)
+    @Builder.Default
+    private Integer versionPlantilla = 1;
+
+    /** Grupo del catálogo codigos_calificacion con que califica este subservicio (ej.
+     *  "ANTECEDENTES", ver V202). null = califica con los puntos por opción del constructor. */
+    @Column(name = "grupo_calificacion", length = 30)
+    private String grupoCalificacion;
+
+    /** AJ-03: «lleva cita» = poligrafía o visita (las agenda el programador). Es la ÚNICA regla: solo estos pasan por PROGRAMANDO;
+     *  antecedentes, validaciones, análisis financiero y psicotécnicas van PENDIENTE → EN_EJECUCION. VerifEye (rol analista) se suma aquí cuando pase al programador. */
+    public boolean llevaCita() {
+        return rolResponsable == Rol.POLIGRAFISTA || rolResponsable == Rol.VISITADOR;
+    }
 }

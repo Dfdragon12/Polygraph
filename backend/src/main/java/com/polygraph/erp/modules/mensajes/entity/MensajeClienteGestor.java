@@ -14,7 +14,7 @@ import java.time.LocalDateTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@ToString(exclude = {"cliente", "emisor"})
+@ToString(exclude = {"cliente", "emisor", "usuarioCliente"})
 public class MensajeClienteGestor {
 
     @Id
@@ -24,6 +24,14 @@ public class MensajeClienteGestor {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "id_cliente", nullable = false)
     private Cliente cliente;
+
+    /** De quién es este hilo (el ADMIN_CLIENTE o ANALISTA_CLIENTE con el que habla el gestor) —
+     *  distinto de "emisor": en un mensaje que escribió el gestor, emisor es el gestor pero el
+     *  hilo sigue siendo el de este usuario-cliente puntual. Cada usuario del lado cliente tiene
+     *  su propio hilo con el gestor, ya no comparten uno solo por empresa. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "id_usuario_cliente", nullable = false)
+    private Usuario usuarioCliente;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "id_usuario_emisor", nullable = false)

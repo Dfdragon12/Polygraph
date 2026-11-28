@@ -8,5 +8,6 @@ public record PasoProcesoResponse(
         Integer ordenEnProceso,
         Boolean habilitado,
         Boolean obligatorio,
+        java.math.BigDecimal peso,
         Boolean tipoActivo
 ) {}

@@ -39,15 +39,27 @@ public class Candidato {
     @Column(name = "fecha_expedicion")
     private LocalDate fechaExpedicion;
 
+    /** Ciudad donde se expidió el documento de identidad. */
+    @Column(name = "id_ciudad_expedicion")
+    private Integer idCiudadExpedicion;
+
     @Column(name = "id_ciudad_nacimiento")
     private Integer idCiudadNacimiento;
 
     @Column(name = "id_ciudad_residencia")
     private Integer idCiudadResidencia;
 
+    @Column(name = "id_pais_nacimiento")
+    private Integer idPaisNacimiento;
+
+    @Column(name = "id_pais_residencia")
+    private Integer idPaisResidencia;
+
     @Column(name = "direccion_residencia", columnDefinition = "TEXT")
     private String direccionResidencia;
 
+    // Campo histórico: la hoja de vida real (autodiligenciada por el evaluado) guarda su propio
+    // barrio en HojaVidaEvaluado.barrio / idBarrio, no acá.
     @Column(name = "barrio_residencia", length = 100)
     private String barrioResidencia;
 

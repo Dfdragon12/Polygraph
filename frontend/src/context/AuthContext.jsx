@@ -1,5 +1,7 @@
-import { createContext, useState, useEffect } from 'react'
+import { createContext, useState, useEffect, useCallback } from 'react'
 import authService from '../services/authService'
+import { olvidarRuta, olvidarCierreAutomatico } from '../utils/rutaDeRetorno'
+import { borrarBorradores } from '../utils/borradores'
 
 const AuthContext = createContext(null)
 
@@ -7,23 +9,31 @@ export function AuthProvider({ children }) {
   const [usuario, setUsuario] = useState(null)
   const [cargando, setCargando] = useState(true)
 
-  useEffect(() => {
+  const cargarDeStorage = useCallback(() => {
     const usuarioGuardado = localStorage.getItem('usuario')
-    const token = localStorage.getItem('token')
-    if (usuarioGuardado && token) {
-      try {
-        setUsuario(JSON.parse(usuarioGuardado))
-      } catch {
-        localStorage.removeItem('usuario')
-        localStorage.removeItem('token')
-        localStorage.removeItem('refreshToken')
-      }
+    if (!usuarioGuardado) return
+    try {
+      setUsuario(JSON.parse(usuarioGuardado))
+    } catch {
+      localStorage.removeItem('usuario')
+      localStorage.removeItem('token')
+      localStorage.removeItem('refreshToken')
     }
-    setCargando(false)
   }, [])
 
-  const login = async (email, password) => {
-    const datos = await authService.login(email, password)
+  useEffect(() => {
+    if (localStorage.getItem('token')) cargarDeStorage()
+    setCargando(false)
+    // api.js actualiza localStorage.usuario cada vez que renueva el token en segundo plano (el
+    // backend recalcula puedeSolicitar/tipoCliente en cada refresh) — esto sincroniza el estado
+    // de React con ese cambio sin necesitar recargar la página.
+    window.addEventListener('usuario-refrescado', cargarDeStorage)
+    return () => window.removeEventListener('usuario-refrescado', cargarDeStorage)
+  }, [cargarDeStorage])
+
+  // Guarda la sesión a partir de una respuesta de login ya obtenida (ej. login con Google, que
+  // no pasa por authService.login) — mismo mecanismo que usa login() abajo.
+  const establecerSesion = (datos) => {
     localStorage.setItem('token', datos.token)
     localStorage.setItem('refreshToken', datos.refreshToken)
     localStorage.setItem('usuario', JSON.stringify(datos.usuario))
@@ -31,17 +41,42 @@ export function AuthProvider({ children }) {
     return datos
   }
 
-  const logout = () => {
+  const login = async (email, password) => {
+    const datos = await authService.login(email, password)
+    return establecerSesion(datos)
+  }
+
+  // Fuerza traer datos frescos del usuario (ej. justo tras completar una compra), para que cosas
+  // como "Solicitudes" aparezcan sin tener que cerrar sesión y volver a entrar — reutiliza
+  // /auth/refresh, que ya recalcula puedeSolicitar en el backend en cada llamada.
+  const refrescarUsuario = useCallback(async () => {
+    const refreshToken = localStorage.getItem('refreshToken')
+    if (!refreshToken) return
+    try {
+      const datos = await authService.refresh(refreshToken)
+      localStorage.setItem('token', datos.token)
+      localStorage.setItem('refreshToken', datos.refreshToken)
+      localStorage.setItem('usuario', JSON.stringify(datos.usuario))
+      setUsuario(datos.usuario)
+    } catch {
+      // sesión inválida — el interceptor de api.js ya maneja la redirección en ese caso
+    }
+  }, [])
+
+  // `automatico`: la sesión se cerró SOLA (inactividad). Entonces se conservan los borradores y la ruta para volver (PC-06); si la persona cierra sesión
+  // a mano —o el botón llama a logout como manejador de clic— se borran, para que no queden en un computador compartido.
+  const logout = (opciones) => {
     localStorage.removeItem('token')
     localStorage.removeItem('refreshToken')
     localStorage.removeItem('usuario')
     setUsuario(null)
+    if (!opciones?.automatico) { olvidarRuta(); olvidarCierreAutomatico(); borrarBorradores() }
   }
 
   const isAuthenticated = () => !!localStorage.getItem('token') && !!usuario
 
   return (
-    <AuthContext.Provider value={{ usuario, cargando, login, logout, isAuthenticated }}>
+    <AuthContext.Provider value={{ usuario, cargando, login, logout, isAuthenticated, establecerSesion, refrescarUsuario }}>
       {children}
     </AuthContext.Provider>
   )

@@ -3,6 +3,7 @@ package com.polygraph.erp.modules.pagos.entity;
 import com.polygraph.erp.modules.auth.entity.Usuario;
 import com.polygraph.erp.modules.clientes.entity.Cliente;
 import com.polygraph.erp.shared.enums.EstadoPago;
+import com.polygraph.erp.shared.enums.TipoConceptoPago;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -15,6 +16,7 @@ import java.util.UUID;
  * ni ningún otro dato sensible del medio de pago.
  */
 @Entity
+@jakarta.persistence.EntityListeners(com.polygraph.erp.modules.tiemporeal.CambiosEntityListener.class)
 @Table(name = "pagos_wompi")
 @Data
 @Builder
@@ -57,6 +59,11 @@ public class PagoWompi {
 
     @Column(name = "factura_o_concepto_id")
     private Long facturaOConceptoId;
+
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(name = "tipo_concepto", nullable = false, length = 20)
+    private TipoConceptoPago tipoConcepto = TipoConceptoPago.ORDEN_COMPRA;
 
     @Column(name = "descripcion", length = 255)
     private String descripcion;

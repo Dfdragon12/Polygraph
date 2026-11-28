@@ -12,6 +12,7 @@ import java.util.Collection;
 import java.util.List;
 
 @Entity
+@jakarta.persistence.EntityListeners(com.polygraph.erp.modules.tiemporeal.CambiosEntityListener.class)
 @Table(name = "usuarios")
 @Getter
 @Setter
@@ -65,12 +66,6 @@ public class Usuario implements UserDetails {
 
     @Column(name = "email_verificado", nullable = false)
     private Boolean emailVerificado;
-
-    @Column(name = "token_activacion", length = 200)
-    private String tokenActivacion;
-
-    @Column(name = "token_activacion_expira")
-    private LocalDateTime tokenActivacionExpira;
 
     @Column(name = "token_reset_password", length = 200)
     private String tokenResetPassword;

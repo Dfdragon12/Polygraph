@@ -21,5 +21,10 @@ public record EducacionRequest(
         Boolean enCurso,
 
         @NotBlank(message = "La ciudad es obligatoria")
-        String ciudad
+        String ciudad,
+
+        // Graduado, Terminó materias, En curso, Retirado sin graduarse, Aplazado
+        String estado,
+        Boolean enExterior,
+        String paisExterior
 ) {}

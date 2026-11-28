@@ -1,7 +1,26 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useId, useState, useEffect, useCallback } from 'react'
 import reversionService from '../services/reversionService'
 import Toast from './Toast'
 import { Modal } from './ui/Modal'
+import Paginacion from './ui/Paginacion'
+import MenuAcciones from './ui/MenuAcciones'
+
+const POR_PAGINA = 10
+
+function IconoCheck() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+    </svg>
+  )
+}
+function IconoX() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+    </svg>
+  )
+}
 
 const BADGE_ESTADO_SERVICIO = {
   PENDIENTE:    'bg-amber-100 text-amber-700',
@@ -36,6 +55,7 @@ function formatFechaHora(iso) {
 
 /* ─── Modal: aprobar / rechazar ─── */
 function ModalRevision({ item, accion, onConfirmar, onCancelar }) {
+  const idCampos = useId()
   const [comentario, setComentario] = useState('')
   const [enviando, setEnviando]     = useState(false)
   const esRechazo = accion === 'rechazar'
@@ -64,10 +84,10 @@ function ModalRevision({ item, accion, onConfirmar, onCancelar }) {
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">
+          <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">
             Comentario {esRechazo ? '(recomendado)' : '(opcional)'}
           </label>
-          <textarea value={comentario} onChange={e => setComentario(e.target.value)} rows={3}
+          <textarea id={`${idCampos}-1`} value={comentario} onChange={e => setComentario(e.target.value)} rows={3}
             placeholder={esRechazo ? 'Explica por qué se rechaza…' : 'Notas adicionales para el gestor…'}
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none" />
         </div>
@@ -93,7 +113,7 @@ function ModalRevision({ item, accion, onConfirmar, onCancelar }) {
 export default function ReversionesLista({ base, soloLectura = false }) {
   const [items, setItems]               = useState([])
   const [pagina, setPagina]             = useState(0)
-  const [totalPaginas, setTotalPaginas] = useState(0)
+  const [totalElementos, setTotalElementos] = useState(0)
   const [filtro, setFiltro]             = useState('PENDIENTE')
   const [busqueda, setBusqueda]         = useState('')
   const [busquedaAplicada, setBusquedaAplicada] = useState('')
@@ -114,15 +134,17 @@ export default function ReversionesLista({ base, soloLectura = false }) {
     setCargando(true)
     try {
       const peticiones = [
-        reversionService.listar({ estado: filtro || undefined, q: busquedaAplicada || undefined, page: pagina, base }),
+        reversionService.listar({ estado: filtro || undefined, q: busquedaAplicada || undefined, page: pagina, size: POR_PAGINA, base }),
       ]
       if (!soloLectura) peticiones.push(reversionService.contarPendientes())
 
       const [pag, count] = await Promise.all(peticiones)
       setItems(pag.content ?? [])
-      setTotalPaginas(pag.totalPages ?? 0)
+      setTotalElementos(pag.totalElements ?? 0)
       if (!soloLectura) setPendientes(count ?? 0)
     } catch (e) {
+      // El navegador cortó la petición (recarga, HMR o cambio de página): no es un fallo de la API, no se avisa.
+      if (e.message === 'Request aborted' || e.code === 'ERR_CANCELED') return
       const status = e.response?.status
       const detalle = e.response?.data?.mensaje ?? e.message
       console.error('Error al cargar reversiones:', status, e.response?.data ?? e)
@@ -183,7 +205,7 @@ export default function ReversionesLista({ base, soloLectura = false }) {
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
             </svg>
-            <input
+            <input aria-label="Buscar por evaluado, cédula, cliente o motivo…"
               type="search"
               value={busqueda}
               onChange={e => setBusqueda(e.target.value)}
@@ -208,7 +230,7 @@ export default function ReversionesLista({ base, soloLectura = false }) {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="table-stack w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                   <th className="px-4 py-3 text-left">#</th>
@@ -217,7 +239,7 @@ export default function ReversionesLista({ base, soloLectura = false }) {
                   <th className="px-4 py-3 text-left">Motivo</th>
                   <th className="px-4 py-3 text-left">Solicitado por</th>
                   <th className="px-4 py-3 text-left">Estado</th>
-                  {!soloLectura && <th className="px-4 py-3 text-center">Acciones</th>}
+                  {!soloLectura && <th className="px-4 py-3 text-center">···</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -253,20 +275,14 @@ export default function ReversionesLista({ base, soloLectura = false }) {
                       )}
                     </td>
                     {!soloLectura && (
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 text-center">
                         {r.estado === 'PENDIENTE' ? (
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button onClick={() => setRevisando({ item: r, accion: 'aprobar' })}
-                              className="text-xs font-medium px-2.5 py-1 rounded-lg bg-primary-600 hover:bg-primary-700 text-white transition-colors whitespace-nowrap">
-                              Aprobar
-                            </button>
-                            <button onClick={() => setRevisando({ item: r, accion: 'rechazar' })}
-                              className="text-xs font-medium px-2.5 py-1 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors whitespace-nowrap">
-                              Rechazar
-                            </button>
-                          </div>
+                          <MenuAcciones opciones={[
+                            { label: 'Aprobar', icono: <IconoCheck />, destacado: 'text-primary-600', onClick: () => setRevisando({ item: r, accion: 'aprobar' }) },
+                            { label: 'Rechazar', icono: <IconoX />, destacado: 'text-red-600', onClick: () => setRevisando({ item: r, accion: 'rechazar' }) },
+                          ]} />
                         ) : (
-                          <p className="text-xs text-gray-300 text-center">—</p>
+                          <p className="text-xs text-gray-300">—</p>
                         )}
                       </td>
                     )}
@@ -277,16 +293,9 @@ export default function ReversionesLista({ base, soloLectura = false }) {
           </div>
         )}
 
-        {totalPaginas > 1 && (
-          <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
-            <span>Página {pagina + 1} de {totalPaginas}</span>
-            <div className="flex gap-1">
-              <button onClick={() => setPagina(p => Math.max(0, p - 1))} disabled={pagina === 0}
-                className="px-3 py-1.5 rounded-lg hover:bg-gray-100 disabled:opacity-40 transition-colors">← Anterior</button>
-              <button onClick={() => setPagina(p => Math.min(totalPaginas - 1, p + 1))} disabled={pagina >= totalPaginas - 1}
-                className="px-3 py-1.5 rounded-lg hover:bg-gray-100 disabled:opacity-40 transition-colors">Siguiente →</button>
-            </div>
-          </div>
+        {!cargando && items.length > 0 && (
+          <Paginacion pagina={pagina + 1} total={totalElementos} porPagina={POR_PAGINA}
+            onChange={(p) => setPagina(p - 1)} />
         )}
       </div>
 

@@ -69,4 +69,5 @@ export function coincideTexto(servicio, texto) {
   const q = normalizar(texto).trim()
   if (!q) return true
   return normalizar(servicio.nombreProceso).includes(q) || normalizar(servicio.descripcion).includes(q)
+    || normalizar(servicio.tituloComercial ?? '').includes(q) || normalizar(servicio.frasePrincipal ?? '').includes(q)
 }

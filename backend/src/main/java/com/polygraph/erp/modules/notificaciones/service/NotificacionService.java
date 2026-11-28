@@ -3,6 +3,7 @@ package com.polygraph.erp.modules.notificaciones.service;
 import com.polygraph.erp.modules.auth.entity.Usuario;
 import com.polygraph.erp.modules.auth.repository.UsuarioRepository;
 import com.polygraph.erp.modules.notificaciones.dto.NotificacionResponse;
+import com.polygraph.erp.modules.notificaciones.dto.PaginaNotificacionesResponse;
 import com.polygraph.erp.shared.entity.Notificacion;
 import com.polygraph.erp.shared.enums.Rol;
 import com.polygraph.erp.shared.exceptions.ApiException;
@@ -11,6 +12,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.security.core.Authentication;
@@ -40,11 +43,14 @@ public class NotificacionService {
             Rol.ANALISTA_INTERNO, Rol.POLIGRAFISTA, Rol.PROGRAMADOR, Rol.VISITADOR
     );
     private static final Map<String, List<Rol>> ROLES_POR_TIPO = Map.of(
-            "CATALOGO", TODOS_INTERNOS,
-            "CLIENTE",  TODOS_INTERNOS,
-            "USUARIO",  List.of(Rol.ADMIN_POLYGRAPH, Rol.GESTOR),
-            "SESION",   List.of(Rol.ADMIN_POLYGRAPH),
-            "ENLACES",  TODOS_INTERNOS
+            "CATALOGO",     TODOS_INTERNOS,
+            "CLIENTE",      TODOS_INTERNOS,
+            "USUARIO",      List.of(Rol.ADMIN_POLYGRAPH, Rol.GESTOR),
+            "SESION",       List.of(Rol.ADMIN_POLYGRAPH),
+            "ENLACES",      TODOS_INTERNOS,
+            // Cartera/mora — solo administración, no es información operativa para
+            // gestor/analista/poligrafista/visitador/programador (ver FacturaPospagoVencimientoJob).
+            "FACTURACION",  List.of(Rol.ADMIN_POLYGRAPH)
     );
     private static final List<Rol> ROLES_DEFAULT = List.of(Rol.ADMIN_POLYGRAPH);
 
@@ -54,6 +60,25 @@ public class NotificacionService {
                 .stream()
                 .map(NotificacionResponse::from)
                 .toList();
+    }
+
+    /** Listado paginado para "Cargar más" / filtro "No leídas" de la campana — el listar() de
+     *  arriba (últimas 15) se mantiene tal cual para AdminDashboard. */
+    @Transactional(readOnly = true)
+    public PaginaNotificacionesResponse listarPagina(String email, int pagina, int tamano, boolean soloNoLeidas) {
+        PageRequest pageable = PageRequest.of(Math.max(0, pagina), Math.min(Math.max(1, tamano), 50));
+        Page<Notificacion> page = soloNoLeidas
+                ? notificacionRepository.findByUsuario_EmailAndLeidaFalseOrderByFechaCreacionDescIdDesc(email, pageable)
+                : notificacionRepository.findByUsuario_EmailOrderByFechaCreacionDescIdDesc(email, pageable);
+        return new PaginaNotificacionesResponse(
+                page.getContent().stream().map(NotificacionResponse::from).toList(),
+                page.hasNext(),
+                page.getTotalElements());
+    }
+
+    @Transactional
+    public int eliminarLeidas(String email) {
+        return notificacionRepository.eliminarLeidas(email);
     }
 
     @Transactional(readOnly = true)
@@ -166,6 +191,15 @@ public class NotificacionService {
      *  documento, o el gestor asignado a un cliente específico. */
     @Transactional
     public void crearParaUsuario(Long idUsuario, String tipo, String titulo, String mensaje) {
+        crearParaUsuario(idUsuario, tipo, titulo, mensaje, null, null);
+    }
+
+    /** Igual que crearParaUsuario(), agregando a qué registro apunta la notificación
+     *  (referenciaTipo/referenciaId) — para que el frontend pueda llevar al usuario directo a
+     *  esa pantalla al hacer clic (ver Campana.jsx). */
+    @Transactional
+    public void crearParaUsuario(Long idUsuario, String tipo, String titulo, String mensaje,
+                                  String referenciaTipo, Long referenciaId) {
         if (idUsuario == null) return;
         usuarioRepository.findById(idUsuario)
                 .filter(u -> Boolean.TRUE.equals(u.getActivo()))
@@ -177,8 +211,59 @@ public class NotificacionService {
                                 .mensaje(mensaje)
                                 .leida(false)
                                 .fechaCreacion(LocalDateTime.now())
+                                .referenciaTipo(referenciaTipo)
+                                .referenciaId(referenciaId)
                                 .build()
                 ));
+    }
+
+    /** Igual que crearParaUsuario(), pero si ese usuario ya tiene una notificación SIN LEER del
+     *  mismo tipo sobre el mismo registro, la actualiza (mensaje + fecha, sube arriba de la lista)
+     *  en vez de crear otra. Pensado para eventos que se repiten muy seguido sobre el mismo
+     *  registro — p.ej. FORMULARIO_ACTUALIZADO: el autoguardado del formulario guarda cada pocos
+     *  segundos, y antes eso llenaba la campana del gestor/programador con decenas de avisos
+     *  idénticos del mismo servicio. Una vez leída, el siguiente cambio sí crea una nueva. */
+    @Transactional
+    public void crearOAgruparParaUsuario(Long idUsuario, String tipo, String titulo, String mensaje,
+                                         String referenciaTipo, Long referenciaId) {
+        if (idUsuario == null) return;
+        notificacionRepository
+                .findFirstByUsuario_IdUsuarioAndTipoAndReferenciaTipoAndReferenciaIdAndLeidaFalseOrderByFechaCreacionDesc(
+                        idUsuario, tipo, referenciaTipo, referenciaId)
+                .ifPresentOrElse(existente -> {
+                    existente.setTitulo(titulo);
+                    existente.setMensaje(mensaje);
+                    existente.setFechaCreacion(LocalDateTime.now());
+                }, () -> crearParaUsuario(idUsuario, tipo, titulo, mensaje, referenciaTipo, referenciaId));
+    }
+
+    /** Notifica a TODOS los usuarios de un cliente puntual (ADMIN_CLIENTE y ANALISTA_CLIENTE que
+     *  tenga) — p.ej. avisarle a ese cliente que su propia factura venció, sin que le llegue a
+     *  ningún otro cliente ni a roles internos que no manejan cartera (ver FacturaPospagoVencimientoJob). */
+    @Async
+    @Transactional
+    public void crearParaCliente(Integer idCliente, String tipo, String titulo, String mensaje) {
+        if (idCliente == null) return;
+        try {
+            List<Usuario> destinatarios = usuarioRepository.findByIdCliente(idCliente).stream()
+                    .filter(u -> Boolean.TRUE.equals(u.getActivo()))
+                    .toList();
+
+            destinatarios.forEach(dest -> notificacionRepository.save(
+                    Notificacion.builder()
+                            .usuario(dest)
+                            .tipo(tipo)
+                            .titulo(titulo)
+                            .mensaje(mensaje)
+                            .leida(false)
+                            .fechaCreacion(LocalDateTime.now())
+                            .build()
+            ));
+            log.info("Notificación '{}' enviada a {} usuario(s) del cliente idCliente={}",
+                    titulo, destinatarios.size(), idCliente);
+        } catch (Exception e) {
+            log.error("Error al crear notificación de cliente idCliente={} tipo='{}': {}", idCliente, tipo, e.getMessage(), e);
+        }
     }
 
     private Long resolverActorIdActual() {

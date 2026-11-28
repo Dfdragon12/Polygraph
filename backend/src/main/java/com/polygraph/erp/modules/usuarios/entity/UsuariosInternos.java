@@ -36,14 +36,8 @@ public class UsuariosInternos {
     @Column(name = "email", nullable = false, length = 150)
     private String email;
 
-    @Column(name = "sala_encargada", length = 100)
-    private String salaEncargada;
-
     @Column(name = "novedades_sala", columnDefinition = "TEXT")
     private String novedadesSala;
-
-    @Column(name = "zonas_visita", length = 200)
-    private String zonasVisita;
 
     @Column(name = "tipo_documento", length = 20)
     private String tipoDocumento;
@@ -67,4 +61,10 @@ public class UsuariosInternos {
         inverseJoinColumns = @JoinColumn(name = "id_tipo_progreso"))
     @Builder.Default
     private List<TipoProgreso> subprocesosAsignados = new ArrayList<>();
+
+    // Ciudades reales del catálogo que este empleado cubre — POLIGRAFISTA con número de sala,
+    // VISITADOR sin sala. Escalable: permite consultar por ciudad quién puede atender un servicio.
+    @OneToMany(mappedBy = "empleado", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @Builder.Default
+    private List<EmpleadoCiudad> ciudadesAsignadas = new ArrayList<>();
 }

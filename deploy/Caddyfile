@@ -1,0 +1,16 @@
+# PC-08 · Proxy de borde: pide y renueva solo el certificado HTTPS del dominio y reenvía todo al nginx del frontend (que a su vez reenvía /api al backend).
+# DOMINIO llega por la variable de entorno del servicio «caddy» (docker-compose.prod.yml). Ejemplo: app.polygraph.co
+{$DOMINIO} {
+	# Un documento subido pesa hasta 10 MB (límite del backend); un poco más de margen para el formulario.
+	request_body {
+		max_size 12MB
+	}
+
+	# El navegador solo habla HTTPS con este dominio durante un año. Ojo: si el certificado falla, nadie puede entrar; probar primero con max-age=300 si es la primera instalación.
+	header Strict-Transport-Security "max-age=31536000"
+
+	reverse_proxy frontend:80 {
+		# Los avisos en tiempo real (SSE) no se guardan en búfer: se envían apenas llegan.
+		flush_interval -1
+	}
+}

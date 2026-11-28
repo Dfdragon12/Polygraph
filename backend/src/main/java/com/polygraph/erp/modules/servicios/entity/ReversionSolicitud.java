@@ -9,6 +9,7 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 @Entity
+@jakarta.persistence.EntityListeners(com.polygraph.erp.modules.tiemporeal.CambiosEntityListener.class)
 @Table(name = "reversiones_solicitud")
 @Data
 @Builder

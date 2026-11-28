@@ -34,10 +34,13 @@ import java.time.LocalDateTime;
 @Transactional
 public class ReversionSolicitudService {
 
+    private final com.polygraph.erp.modules.servicios.service.SemaforoTiempoService semaforoTiempoService;
+
     private final ReversionSolicitudRepository reversionSolicitudRepository;
     private final HistorialEstadoServicioRepository historialRepository;
     private final UsuarioRepository usuarioRepository;
     private final NotificacionRepository notificacionRepository;
+    private final com.polygraph.erp.modules.pagos.service.DevolucionCobroService devolucionCobroService;
 
     @Transactional(readOnly = true)
     public Page<ReversionSolicitudResponse> listar(String estado, String q, Pageable pageable) {
@@ -62,6 +65,8 @@ public class ReversionSolicitudService {
         LocalDateTime ahora = LocalDateTime.now();
 
         servicio.setEstado(reversion.getEstadoDeseado());
+        if (estadoAnterior == EstadoServicio.CANCELADO && reversion.getEstadoDeseado() != EstadoServicio.CANCELADO) devolucionCobroService.volverACobrar(servicio);   // NS-04
+        semaforoTiempoService.recalcular(servicio);   // si sale de PUBLICADO se borra la entrega real y vuelve a ser una solicitud abierta
 
         historialRepository.save(HistorialEstadoServicio.builder()
                 .servicio(servicio)

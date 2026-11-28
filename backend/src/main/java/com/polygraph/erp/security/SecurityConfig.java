@@ -33,6 +33,10 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthFilter;
     private final CustomUserDetailsService customUserDetailsService;
+    private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
+    private final JwtAccessDeniedHandler jwtAccessDeniedHandler;
+    private final RateLimitFilter rateLimitFilter;
+    private final EnlaceProveedorFilter enlaceProveedorFilter;
 
     @Value("${app.cors.allowed-origins}")
     private String origenesPermitidos;
@@ -43,23 +47,42 @@ public class SecurityConfig {
             .csrf(AbstractHttpConfigurer::disable)
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .authorizeHttpRequests(auth -> auth
+                // Despachos ASYNC/ERROR de una petición que YA pasó la seguridad (ej. el cierre de
+                // una conexión de avisos en tiempo real, SseEmitter): el filtro JWT no corre en el
+                // despacho async, así que sin esto terminaban en "acceso denegado" en el log.
+                .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ASYNC, jakarta.servlet.DispatcherType.ERROR).permitAll()
                 .requestMatchers("/api/v1/auth/**").permitAll()
                 .requestMatchers("/api/v1/evaluees/link/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/ciudades", "/api/v1/ciudades/**").permitAll()
-                .requestMatchers(HttpMethod.POST, "/api/v1/ciudades").permitAll()
+                // PB-06: crear una ciudad ya NO es público — el evaluado no agrega ciudades al catálogo de tarifas (solo usuarios con sesión)
+                // Barrios/departamentos/países: mismo criterio que ciudades — los formularios sin
+                // sesión (candidato vía link, registro de cliente) necesitan poder leerlos y, en el
+                // caso de barrios, crear uno nuevo si no está en el catálogo. Antes faltaban acá
+                // aunque sus propios controladores ya decían "Público" en el comentario — por eso
+                // devolvían 401 para cualquiera sin sesión.
+                .requestMatchers(HttpMethod.GET, "/api/v1/barrios", "/api/v1/barrios/**").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/v1/barrios").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/v1/departamentos").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/v1/paises").permitAll()
                 .requestMatchers(
                     "/api/v1/api-docs/**",
                     "/api/v1/swagger-ui/**",
                     "/api/v1/swagger-ui.html"
                 ).permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/services", "/api/v1/services/**").permitAll()
-                .requestMatchers(HttpMethod.POST, "/api/v1/pagos/wompi/webhook").permitAll()
-                .requestMatchers(HttpMethod.POST, "/api/v1/webhooks/wompi").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/v1/pagos/wompi/webhook", "/api/v1/webhooks/wompi").permitAll()
                 .anyRequest().authenticated()
+            )
+            .exceptionHandling(exceptions -> exceptions
+                .authenticationEntryPoint(jwtAuthenticationEntryPoint)
+                .accessDeniedHandler(jwtAccessDeniedHandler)
             )
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authenticationProvider(authenticationProvider())
-            .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+            .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+            .addFilterBefore(rateLimitFilter, JwtAuthenticationFilter.class)
+            // PF-09: el enlace del proveedor externo se resuelve antes que el JWT y solo abre la ruta de su evaluación.
+            .addFilterBefore(enlaceProveedorFilter, JwtAuthenticationFilter.class);
 
         return http.build();
     }

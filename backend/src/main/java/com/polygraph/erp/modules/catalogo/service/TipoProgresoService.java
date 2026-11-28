@@ -61,6 +61,7 @@ public class TipoProgresoService {
                 .valor(req.valor())
                 .minutosEstimados(req.minutosEstimados())
                 .rolResponsable(req.rolResponsable())
+                .requiereDocumento(Boolean.TRUE.equals(req.requiereDocumento()))
                 .activo(true)
                 .build();
         repository.save(tipo);
@@ -82,6 +83,7 @@ public class TipoProgresoService {
         tipo.setValor(req.valor());
         tipo.setMinutosEstimados(req.minutosEstimados());
         tipo.setRolResponsable(req.rolResponsable());
+        if (req.requiereDocumento() != null) tipo.setRequiereDocumento(req.requiereDocumento());
         log.info("Progreso actualizado: {}", tipo.getNombreProgreso());
         notificacionService.crearParaAdmins("CATALOGO", "Progreso actualizado",
                 "Se actualizó el progreso \"" + tipo.getNombreProgreso() + "\"");
@@ -120,7 +122,8 @@ public class TipoProgresoService {
                 t.getIdTipoProgreso(), t.getNombreProgreso(),
                 t.getDescripcion(), t.getOrden(), t.getActivo(), t.getValor(),
                 t.getMinutosEstimados(),
-                t.getRolResponsable() != null ? t.getRolResponsable().name() : null
+                t.getRolResponsable() != null ? t.getRolResponsable().name() : null,
+                t.getRequiereDocumento()
         );
     }
 }

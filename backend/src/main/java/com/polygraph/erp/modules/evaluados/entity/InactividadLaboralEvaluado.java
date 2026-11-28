@@ -35,6 +35,14 @@ public class InactividadLaboralEvaluado {
     @Column(name = "justificacion", columnDefinition = "TEXT")
     private String justificacion;
 
+    /** Qué hizo para cubrir sus gastos (estudios, trabajo independiente, emprendimiento…). */
+    @Column(name = "actividad", length = 60)
+    private String actividad;
+
+    /** Quién o qué documento puede confirmarlo. */
+    @Column(name = "quien_confirma", columnDefinition = "TEXT")
+    private String quienConfirma;
+
     @Column(name = "requiere_cuestionario", nullable = false)
     private Boolean requiereCuestionario;
 }

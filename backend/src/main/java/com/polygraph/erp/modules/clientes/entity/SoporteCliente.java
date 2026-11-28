@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 
 /** Documento legal/soporte que el cliente carga (cédula, RUT, cámara de comercio, habeas data). */
 @Entity
+@jakarta.persistence.EntityListeners(com.polygraph.erp.modules.tiemporeal.CambiosEntityListener.class)
 @Table(name = "soportes_clientes")
 @Data
 @Builder

@@ -31,15 +31,6 @@ public class EmailService {
     private String frontendUrl;
 
     @Async
-    public void enviarActivacion(String destinatario, String nombre, String token) {
-        String enlace = frontendUrl + "/activate?token=" + token;
-        String html = cargarPlantilla("templates/email/activacion.html")
-                .replace("{{nombre}}", nombre)
-                .replace("{{enlace}}", enlace);
-        enviar(destinatario, "Activa tu cuenta - Polygraph Service", html);
-    }
-
-    @Async
     public void enviarResetPassword(String destinatario, String nombre, String token) {
         String enlace = frontendUrl + "/reset-password?token=" + token;
         String html = cargarPlantilla("templates/email/reset_password.html")
@@ -55,6 +46,17 @@ public class EmailService {
                 .replace("{{enlace}}", enlace)
                 .replace("{{proceso}}", proceso != null ? proceso : "tu proceso");
         enviar(destinatario, "Completa tu información - Polygraph Service", html);
+    }
+
+    /** PB-04: recordatorio automático a las 24 h de enviado el enlace, si el candidato no lo abrió o no lo terminó. */
+    @Async
+    public void enviarRecordatorioLinkEvaluado(String destinatario, String nombre, String token, String proceso) {
+        String enlace = frontendUrl + "/evaluado/link/" + token;
+        String html = cargarPlantilla("templates/email/recordatorio_link_evaluado.html")
+                .replace("{{nombre}}", nombre)
+                .replace("{{enlace}}", enlace)
+                .replace("{{proceso}}", proceso != null ? proceso : "tu proceso");
+        enviar(destinatario, "Recordatorio: completa tu información - Polygraph Service", html);
     }
 
     @Async

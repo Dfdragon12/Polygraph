@@ -1,9 +1,13 @@
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
-import { useState, useEffect, useRef, Fragment } from 'react'
+import { useState, useEffect, useRef, Fragment, Suspense } from 'react'
 import { useAuth } from '../../hooks/useAuth'
 import Campana from '../Campana'
 import HeaderMensajesCliente from '../HeaderMensajesCliente'
 import CarritoDropdown from '../CarritoDropdown'
+import BuscadorGlobal from '../BuscadorGlobal'
+import SidebarSeccion from './SidebarSeccion'
+import { IconoDashboard, IconoCarpeta, IconoMas, IconoSubir, IconoCarrito, IconoEquipo, IconoInfo, IconoEstadisticas, IconoCuenta } from './IconosNav'
+import Cargando from '../Cargando'
 
 const ETIQUETAS_ROL = {
   ADMIN_CLIENTE:    'Administrador',
@@ -22,6 +26,10 @@ const ETIQUETAS_RUTA = {
   documentos:           'Información',
   estadisticas:         'Estadísticas',
   catalogo:             'Catálogo',
+  pospago:              'Mi Crédito',
+  facturas:             'Factura',
+  equipo:               'Mi Equipo',
+  perfil:               'Mi perfil',
 }
 
 function Breadcrumb() {
@@ -63,23 +71,24 @@ const SECCIONES_ADMIN = [
   {
     titulo: 'General',
     items: [
-      { ruta: '/cliente/dashboard', etiqueta: 'Dashboard', icono: '📊' },
+      { ruta: '/cliente/dashboard', etiqueta: 'Dashboard', icono: <IconoDashboard /> },
     ],
   },
   {
     titulo: 'Solicitudes',
     items: [
-      { ruta: '/cliente/solicitudes',     etiqueta: 'Mis Solicitudes', icono: '📁' },
-      { ruta: '/cliente/nueva-solicitud', etiqueta: 'Nueva Solicitud', icono: '➕' },
-      { ruta: '/cliente/carga-masiva',    etiqueta: 'Carga Masiva',    icono: '📤' },
+      { ruta: '/cliente/solicitudes',     etiqueta: 'Mis Solicitudes', icono: <IconoCarpeta /> },
+      { ruta: '/cliente/nueva-solicitud', etiqueta: 'Nueva Solicitud', icono: <IconoMas /> },
+      { ruta: '/cliente/carga-masiva',    etiqueta: 'Carga Masiva',    icono: <IconoSubir /> },
     ],
   },
   {
     titulo: 'Cuenta',
     items: [
-      { ruta: '/cliente/comprar-servicios', etiqueta: 'Comprar Servicios',  icono: '🛒' },
-      { ruta: '/cliente/documentos',        etiqueta: 'Información',        icono: '🗂️' },
-      { ruta: '/cliente/estadisticas',      etiqueta: 'Estadísticas',       icono: '📈' },
+      { ruta: '/cliente/comprar-servicios', etiqueta: 'Comprar Servicios',  icono: <IconoCarrito /> },
+      { ruta: '/cliente/equipo',            etiqueta: 'Mi Equipo',          icono: <IconoEquipo /> },
+      { ruta: '/cliente/documentos',        etiqueta: 'Información',        icono: <IconoInfo /> },
+      { ruta: '/cliente/estadisticas',      etiqueta: 'Estadísticas',       icono: <IconoEstadisticas /> },
     ],
   },
 ]
@@ -88,14 +97,20 @@ const SECCIONES_ANALISTA = [
   {
     titulo: 'General',
     items: [
-      { ruta: '/cliente/dashboard', etiqueta: 'Dashboard', icono: '📊' },
+      { ruta: '/cliente/dashboard', etiqueta: 'Dashboard', icono: <IconoDashboard /> },
     ],
   },
   {
     titulo: 'Solicitudes',
     items: [
-      { ruta: '/cliente/solicitudes',     etiqueta: 'Mis Solicitudes', icono: '📁' },
-      { ruta: '/cliente/nueva-solicitud', etiqueta: 'Nueva Solicitud', icono: '➕' },
+      { ruta: '/cliente/solicitudes',     etiqueta: 'Mis Solicitudes', icono: <IconoCarpeta /> },
+      { ruta: '/cliente/nueva-solicitud', etiqueta: 'Nueva Solicitud', icono: <IconoMas /> },
+    ],
+  },
+  {
+    titulo: 'Mi Perfil',
+    items: [
+      { ruta: '/cliente/perfil', etiqueta: 'Mis datos', icono: <IconoCuenta /> },
     ],
   },
 ]
@@ -118,100 +133,12 @@ function SidebarContent({ usuario, secciones, onNavClick, collapsed }) {
         )}
       </div>
 
-      <nav className={`flex-1 py-4 overflow-y-auto space-y-5 ${collapsed ? 'px-1' : 'px-3'}`}>
+      <nav className={`flex-1 py-4 overflow-y-auto scrollbar-thin space-y-5 ${collapsed ? 'px-1' : 'px-3'}`}>
         {secciones.map(seccion => (
-          <div key={seccion.titulo}>
-            {!collapsed && (
-              <p className="px-3 mb-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                {seccion.titulo}
-              </p>
-            )}
-            <div className="space-y-0.5">
-              {seccion.items.map(({ ruta, etiqueta, icono }) => (
-                <NavLink key={ruta} to={ruta} onClick={onNavClick}
-                  title={collapsed ? etiqueta : undefined}
-                  className={({ isActive }) =>
-                    `flex items-center rounded-lg text-sm transition-colors ${
-                      collapsed ? 'justify-center p-2.5' : 'gap-3 px-3 py-2.5'
-                    } ${isActive ? 'bg-primary-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`
-                  }>
-                  <span className="text-base flex-shrink-0">{icono}</span>
-                  {!collapsed && etiqueta}
-                </NavLink>
-              ))}
-            </div>
-          </div>
+          <SidebarSeccion key={seccion.titulo} titulo={seccion.titulo} items={seccion.items}
+            collapsed={collapsed} onNavClick={onNavClick} />
         ))}
       </nav>
-    </>
-  )
-}
-
-/* ─── Buscador global ─── */
-function BuscadorGlobal({ secciones }) {
-  const [abierto, setAbierto] = useState(false)
-  const [query, setQuery]     = useState('')
-  const inputRef = useRef(null)
-  const navigate = useNavigate()
-
-  const items = secciones.flatMap(s => s.items)
-  const resultados = query.trim()
-    ? items.filter(i => i.etiqueta.toLowerCase().includes(query.toLowerCase()))
-    : items
-
-  useEffect(() => {
-    if (abierto) setTimeout(() => inputRef.current?.focus(), 50)
-    else setQuery('')
-  }, [abierto])
-
-  useEffect(() => {
-    const h = (e) => { if (e.key === 'Escape') setAbierto(false) }
-    document.addEventListener('keydown', h)
-    return () => document.removeEventListener('keydown', h)
-  }, [])
-
-  const ir = (ruta) => { navigate(ruta); setAbierto(false) }
-
-  return (
-    <>
-      <button onClick={() => setAbierto(true)} title="Buscar"
-        className="p-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors">
-        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
-        </svg>
-      </button>
-
-      {abierto && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 px-4 bg-black/40 backdrop-blur-sm"
-          onClick={() => setAbierto(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
-            onClick={e => e.stopPropagation()}>
-            <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100">
-              <svg className="h-5 w-5 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
-              </svg>
-              <input ref={inputRef} value={query} onChange={e => setQuery(e.target.value)}
-                placeholder="Buscar sección..."
-                className="flex-1 text-sm text-gray-900 placeholder-gray-400 focus:outline-none" />
-              <kbd className="hidden sm:inline text-xs text-gray-400 border border-gray-200 rounded px-1.5 py-0.5">Esc</kbd>
-            </div>
-            <div className="max-h-64 overflow-y-auto py-2">
-              {resultados.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-6">Sin resultados</p>
-              ) : resultados.map(item => (
-                <button key={item.ruta} onClick={() => ir(item.ruta)}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-primary-50 transition-colors group">
-                  <span className="text-lg w-6 text-center flex-shrink-0">{item.icono}</span>
-                  <span className="text-sm text-gray-700 group-hover:text-primary-700 font-medium">{item.etiqueta}</span>
-                </button>
-              ))}
-            </div>
-            <div className="px-4 py-2 border-t border-gray-50 bg-gray-50">
-              <p className="text-xs text-gray-400">Cierra con Esc</p>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   )
 }
@@ -240,7 +167,7 @@ function ConfiguracionMenu() {
       </button>
 
       {abierto && (
-        <div className="absolute right-0 top-10 w-52 bg-white rounded-xl shadow-xl border border-gray-200 z-50 py-1">
+        <div className="fixed left-3 right-3 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-10 sm:w-52 bg-white rounded-xl shadow-xl border border-gray-200 z-50 py-1">
           <button onClick={() => { navigate('/cambiar-password'); setAbierto(false) }}
             className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors text-left">
             <span>🔑</span> Cambiar contraseña
@@ -252,7 +179,7 @@ function ConfiguracionMenu() {
 }
 
 /* ─── Avatar de usuario ─── */
-function AvatarUsuario({ usuario, cerrarSesion }) {
+function AvatarUsuario({ usuario, cerrarSesion, rutaPerfil }) {
   const [abierto, setAbierto] = useState(false)
   const ref = useRef(null)
 
@@ -283,7 +210,7 @@ function AvatarUsuario({ usuario, cerrarSesion }) {
       </button>
 
       {abierto && (
-        <div className="absolute right-0 top-11 w-56 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden">
+        <div className="fixed left-3 right-3 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-11 sm:w-56 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100">
             <p className="text-sm font-semibold text-gray-900 truncate">{usuario?.nombre ?? 'Cliente'}</p>
             <p className="text-xs text-gray-400 truncate mt-0.5">{usuario?.email}</p>
@@ -292,6 +219,15 @@ function AvatarUsuario({ usuario, cerrarSesion }) {
             </span>
           </div>
           <div className="py-1">
+            {rutaPerfil && (
+              <NavLink to={rutaPerfil} onClick={() => setAbierto(false)}
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                </svg>
+                Mi perfil
+              </NavLink>
+            )}
             <button onClick={() => { cerrarSesion(); setAbierto(false) }}
               className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors text-left">
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -307,14 +243,44 @@ function AvatarUsuario({ usuario, cerrarSesion }) {
 }
 
 export default function ClientLayout() {
-  const { usuario, logout } = useAuth()
+  const { usuario, logout, refrescarUsuario } = useAuth()
   const navigate = useNavigate()
+
+  // El menú (Solicitudes, Mi Equipo, Comprar Servicios vs. Mi Crédito) depende de
+  // usuario.puedeSolicitar/tipoCliente, cacheados en localStorage desde el login — si un admin
+  // aprueba el crédito pospago (GestionCuentas → quita "requiere aprobación") o cambia el tipo de
+  // cliente MIENTRAS la sesión sigue abierta, ese caché queda desactualizado hasta que el JWT
+  // expire (hasta 24h) y el cliente sigue viendo el menú reducido de "cliente nuevo sin aprobar".
+  // refrescarUsuario() ya recalcula ambos campos en vivo contra la BD (AuthService.
+  // resolverPuedeSolicitar/resolverTipoCliente) — se llama una vez al entrar al portal cliente.
+  useEffect(() => {
+    refrescarUsuario()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const esPospago = usuario?.tipoCliente === 'POSPAGO'
-  const seccionesBase = usuario?.rol === 'ADMIN_CLIENTE' ? SECCIONES_ADMIN : SECCIONES_ANALISTA
-  // Pospago solicita directo con cupo de crédito — no compra saldo por adelantado.
-  const secciones = esPospago
-    ? seccionesBase.map(s => ({ ...s, items: s.items.filter(i => i.ruta !== '/cliente/comprar-servicios') }))
-    : seccionesBase
+  const esAdminCliente = usuario?.rol === 'ADMIN_CLIENTE'
+  // false explícito = cliente que se registró solo y todavía no completó su primera compra
+  // (prepago) ni tiene un acuerdo de crédito vigente (pospago) — se calcula solo, nadie lo
+  // "aprueba" a mano (ver AuthService.resolverPuedeSolicitar). undefined/true (roles internos,
+  // clientes ya habilitados, o sesiones de antes de que existiera este campo) no ocultan nada.
+  const noPuedeSolicitar = usuario?.puedeSolicitar === false
+  const seccionesBase = esAdminCliente ? SECCIONES_ADMIN : SECCIONES_ANALISTA
+  // Pospago solicita directo con cupo de crédito — no compra saldo por adelantado, ve "Mi
+  // Crédito" en su lugar. El módulo de pagos (incluido el crédito pospago) solo lo ve ADMIN_CLIENTE.
+  const secciones = seccionesBase
+    .filter((s) => !(noPuedeSolicitar && s.titulo === 'Solicitudes'))
+    .map((s) => {
+      if (s.titulo !== 'Cuenta') return s
+      let items = s.items
+      // "Mi Equipo" tampoco tiene sentido antes de la primera compra/acuerdo — mismo criterio
+      // que "Solicitudes".
+      if (noPuedeSolicitar) items = items.filter((i) => i.ruta !== '/cliente/equipo')
+      if (esPospago) {
+        items = items.filter((i) => i.ruta !== '/cliente/comprar-servicios')
+        if (esAdminCliente) items = [{ ruta: '/cliente/pospago', etiqueta: 'Mi Crédito', icono: <IconoCuenta /> }, ...items]
+      }
+      return { ...s, items }
+    })
   const [menuMovil, setMenuMovil] = useState(false)
   const [collapsed, setCollapsed] = useState(() =>
     localStorage.getItem('client-sidebar-collapsed') === 'true'
@@ -329,7 +295,7 @@ export default function ClientLayout() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen h-[100dvh] bg-gray-50">
       {/* Sidebar desktop */}
       <aside className={`hidden md:flex md:flex-col bg-slate-900 text-white flex-shrink-0 transition-all duration-300 ${collapsed ? 'w-16' : 'w-64'}`}>
         <SidebarContent usuario={usuario} secciones={secciones} collapsed={collapsed} />
@@ -339,8 +305,8 @@ export default function ClientLayout() {
       {menuMovil && (
         <>
           <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setMenuMovil(false)} />
-          <aside className="fixed inset-y-0 left-0 z-50 flex flex-col w-72 bg-slate-900 text-white md:hidden shadow-2xl">
-            <button onClick={() => setMenuMovil(false)}
+          <aside className="fixed inset-y-0 left-0 z-50 flex flex-col w-72 bg-slate-900 text-white md:hidden shadow-2xl pt-safe pb-safe">
+            <button onClick={() => setMenuMovil(false)} aria-label="Cerrar menú"
               className="absolute top-4 right-4 p-1 text-slate-400 hover:text-white">
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -353,9 +319,9 @@ export default function ClientLayout() {
 
       {/* Área principal */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-        <header className="bg-white border-b border-gray-200 px-4 md:px-6 py-3 flex items-center justify-between flex-shrink-0">
+        <header className="bg-white border-b border-gray-200 px-4 md:px-6 pt-[calc(0.75rem+var(--sat))] pb-3 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-1">
-            <button onClick={() => setMenuMovil(true)}
+            <button onClick={() => setMenuMovil(true)} aria-label="Abrir menú"
               className="md:hidden p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors">
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -378,14 +344,15 @@ export default function ClientLayout() {
             <HeaderMensajesCliente />
             <Campana />
             <div className="w-px h-6 bg-gray-200 mx-1" />
-            <AvatarUsuario usuario={usuario} cerrarSesion={cerrarSesion} />
+            <AvatarUsuario usuario={usuario} cerrarSesion={cerrarSesion} rutaPerfil={esAdminCliente ? null : '/cliente/perfil'} />
           </div>
         </header>
 
         <Breadcrumb />
 
-        <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 scrollbar-thin">
-          <Outlet />
+        <main id="contenido" tabIndex={-1} className="flex-1 overflow-y-auto focus:outline-none overflow-x-hidden p-4 md:p-6 pb-[calc(1rem+var(--sab))] md:pb-[calc(1.5rem+var(--sab))] scrollbar-thin">
+          {/* PC-08: la pantalla se descarga al entrar; mientras llega, el menú y la barra siguen en su lugar */}
+          <Suspense fallback={<Cargando />}><Outlet /></Suspense>
         </main>
       </div>
     </div>

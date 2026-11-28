@@ -2,6 +2,7 @@ package com.polygraph.erp.modules.catalogo.entity;
 
 import com.polygraph.erp.modules.servicios.entity.Proceso;
 import jakarta.persistence.*;
+import java.math.BigDecimal;
 import lombok.*;
 
 @Entity
@@ -32,6 +33,12 @@ public class ProcesoTipoProgreso {
     @Column(name = "orden_en_proceso")
     private Integer ordenEnProceso;
 
+    /** También lo usa el motor de riesgo: si un obligatorio queda No realizado, revisión manual. */
     @Column(name = "obligatorio")
     private Boolean obligatorio;
+
+    /** % que aporta este subproceso al puntaje de riesgo del proceso. null = sin configurar (el
+     *  proceso no califica); 0 = se hace pero no califica. */
+    @Column(name = "peso", precision = 5, scale = 2)
+    private BigDecimal peso;
 }

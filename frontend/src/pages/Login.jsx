@@ -1,9 +1,13 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+import BrandShowcase from '../components/BrandShowcase'
+import HeartbeatMonitor from '../components/HeartbeatMonitor'
+import PieLegal from '../components/legal/PieLegal'
+import { rutaParaVolver, hayCierreAutomatico, olvidarCierreAutomatico } from '../utils/rutaDeRetorno'
 
 const esquema = z.object({
   email: z.string().min(1, 'El email es requerido').email('Email inválido'),
@@ -22,10 +26,14 @@ const RUTA_POR_ROL = {
 }
 
 export default function Login() {
+  const idCampos = useId()
   const { login } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const [cerradaPorInactividad] = useState(() => searchParams.get('motivo') === 'inactividad' || hayCierreAutomatico())
   const [error, setError] = useState(null)
   const [cargando, setCargando] = useState(false)
+  const [mostrarPassword, setMostrarPassword] = useState(false)
 
   const {
     register,
@@ -38,10 +46,12 @@ export default function Login() {
     setCargando(true)
     try {
       const resp = await login(datos.email, datos.password)
+      olvidarCierreAutomatico()
       if (resp?.usuario?.requiereCambioPassword) {
         navigate('/cambiar-password', { replace: true })
       } else {
-        const ruta = RUTA_POR_ROL[resp?.usuario?.rol] ?? '/'
+        // PC-06: si la sesión se cerró sola, vuelve a la pantalla donde estaba (solo si entra la misma persona); si no, a su inicio.
+        const ruta = rutaParaVolver(resp?.usuario?.id) ?? RUTA_POR_ROL[resp?.usuario?.rol] ?? '/'
         navigate(ruta, { replace: true })
       }
     } catch (err) {
@@ -54,48 +64,38 @@ export default function Login() {
   return (
     <div className="min-h-screen flex bg-white">
       {/* ── Panel de marca (oculto en mobile) ── */}
-      <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-slate-900">
-        {/* Resplandores de color — el rojo vive sobre una base oscura neutra, no sobre sí mismo */}
-        <div className="absolute -top-24 -right-16 w-[28rem] h-[28rem] bg-primary-600/70 rounded-full blur-3xl" />
-        <div className="absolute -bottom-24 -left-16 w-96 h-96 bg-primary-700/60 rounded-full blur-3xl" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 h-72 bg-primary-500/10 rounded-full blur-3xl" />
+      <div className="hidden lg:flex lg:w-1/2 lg:sticky lg:top-0 lg:h-screen relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-900 to-primary-900">
+        {/* Movimiento del fondo del panel (negro/coral) — blobs grandes con deriva continua
+            (animate-float-bg), detrás de todo. Se alcanzan a ver incluso detrás del carrusel
+            gracias al difuminado arriba/abajo de las fotos. */}
+        <div className="absolute -top-24 -right-16 w-[30rem] h-[30rem] bg-primary-600/50 rounded-full blur-3xl animate-float-bg" />
+        <div className="absolute -bottom-24 -left-20 w-96 h-96 bg-primary-400/30 rounded-full blur-3xl animate-float-bg" style={{ animationDelay: '-4s', animationDuration: '10s' }} />
+        {/* Textura sutil de puntos — le da profundidad al panel sin depender de ninguna animación */}
+        <div className="absolute inset-0 opacity-[0.07]"
+          style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '28px 28px' }} />
+        {/* Monitor de "señal de vida" — decoración de fondo (no un widget flotando en el
+            contenido), muy sutil, detrás del carrusel */}
+        <HeartbeatMonitor />
 
         <div className="relative z-10 flex flex-col justify-between p-12 text-white w-full">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 bg-primary-600 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg shadow-primary-600/40">
-              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-              </svg>
+          {/* Logo + carrusel con espacio FIJO entre ellos (gap-8) en vez de vivir directo bajo
+              justify-between — así la posición del carrusel no se estira/comprime según el alto
+              de la ventana, se mantiene siempre igual justo debajo del logo. */}
+          <div className="flex flex-col gap-8">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 bg-white rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg shadow-black/20 p-1.5">
+                <img src="/icon-192.png" alt="Polygraph" className="w-full h-full object-contain" />
+              </div>
+              <span className="font-semibold text-lg tracking-tight">Polygraph Service</span>
+              <span className="relative flex h-2.5 w-2.5 ml-1">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary-300 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary-400" />
+              </span>
             </div>
-            <span className="font-semibold text-lg tracking-tight">Polygraph Service</span>
-          </div>
 
-          <div className="max-w-md">
-            <h1 className="text-3xl font-bold leading-tight">
-              Gestión integral de estudios de seguridad y confiabilidad
-            </h1>
-            <p className="text-slate-300 mt-4 text-sm leading-relaxed">
-              Poligrafías, visitas domiciliarias y validaciones de hoja de vida en una sola plataforma,
-              con seguimiento en tiempo real de cada solicitud.
-            </p>
-
-            <div className="mt-8 space-y-4">
-              {[
-                'Semáforo de servicio en tiempo real',
-                'Informes centralizados y trazabilidad completa',
-                'Portales dedicados para tu equipo y tus clientes',
-              ].map((texto) => (
-                <div key={texto} className="flex items-center gap-3">
-                  <div className="w-6 h-6 rounded-full bg-primary-600/20 border border-primary-500/40 flex items-center justify-center flex-shrink-0">
-                    <svg className="w-3.5 h-3.5 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                    </svg>
-                  </div>
-                  <span className="text-sm text-slate-200">{texto}</span>
-                </div>
-              ))}
-            </div>
+            {/* Carrusel informativo — el mensaje de plataforma va DENTRO del carrusel (primer
+                slide), no en una franja aparte; todo comparte el mismo lenguaje visual de foto. */}
+            <BrandShowcase />
           </div>
 
           <p className="text-xs text-slate-500">15 años de experiencia — Polygraph Service Ltda.</p>
@@ -108,23 +108,35 @@ export default function Login() {
         <div className="hidden lg:block absolute inset-y-0 left-0 w-40 bg-gradient-to-r from-primary-50/70 to-transparent pointer-events-none" />
 
         <div className="w-full max-w-md slide-up relative">
-          {/* Header solo visible en mobile (sin panel de marca) */}
-          <div className="lg:hidden text-center mb-8">
-            <div className="w-14 h-14 bg-primary-600 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-lg shadow-primary-600/30">
-              <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-              </svg>
+          {/* Header solo visible en mobile/tablet — el carrusel es contenido del panel de marca
+              (solo desktop, hidden lg:flex), así que en mobile/tablet se mantiene simple. */}
+          <div className="lg:hidden relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 to-primary-900 text-center mb-8 px-6 py-8 shadow-xl shadow-gray-200/60">
+            <HeartbeatMonitor className="absolute left-0 bottom-2 h-10 opacity-[0.18]" />
+            <div className="relative z-10">
+              <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-lg shadow-black/20 p-2">
+                <img src="/icon-192.png" alt="Polygraph" className="w-full h-full object-contain" />
+              </div>
+              <div className="flex items-center justify-center gap-2">
+                <h1 className="text-xl font-bold text-white">Polygraph Service</h1>
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary-300 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-primary-400" />
+                </span>
+              </div>
+              <p className="text-slate-300 text-sm mt-1">Plataforma ERP de Estudios de Seguridad</p>
             </div>
-            <h1 className="text-xl font-bold text-gray-900">Polygraph Service</h1>
-            <p className="text-gray-500 text-sm mt-1">Plataforma ERP de Estudios de Seguridad</p>
           </div>
 
           <div className="bg-white rounded-2xl shadow-xl shadow-gray-200/60 border border-gray-100 px-8 py-9">
             <h2 className="text-xl font-bold text-gray-900">Bienvenido de nuevo</h2>
             <p className="text-sm text-gray-500 mt-1 mb-7">Ingresa tus credenciales para continuar</p>
 
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" noValidate>
+            <form id="contenido" tabIndex={-1} onSubmit={handleSubmit(onSubmit)} className="space-y-5 focus:outline-none" noValidate>
+              {cerradaPorInactividad && !error && (
+                <div className="flex items-start gap-2.5 bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded-lg text-sm slide-up">
+                  Tu sesión se cerró por inactividad. Vuelve a iniciar sesión para continuar.
+                </div>
+              )}
               {error && (
                 <div className="flex items-start gap-2.5 bg-slate-50 border border-slate-200 text-slate-700 px-4 py-3 rounded-lg text-sm slide-up">
                   <span className="w-5 h-5 rounded-full bg-primary-100 text-primary-600 flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -137,14 +149,14 @@ export default function Login() {
               )}
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label htmlFor={`${idCampos}-1`} className="block text-sm font-medium text-gray-700 mb-1.5">
                   Correo electrónico
                 </label>
                 <div className="relative">
                   <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                   </svg>
-                  <input
+                  <input id={`${idCampos}-1`}
                     type="email"
                     autoComplete="email"
                     {...register('email')}
@@ -161,7 +173,7 @@ export default function Login() {
 
               <div>
                 <div className="flex justify-between items-center mb-1.5">
-                  <label className="block text-sm font-medium text-gray-700">Contraseña</label>
+                  <label htmlFor="login-password" className="block text-sm font-medium text-gray-700">Contraseña</label>
                   <Link to="/recuperar-password" className="text-xs text-gray-500 font-medium hover:text-primary-600 transition-colors">
                     ¿Olvidaste tu contraseña?
                   </Link>
@@ -170,15 +182,33 @@ export default function Login() {
                   <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                   </svg>
-                  <input
-                    type="password"
+                  <input id="login-password"
+                    type={mostrarPassword ? 'text' : 'password'}
                     autoComplete="current-password"
                     {...register('password')}
-                    className={`w-full pl-10 pr-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-4 focus:ring-primary-500/15 focus:border-primary-500 transition ${
+                    className={`w-full pl-10 pr-10 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-4 focus:ring-primary-500/15 focus:border-primary-500 transition ${
                       errors.password ? 'border-red-400 bg-red-50' : 'border-gray-200 bg-white'
                     }`}
                     placeholder="••••••••"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setMostrarPassword((v) => !v)}
+                    tabIndex={-1}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                    aria-label={mostrarPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                  >
+                    {mostrarPassword ? (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    )}
+                  </button>
                 </div>
                 {errors.password && (
                   <p className="mt-1 text-xs text-red-600">{errors.password.message}</p>
@@ -208,6 +238,7 @@ export default function Login() {
                 Regístrate aquí
               </Link>
             </p>
+            <PieLegal className="mt-4" />
           </div>
         </div>
       </div>

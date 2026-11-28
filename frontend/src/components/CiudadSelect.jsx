@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useId, useEffect, useMemo, useState } from 'react'
 import catalogoService from '../services/catalogoService'
 import { Modal } from './ui/Modal'
 
@@ -13,10 +13,13 @@ const quitarTildes = (s) => (s || '').normalize('NFD').replace(/\p{Diacritic}/gu
  * persisten la ciudad como texto libre (educación/experiencia laboral del evaluado).
  *
  * Si el usuario no encuentra su ciudad, un modal le permite agregarla al catálogo
- * (POST /api/v1/ciudades, público) con los mismos campos de la tabla "ciudades"
- * (nombre, departamento y, opcionalmente, códigos DANE). Queda seleccionada automáticamente.
+ * (POST /api/v1/ciudades, público): nombre, departamento (de una lista fija de los 33
+ * departamentos oficiales — GET /api/v1/ciudades/departamentos, no texto libre, para no volver a
+ * tener duplicados por typos) y, opcionalmente, el código DANE de la ciudad — el del departamento
+ * se deriva solo del que se elija. Queda seleccionada automáticamente.
  */
-function CiudadSelect({ value, onChange, className, required = false, valueType = 'id', id, name, placeholder = 'Selecciona o busca una ciudad...' }) {
+function CiudadSelect({ value, onChange, className, required = false, valueType = 'id', id, name, placeholder = 'Selecciona o busca una ciudad...', disabled = false, soloConfirmadas = false, permitirAgregar = true }) {
+  const idCampos = useId()
   const [ciudades, setCiudades] = useState([])
   const [cargando, setCargando] = useState(true)
   const [query, setQuery] = useState('')
@@ -26,22 +29,29 @@ function CiudadSelect({ value, onChange, className, required = false, valueType 
   const [mNombre, setMNombre] = useState('')
   const [mDepartamento, setMDepartamento] = useState('')
   const [mCodigoCiudad, setMCodigoCiudad] = useState('')
-  const [mCodigoDepto, setMCodigoDepto] = useState('')
+  const [departamentos, setDepartamentos] = useState([])
   const [guardandoModal, setGuardandoModal] = useState(false)
   const [errorModal, setErrorModal] = useState(null)
 
   useEffect(() => {
     let activo = true
     catalogoService.listarCiudades()
-      .then((data) => { if (activo) setCiudades(data) })
+      .then((data) => { if (activo) setCiudades(soloConfirmadas ? data.filter((c) => !c.pendienteConfirmacion) : data) })
       .catch(() => { if (activo) setCiudades([]) })
       .finally(() => { if (activo) setCargando(false) })
+    catalogoService.listarDepartamentos()
+      .then((data) => { if (activo) setDepartamentos(data) })
+      .catch(() => { if (activo) setDepartamentos([]) })
     return () => { activo = false }
   }, [])
 
   const opcionValor = (c) => (valueType === 'nombre' ? c.nombreCiudad : c.idCiudad)
   const etiqueta = (c) => `${c.nombreCiudad} — ${c.departamento}`
   const seleccionada = ciudades.find((c) => opcionValor(c) === value)
+  // valueType="nombre" con un valor que no matchea ninguna ciudad del catálogo (dato viejo,
+  // typo, o todavía no cargó la lista) — se muestra el texto guardado tal cual en vez de dejar el
+  // campo vacío, que borraría visualmente un dato real que sí existe.
+  const textoSinMatch = !seleccionada && valueType === 'nombre' ? (value || '') : ''
 
   const LIMITE_SIN_BUSQUEDA = 6
 
@@ -64,12 +74,11 @@ function CiudadSelect({ value, onChange, className, required = false, valueType 
     setMNombre(query.trim())
     setMDepartamento('')
     setMCodigoCiudad('')
-    setMCodigoDepto('')
     setModalAbierto(true)
   }
 
   const guardarNuevaCiudad = async () => {
-    if (!mNombre.trim() || !mDepartamento.trim()) {
+    if (!mNombre.trim() || !mDepartamento) {
       setErrorModal('Indica el nombre de la ciudad y el departamento.')
       return
     }
@@ -78,16 +87,15 @@ function CiudadSelect({ value, onChange, className, required = false, valueType 
     try {
       const creada = await catalogoService.crearCiudad({
         nombreCiudad: mNombre.trim(),
-        departamento: mDepartamento.trim(),
+        departamento: mDepartamento,
         codigoDaneCiudad: mCodigoCiudad.trim() || null,
-        codigoDaneDepto: mCodigoDepto.trim() || null,
       })
       setCiudades((prev) => (prev.some((c) => c.idCiudad === creada.idCiudad) ? prev : [...prev, creada].sort((a, b) => a.nombreCiudad.localeCompare(b.nombreCiudad))))
       onChange(valueType === 'nombre' ? creada.nombreCiudad : creada.idCiudad)
       setQuery('')
       setModalAbierto(false)
-    } catch {
-      setErrorModal('No se pudo agregar la ciudad. Intenta de nuevo.')
+    } catch (err) {
+      setErrorModal(err.response?.data?.mensaje ?? 'No se pudo agregar la ciudad. Intenta de nuevo.')
     } finally {
       setGuardandoModal(false)
     }
@@ -100,10 +108,11 @@ function CiudadSelect({ value, onChange, className, required = false, valueType 
         name={name}
         required={required}
         autoComplete="off"
-        disabled={cargando}
-        value={abierto ? query : (seleccionada ? etiqueta(seleccionada) : '')}
+        disabled={disabled || cargando}
+        value={abierto ? query : (seleccionada ? etiqueta(seleccionada) : textoSinMatch)}
         placeholder={cargando ? 'Cargando ciudades...' : placeholder}
         onFocus={() => { setAbierto(true); setQuery('') }}
+        onClick={() => setAbierto(true)}
         onBlur={() => setAbierto(false)}
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Escape') { setAbierto(false); e.currentTarget.blur() } }}
@@ -130,6 +139,9 @@ function CiudadSelect({ value, onChange, className, required = false, valueType 
               {c.nombreCiudad} <span className="text-gray-400">— {c.departamento}</span>
             </button>
           ))}
+          {soloConfirmadas || !permitirAgregar ? (
+            <p className="border-t border-gray-100 mt-1 px-3 pt-2 pb-1 text-xs text-gray-600">{soloConfirmadas ? '¿No ves la ciudad? Escríbele a tu gestor para que la confirme.' : '¿No ves tu ciudad? Elige el municipio más cercano o díselo a tu gestor de Polygraph.'}</p>
+          ) : (
           <button
             type="button"
             onMouseDown={(e) => e.preventDefault()}
@@ -138,6 +150,7 @@ function CiudadSelect({ value, onChange, className, required = false, valueType 
           >
             + No encuentro mi ciudad...
           </button>
+          )}
         </div>
       )}
 
@@ -148,26 +161,23 @@ function CiudadSelect({ value, onChange, className, required = false, valueType 
               <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">{errorModal}</div>
             )}
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Ciudad <span className="text-red-500">*</span></label>
-              <input value={mNombre} onChange={(e) => setMNombre(e.target.value)} autoFocus
+              <label htmlFor={`${idCampos}-1`} className="block text-xs font-medium text-gray-600 mb-1">Ciudad <span className="text-red-500">*</span></label>
+              <input id={`${idCampos}-1`} value={mNombre} onChange={(e) => setMNombre(e.target.value)} autoFocus
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Departamento <span className="text-red-500">*</span></label>
-              <input value={mDepartamento} onChange={(e) => setMDepartamento(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none" />
+              <label htmlFor={`${idCampos}-2`} className="block text-xs font-medium text-gray-600 mb-1">Departamento <span className="text-red-500">*</span></label>
+              <select id={`${idCampos}-2`} value={mDepartamento} onChange={(e) => setMDepartamento(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none bg-white">
+                <option value="">Selecciona un departamento...</option>
+                {departamentos.map((d) => <option key={d.nombre} value={d.nombre}>{d.nombre}</option>)}
+              </select>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Código DANE ciudad</label>
-                <input value={mCodigoCiudad} onChange={(e) => setMCodigoCiudad(e.target.value)} maxLength={10} placeholder="Opcional"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Código DANE depto.</label>
-                <input value={mCodigoDepto} onChange={(e) => setMCodigoDepto(e.target.value)} maxLength={2} placeholder="Opcional"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none" />
-              </div>
+            <div>
+              <label htmlFor={`${idCampos}-3`} className="block text-xs font-medium text-gray-600 mb-1">Código DANE ciudad</label>
+              <input id={`${idCampos}-3`} value={mCodigoCiudad} inputMode="numeric"
+                onChange={(e) => setMCodigoCiudad(e.target.value.replace(/\D/g, ''))} maxLength={10} placeholder="Opcional"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:outline-none" />
             </div>
           </div>
           <div className="px-6 pb-5 flex justify-end gap-3">

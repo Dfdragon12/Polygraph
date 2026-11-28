@@ -28,26 +28,26 @@ public class ClienteMensajeController {
 
     @GetMapping
     public ResponseEntity<List<MensajeResponse>> listar(Authentication auth) {
-        return ResponseEntity.ok(mensajeService.listarParaCliente(resolverIdCliente(auth)));
+        return ResponseEntity.ok(mensajeService.listarParaCliente(resolverUsuario(auth).getIdUsuario()));
     }
 
     @GetMapping("/no-leidos")
     public ResponseEntity<NoLeidosResponse> noLeidos(Authentication auth) {
-        return ResponseEntity.ok(mensajeService.noLeidosParaCliente(resolverIdCliente(auth)));
+        return ResponseEntity.ok(mensajeService.noLeidosParaCliente(resolverUsuario(auth).getIdUsuario()));
     }
 
     @PostMapping
     public ResponseEntity<MensajeResponse> enviar(@Valid @RequestBody EnviarMensajeRequest request, Authentication auth) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(mensajeService.enviarComoCliente(resolverIdCliente(auth), auth.getName(), request.mensaje()));
+                .body(mensajeService.enviarComoCliente(resolverUsuario(auth), request.mensaje()));
     }
 
-    private Integer resolverIdCliente(Authentication auth) {
+    private Usuario resolverUsuario(Authentication auth) {
         Usuario usuario = usuarioRepository.findByEmail(auth.getName())
                 .orElseThrow(() -> new ApiException("Usuario no encontrado", HttpStatus.NOT_FOUND));
         if (usuario.getIdCliente() == null) {
             throw new ApiException("Usuario no asociado a ningún cliente", HttpStatus.FORBIDDEN);
         }
-        return usuario.getIdCliente();
+        return usuario;
     }
 }

@@ -1,8 +1,30 @@
 import api from './api'
 
 const pagosService = {
-  async crearOrden(items) {
-    const { data } = await api.post('/client/ordenes', { items })
+  async crearOrden(items, codigoCupon = null) {
+    const { data } = await api.post('/client/ordenes', { items, codigoCupon: codigoCupon || null })
+    return data
+  },
+
+  /** Subtotal, IVA y total por línea, calculados por el backend (los mismos que se cobran). */
+  async cotizar(items, codigoCupon = null) {
+    const { data } = await api.post('/client/ordenes/cotizar', { items, codigoCupon: codigoCupon || null })
+    return data
+  },
+
+  /** { cobroConIva, ivaPorcentaje }: para rotular precios con «+ IVA». */
+  async obtenerConfiguracionTienda() {
+    const { data } = await api.get('/tienda/configuracion')
+    return data
+  },
+
+  async validarCupon(items, codigoCupon) {
+    const { data } = await api.post('/client/ordenes/validar-cupon', { items, codigoCupon })
+    return data
+  },
+
+  async obtenerRecargosPendientes() {
+    const { data } = await api.get('/client/ordenes/recargos-pendientes')
     return data
   },
 
@@ -24,6 +46,52 @@ const pagosService = {
   async simularPago(idOrden, resultado) {
     const { data } = await api.post(`/client/ordenes/${idOrden}/simular`, { resultado })
     return data
+  },
+
+  async listarComprobantes() {
+    const { data } = await api.get('/client/comprobantes')
+    return data
+  },
+
+  async obtenerComprobante(idComprobante) {
+    const { data } = await api.get(`/client/comprobantes/${idComprobante}`)
+    return data
+  },
+
+  // ---------- Admin (ADMIN_POLYGRAPH / GESTOR) ----------
+
+  async adminListarOrdenes(params = {}) {
+    const { data } = await api.get('/admin/ordenes', { params })
+    return data
+  },
+
+  async adminListarSinFacturar(params = {}) {
+    const { data } = await api.get('/admin/ordenes/sin-facturar', { params })
+    return data
+  },
+
+  async adminResumenPagos() {
+    const { data } = await api.get('/admin/ordenes/resumen')
+    return data
+  },
+
+  async adminObtenerOrden(idOrden) {
+    const { data } = await api.get(`/admin/ordenes/${idOrden}`)
+    return data
+  },
+
+  async adminGenerarComprobante(idOrden) {
+    const { data } = await api.post(`/admin/ordenes/${idOrden}/comprobante`)
+    return data
+  },
+
+  async adminObtenerComprobante(idComprobante) {
+    const { data } = await api.get(`/admin/ordenes/comprobantes/${idComprobante}`)
+    return data
+  },
+
+  async adminEliminarOrden(idOrden) {
+    await api.delete(`/admin/ordenes/${idOrden}`)
   },
 }
 

@@ -1,6 +1,7 @@
 package com.polygraph.erp.modules.usuarios.controller;
 
 import com.polygraph.erp.modules.usuarios.dto.ActualizarUsuarioInternoRequest;
+import com.polygraph.erp.modules.usuarios.dto.CambiarPasswordUsuarioInternoRequest;
 import com.polygraph.erp.modules.usuarios.dto.CrearUsuarioInternoRequest;
 import com.polygraph.erp.modules.usuarios.dto.UsuarioClienteResponse;
 import com.polygraph.erp.modules.usuarios.dto.UsuarioInternoResponse;
@@ -10,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -42,6 +44,15 @@ public class UsuariosInternosController {
             @PathVariable Long id,
             @Valid @RequestBody ActualizarUsuarioInternoRequest request) {
         return ResponseEntity.ok(service.actualizar(id, request));
+    }
+
+    /** Resetea la contraseña sin pasar por el resto de validaciones de actualizar() (ciudades y
+     *  sala del poligrafista/visitador, subprocesos) — esos no deberían bloquear un simple
+     *  cambio de contraseña. */
+    @PatchMapping("/{id}/password")
+    public ResponseEntity<UsuarioInternoResponse> cambiarPassword(
+            @PathVariable Long id, @Valid @RequestBody CambiarPasswordUsuarioInternoRequest request, Authentication auth) {
+        return ResponseEntity.ok(service.cambiarPassword(id, request.password(), request.claveAdmin(), auth.getName()));
     }
 
     @PatchMapping("/{id}/activar")

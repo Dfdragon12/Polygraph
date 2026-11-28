@@ -42,7 +42,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 UserDetails userDetails = userDetailsService.loadUserByUsername(email);
 
-                if (jwtUtil.validarToken(token, userDetails)) {
+                // Un usuario desactivado o bloqueado pierde el acceso al instante, aunque su JWT
+                // siga vigente (dura 24 h): el filtro no pasa por DaoAuthenticationProvider, que
+                // es quien normalmente revisa esto.
+                if (!userDetails.isEnabled() || !userDetails.isAccountNonLocked()) {
+                    log.warn("Acceso denegado: usuario {} inactivo o bloqueado", email);
+                } else if (jwtUtil.validarToken(token, userDetails)) {
                     UsernamePasswordAuthenticationToken autenticacion =
                             new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
                     autenticacion.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));

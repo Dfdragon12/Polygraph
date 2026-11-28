@@ -13,5 +13,6 @@ public record TipoProgresoRequest(
         Integer orden,
         BigDecimal valor,
         Integer minutosEstimados,
-        @NotNull Rol rolResponsable
+        @NotNull Rol rolResponsable,
+        Boolean requiereDocumento
 ) {}

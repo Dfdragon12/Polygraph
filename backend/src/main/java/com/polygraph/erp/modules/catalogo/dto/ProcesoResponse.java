@@ -13,5 +13,33 @@ public record ProcesoResponse(
         BigDecimal                    valor,
         BigDecimal                    valorCalculado,
         Integer                       diasHabilesEntrega,
-        List<TramoPrecioResponse>     tramosPrecio
+        List<TramoPrecioResponse>     tramosPrecio,
+        Boolean                       aplicaPrecioCiudad,
+        Boolean                       requiereHojaVida,
+        Boolean                       requiereDireccion,
+        Boolean                       ciudadEsDePrueba,
+        List<PrecioCiudadResponse>    preciosCiudad,
+        List<String>                  puntosClave,
+        // Calificación de riesgo (ver CalificacionProcesoService): suma de pesos de los
+        // subprocesos que cuentan, si ya califica (suma 100 y ninguno sin peso) y por qué no.
+        BigDecimal                    sumaPesos,
+        boolean                       calificaRiesgo,
+        String                        motivoNoCalifica,
+        String                        criticidadDefecto,
+        BigDecimal                    coberturaMinima,
+        // TP-01: textos comerciales y datos de tienda (costoDirecto solo lo ve el admin)
+        String                        tituloComercial,
+        String                        frasePrincipal,
+        String                        descripcionCorta,
+        List<String>                  incluye,
+        String                        idealPara,
+        String                        unidadSingular,
+        String                        unidadPlural,
+        BigDecimal                    costoDirecto,
+        boolean                       visibleEnTienda,
+        boolean                       aplicaIva,
+        // TP-11
+        boolean                       ofrecerPospago,
+        String                        modoPrecioPospago,
+        BigDecimal                    precioPospagoPropio
 ) {}

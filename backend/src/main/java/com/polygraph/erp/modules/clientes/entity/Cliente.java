@@ -8,6 +8,7 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 @Entity
+@jakarta.persistence.EntityListeners(com.polygraph.erp.modules.tiemporeal.CambiosEntityListener.class)
 @Table(name = "clientes")
 @Data
 @Builder
@@ -57,6 +58,12 @@ public class Cliente {
 
     @Column(name = "id_ciudad")
     private Integer idCiudad;
+
+    @Column(name = "id_pais")
+    private Integer idPais;
+
+    @Column(name = "id_barrio")
+    private Integer idBarrio;
 
     @Column(name = "direccion", columnDefinition = "TEXT")
     private String direccion;

@@ -24,5 +24,11 @@ public record ExperienciaLaboralRequest(
         String telefonoEmpresa,
         String motivoRetiro,
         String nombreJefe,
-        String cargoJefe
+        String cargoJefe,
+        String tipoContrato,
+        // Salario devengado, en pesos
+        Long salario,
+        String llamadosAtencion,
+        Boolean contratadoPorTemporal,
+        String nombreTemporal
 ) {}
